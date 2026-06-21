@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Hangar runtime state
+*.db
+*.db-shm
+*.db-wal
+backend/hangar.db*
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+.eslintcache
+
+# Secrets / local config
+.env
+deploy/.env
+*.key
+*.pem
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

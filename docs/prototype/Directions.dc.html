@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;}
+    body{margin:0;}
+  </style>
+</helmet>
+
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e7e5df;font-family:'Public Sans',sans-serif;">
+
+  <div style="margin-bottom:36px;max-width:760px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#8a877e;margin-bottom:10px;">Hangar — Fleet Overview · 3 aesthetic directions</div>
+    <div style="font-family:'Public Sans',sans-serif;font-size:15px;line-height:1.5;color:#54514a;">Same screen, same fleet data, three visual systems. All monochrome with status-only color, dense / power-user. Pick one (or mix) and I'll build it deep across all five screens.</div>
+  </div>
+
+  <div style="display:flex;gap:48px;align-items:flex-start;">
+
+    <!-- ============ DIRECTION 1: TERMINAL / HOMELAB ============ -->
+    <div style="flex:none;width:560px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#3a3833;margin-bottom:10px;letter-spacing:0.04em;">01 · TERMINAL / HOMELAB</div>
+      <div style="background:#0d100e;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.18);overflow:hidden;font-family:'JetBrains Mono',monospace;color:#cdd2c8;">
+        <!-- topbar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #1e231f;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:14px;height:14px;border:1.5px solid #5cc98a;border-radius:2px;"></div>
+            <span style="font-weight:700;font-size:13px;letter-spacing:0.04em;color:#eef2e9;">hangar</span>
+            <span style="color:#5cc98a;">$</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;font-size:10px;color:#6b7066;">
+            <span style="padding:3px 8px;border:1px solid #2a302a;border-radius:2px;color:#cdd2c8;">gh:get2knowio ▾</span>
+            <span>synced 2m ago</span>
+          </div>
+        </div>
+        <!-- stat strip -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #1e231f;">
+          <div style="padding:12px 14px;border-right:1px solid #1e231f;">
+            <div style="font-size:9px;color:#6b7066;letter-spacing:0.1em;text-transform:uppercase;">open prs</div>
+            <div style="font-size:22px;font-weight:700;color:#eef2e9;margin-top:3px;">23 <span style="font-size:10px;color:#e0a23c;font-weight:500;">9 bot</span></div>
+          </div>
+          <div style="padding:12px 14px;border-right:1px solid #1e231f;">
+            <div style="font-size:9px;color:#6b7066;letter-spacing:0.1em;text-transform:uppercase;">ci failing</div>
+            <div style="font-size:22px;font-weight:700;color:#f0635c;margin-top:3px;">3</div>
+          </div>
+          <div style="padding:12px 14px;">
+            <div style="font-size:9px;color:#6b7066;letter-spacing:0.1em;text-transform:uppercase;">sec alerts</div>
+            <div style="font-size:22px;font-weight:700;color:#eef2e9;margin-top:3px;">5 <span style="font-size:10px;color:#f0635c;font-weight:500;">1 crit</span></div>
+          </div>
+        </div>
+        <!-- compliance bar -->
+        <div style="padding:12px 16px;border-bottom:1px solid #1e231f;display:flex;align-items:center;gap:12px;">
+          <span style="font-size:10px;color:#6b7066;text-transform:uppercase;letter-spacing:0.1em;">fleet compliance</span>
+          <div style="flex:1;height:7px;background:#1e231f;border-radius:2px;overflow:hidden;">
+            <div style="width:78%;height:100%;background:#5cc98a;"></div>
+          </div>
+          <span style="font-size:13px;font-weight:700;color:#5cc98a;">78%</span>
+        </div>
+        <!-- table head -->
+        <div style="display:grid;grid-template-columns:1.6fr 0.5fr 0.5fr 0.5fr;gap:8px;padding:8px 16px;font-size:9px;color:#6b7066;letter-spacing:0.08em;text-transform:uppercase;border-bottom:1px solid #1e231f;">
+          <span>repo</span><span style="text-align:right;">pr</span><span style="text-align:center;">ci</span><span style="text-align:right;">hygiene</span>
+        </div>
+        <!-- rows -->
+        <div style="font-size:12px;">
+          <div style="display:grid;grid-template-columns:1.6fr 0.5fr 0.5fr 0.5fr;gap:8px;padding:9px 16px;align-items:center;border-bottom:1px solid #15191500;background:#11150f;">
+            <span style="color:#eef2e9;">hola</span><span style="text-align:right;color:#cdd2c8;">4</span><span style="text-align:center;color:#5cc98a;">●</span><span style="text-align:right;color:#5cc98a;">92%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.6fr 0.5fr 0.5fr 0.5fr;gap:8px;padding:9px 16px;align-items:center;">
+            <span style="color:#eef2e9;">hangar</span><span style="text-align:right;color:#cdd2c8;">6</span><span style="text-align:center;color:#f0635c;">●</span><span style="text-align:right;color:#e0a23c;">64%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.6fr 0.5fr 0.5fr 0.5fr;gap:8px;padding:9px 16px;align-items:center;background:#11150f;">
+            <span style="color:#eef2e9;">get2know-web</span><span style="text-align:right;color:#cdd2c8;">2</span><span style="text-align:center;color:#5cc98a;">●</span><span style="text-align:right;color:#5cc98a;">88%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.6fr 0.5fr 0.5fr 0.5fr;gap:8px;padding:9px 16px;align-items:center;">
+            <span style="color:#eef2e9;">homelab-compose</span><span style="text-align:right;color:#cdd2c8;">3</span><span style="text-align:center;color:#f0635c;">●</span><span style="text-align:right;color:#e0a23c;">70%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.6fr 0.5fr 0.5fr 0.5fr;gap:8px;padding:9px 16px;align-items:center;background:#11150f;">
+            <span style="color:#eef2e9;">conventional-bot</span><span style="text-align:right;color:#cdd2c8;">1</span><span style="text-align:center;color:#5cc98a;">●</span><span style="text-align:right;color:#e0a23c;">75%</span>
+          </div>
+        </div>
+        <div style="padding:10px 16px;font-size:10px;color:#5cc98a;border-top:1px solid #1e231f;">▸ 9 more repos · press / to filter</div>
+      </div>
+    </div>
+
+    <!-- ============ DIRECTION 2: CLEAN DEVELOPER SAAS ============ -->
+    <div style="flex:none;width:560px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#3a3833;margin-bottom:10px;letter-spacing:0.04em;">02 · CLEAN DEVELOPER SAAS</div>
+      <div style="background:#ffffff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;font-family:'Public Sans',sans-serif;color:#1d1c1a;border:1px solid #eceae5;">
+        <!-- topbar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eceae5;">
+          <div style="display:flex;align-items:center;gap:9px;">
+            <div style="width:16px;height:16px;background:#1d1c1a;border-radius:3px;"></div>
+            <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em;">Hangar</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:11px;color:#8a877e;">
+            <span style="padding:4px 10px;background:#f5f4f0;border-radius:5px;color:#3a3833;font-weight:600;font-family:'JetBrains Mono',monospace;font-size:10px;">gh:get2knowio ▾</span>
+            <span>synced 2m ago</span>
+          </div>
+        </div>
+        <!-- stat tiles -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#eceae5;border-bottom:1px solid #eceae5;">
+          <div style="padding:14px 16px;background:#fff;">
+            <div style="font-size:10px;color:#8a877e;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Open PRs</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;margin-top:4px;">23</div>
+            <div style="font-size:11px;color:#b9791a;margin-top:2px;">9 Dependabot</div>
+          </div>
+          <div style="padding:14px 16px;background:#fff;">
+            <div style="font-size:10px;color:#8a877e;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">CI Failing</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;margin-top:4px;color:#c2443f;">3</div>
+            <div style="font-size:11px;color:#8a877e;margin-top:2px;">on default</div>
+          </div>
+          <div style="padding:14px 16px;background:#fff;">
+            <div style="font-size:10px;color:#8a877e;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Sec Alerts</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;margin-top:4px;">5</div>
+            <div style="font-size:11px;color:#c2443f;margin-top:2px;">1 critical</div>
+          </div>
+        </div>
+        <!-- compliance -->
+        <div style="padding:14px 18px;border-bottom:1px solid #eceae5;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+            <span style="font-size:12px;font-weight:600;color:#3a3833;">Fleet compliance</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#2f8f57;">78%</span>
+          </div>
+          <div style="height:6px;background:#f0eee9;border-radius:3px;overflow:hidden;">
+            <div style="width:78%;height:100%;background:#2f8f57;border-radius:3px;"></div>
+          </div>
+        </div>
+        <!-- table head -->
+        <div style="display:grid;grid-template-columns:1.7fr 0.5fr 0.5fr 0.6fr;gap:8px;padding:9px 18px;font-size:10px;color:#8a877e;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;background:#faf9f6;border-bottom:1px solid #eceae5;">
+          <span>Repository</span><span style="text-align:right;">PRs</span><span style="text-align:center;">CI</span><span style="text-align:right;">Hygiene</span>
+        </div>
+        <!-- rows -->
+        <div style="font-size:13px;">
+          <div style="display:grid;grid-template-columns:1.7fr 0.5fr 0.5fr 0.6fr;gap:8px;padding:11px 18px;align-items:center;border-bottom:1px solid #f3f1ec;">
+            <span style="font-weight:500;">hola</span><span style="text-align:right;color:#54514a;font-family:'JetBrains Mono',monospace;">4</span><span style="text-align:center;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2f8f57;"></span></span><span style="text-align:right;font-family:'JetBrains Mono',monospace;color:#2f8f57;font-weight:600;">92%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.7fr 0.5fr 0.5fr 0.6fr;gap:8px;padding:11px 18px;align-items:center;border-bottom:1px solid #f3f1ec;">
+            <span style="font-weight:500;">hangar</span><span style="text-align:right;color:#54514a;font-family:'JetBrains Mono',monospace;">6</span><span style="text-align:center;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#c2443f;"></span></span><span style="text-align:right;font-family:'JetBrains Mono',monospace;color:#b9791a;font-weight:600;">64%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.7fr 0.5fr 0.5fr 0.6fr;gap:8px;padding:11px 18px;align-items:center;border-bottom:1px solid #f3f1ec;">
+            <span style="font-weight:500;">get2know-web</span><span style="text-align:right;color:#54514a;font-family:'JetBrains Mono',monospace;">2</span><span style="text-align:center;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2f8f57;"></span></span><span style="text-align:right;font-family:'JetBrains Mono',monospace;color:#2f8f57;font-weight:600;">88%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.7fr 0.5fr 0.5fr 0.6fr;gap:8px;padding:11px 18px;align-items:center;border-bottom:1px solid #f3f1ec;">
+            <span style="font-weight:500;">homelab-compose</span><span style="text-align:right;color:#54514a;font-family:'JetBrains Mono',monospace;">3</span><span style="text-align:center;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#c2443f;"></span></span><span style="text-align:right;font-family:'JetBrains Mono',monospace;color:#b9791a;font-weight:600;">70%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.7fr 0.5fr 0.5fr 0.6fr;gap:8px;padding:11px 18px;align-items:center;">
+            <span style="font-weight:500;">conventional-bot</span><span style="text-align:right;color:#54514a;font-family:'JetBrains Mono',monospace;">1</span><span style="text-align:center;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2f8f57;"></span></span><span style="text-align:right;font-family:'JetBrains Mono',monospace;color:#b9791a;font-weight:600;">75%</span>
+          </div>
+        </div>
+        <div style="padding:11px 18px;font-size:12px;color:#54514a;border-top:1px solid #eceae5;background:#faf9f6;">9 more repos · <span style="color:#1d1c1a;font-weight:600;">Filter ⌘K</span></div>
+      </div>
+    </div>
+
+    <!-- ============ DIRECTION 3: PREFLIGHT / AVIATION ============ -->
+    <div style="flex:none;width:560px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#3a3833;margin-bottom:10px;letter-spacing:0.04em;">03 · PREFLIGHT / AVIATION</div>
+      <div style="background:#f6f3ea;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;font-family:'Space Grotesk',sans-serif;color:#23211c;border:1px solid #e2ddcf;">
+        <!-- topbar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#23211c;color:#f6f3ea;">
+          <div style="display:flex;align-items:center;gap:9px;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.2em;color:#9a958a;">▲ HANGAR</span>
+            <span style="font-weight:600;font-size:13px;">Preflight</span>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#9a958a;display:flex;gap:12px;align-items:center;">
+            <span style="padding:3px 8px;border:1px solid #46433b;border-radius:2px;color:#d8d3c6;">GH:GET2KNOWIO ▾</span>
+            <span>T-02M</span>
+          </div>
+        </div>
+        <!-- big compliance gauge row -->
+        <div style="padding:18px;display:flex;align-items:center;gap:18px;border-bottom:1px solid #e2ddcf;">
+          <div style="font-family:'IBM Plex Mono',monospace;text-align:center;">
+            <div style="font-size:42px;font-weight:600;line-height:1;color:#23211c;">78<span style="font-size:18px;">%</span></div>
+            <div style="font-size:9px;letter-spacing:0.16em;color:#8a857a;margin-top:4px;">FLEET READY</div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;">
+              <span style="width:9px;height:9px;background:#2f8f57;border-radius:50%;"></span><span style="color:#54514a;">9 cleared</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;">
+              <span style="width:9px;height:9px;background:#b9791a;border-radius:50%;"></span><span style="color:#54514a;">3 drift — cooldown, license</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;">
+              <span style="width:9px;height:9px;background:#c2443f;border-radius:50%;"></span><span style="color:#54514a;">2 grounded — CI down</span>
+            </div>
+          </div>
+        </div>
+        <!-- checklist rows (preflight metaphor) -->
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:0.12em;color:#8a857a;padding:10px 18px 6px;">PREFLIGHT CHECKLIST · PER REPO</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 18px;border-top:1px solid #ece7da;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#2f8f57;">✓</span>
+            <span style="flex:1;font-weight:500;font-size:14px;">hola</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#8a857a;">8/8 checks · CLEARED</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 18px;border-top:1px solid #ece7da;background:#fbf3e3;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#b9791a;">!</span>
+            <span style="flex:1;font-weight:500;font-size:14px;">hangar</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#b9791a;">5/8 · CI DOWN, NO LICENSE</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 18px;border-top:1px solid #ece7da;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#2f8f57;">✓</span>
+            <span style="flex:1;font-weight:500;font-size:14px;">get2know-web</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#8a857a;">7/8 checks · CLEARED</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 18px;border-top:1px solid #ece7da;background:#fbe9e7;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#c2443f;">✕</span>
+            <span style="flex:1;font-weight:500;font-size:14px;">homelab-compose</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#c2443f;">5/8 · GROUNDED</span>
+          </div>
+        </div>
+        <div style="padding:11px 18px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#8a857a;border-top:1px solid #e2ddcf;letter-spacing:0.06em;">▸ 10 MORE IN HANGAR</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

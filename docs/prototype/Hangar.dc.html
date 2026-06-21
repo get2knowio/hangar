@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<template id="__bundler_thumbnail" data-bg-color="#f5f4f0">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#f5f4f0"/>
+    <rect x="430" y="300" width="46" height="46" rx="9" fill="#1d1c1a"/>
+    <rect x="442" y="316" width="22" height="20" rx="3" fill="none" stroke="#f5f4f0" stroke-width="4"/>
+    <text x="500" y="338" font-family="'Public Sans',sans-serif" font-size="46" font-weight="700" fill="#1d1c1a">Hangar</text>
+    <rect x="430" y="380" width="340" height="8" rx="4" fill="#2f8f57"/>
+    <rect x="430" y="400" width="200" height="8" rx="4" fill="#eceae5"/>
+  </svg>
+</template>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;}
+    html,body{margin:0;padding:0;}
+    :root{
+      --bg:#f5f4f0;--surface:#ffffff;--surface-2:#faf9f6;--border:#eceae5;--border-2:#f3f1ec;
+      --fg:#1d1c1a;--fg-2:#54514a;--muted:#8a877e;--hover:#f7f6f2;
+      --pass:#2f8f57;--warn:#b9791a;--fail:#c2443f;--unknown:#9a968c;
+      --pass-bg:#e9f3ec;--warn-bg:#f7efe0;--fail-bg:#f6e7e6;--shadow:0 1px 2px rgba(0,0,0,.06);
+    }
+    ::-webkit-scrollbar{width:10px;height:10px;}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px;border:3px solid var(--surface);}
+    input[type=number]{font-family:'JetBrains Mono',monospace;}
+    @keyframes hgspin{to{transform:rotate(360deg);}}
+    @keyframes hgfade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+  </style>
+</helmet>
+
+<div style="{{ rootStyle }}">
+
+  <!-- ================= TOPBAR ================= -->
+  <div style="flex:none;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--border);background:var(--surface);">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="display:flex;align-items:center;gap:9px;">
+        <div style="width:18px;height:18px;background:var(--fg);border-radius:4px;position:relative;">
+          <div style="position:absolute;inset:5px 4px 4px 4px;border:1.5px solid var(--surface);border-bottom:none;border-radius:2px 2px 0 0;"></div>
+        </div>
+        <span style="font-weight:700;font-size:15px;letter-spacing:-0.01em;">Hangar</span>
+      </div>
+      <span style="color:var(--border);">/</span>
+      <span style="font-size:13px;color:var(--fg-2);font-weight:500;">{{ screenTitle }}</span>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;">
+      <!-- connection switcher -->
+      <div style="position:relative;">
+        <div onClick="{{ toggleConnMenu }}" style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--surface);" style-hover="background:var(--hover)">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--pass);"></span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:var(--fg);">{{ connLabel }}</span>
+          <span style="color:var(--muted);font-size:10px;">▾</span>
+        </div>
+        <sc-if value="{{ connMenuOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;top:38px;right:0;width:248px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.14);padding:5px;z-index:50;animation:hgfade .12s ease;">
+            <sc-for list="{{ connOptions }}" as="opt" hint-placeholder-count="4">
+              <div onClick="{{ opt.select }}" style="display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:5px;cursor:pointer;" style-hover="background:var(--hover)">
+                <span style="width:13px;text-align:center;color:var(--pass);font-size:11px;">{{ opt.tick }}</span>
+                <span style="width:7px;height:7px;border-radius:50%;background:{{ opt.dot }};flex:none;"></span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;flex:1;">{{ opt.label }}</span>
+                <span style="font-size:10px;color:var(--muted);">{{ opt.meta }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+      <span style="font-size:11px;color:var(--muted);">synced {{ topSync }}</span>
+      <div onClick="{{ toggleTheme }}" style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;color:var(--fg-2);" style-hover="background:var(--hover)">{{ themeBtn }}</div>
+    </div>
+  </div>
+
+  <!-- ================= BODY ================= -->
+  <div style="flex:1;display:flex;min-height:0;">
+
+    <!-- SIDEBAR -->
+    <div style="flex:none;width:212px;border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;padding:14px 10px;">
+      <div style="font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);padding:4px 10px 8px;">Fleet</div>
+      <sc-for list="{{ navItems }}" as="nav" hint-placeholder-count="4">
+        <div onClick="{{ nav.go }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:2px;background:{{ nav.bg }};" style-hover="background:var(--hover)">
+          <span style="width:15px;font-size:13px;text-align:center;color:{{ nav.iconColor }};">{{ nav.icon }}</span>
+          <span style="font-size:13px;font-weight:{{ nav.weight }};color:{{ nav.color }};flex:1;">{{ nav.label }}</span>
+          <sc-if value="{{ nav.showBadge }}" hint-placeholder-val="{{ false }}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:var(--surface);background:{{ nav.badgeColor }};border-radius:9px;padding:1px 6px;">{{ nav.badge }}</span></sc-if>
+        </div>
+      </sc-for>
+
+      <div style="margin-top:auto;padding:10px;border-top:1px solid var(--border-2);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--pass);"></span>
+          <span style="font-size:11px;font-weight:600;color:var(--fg-2);">Access: forward-auth</span>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--muted);line-height:1.5;">Remote-User · fail-closed<br>behind Traefik</div>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div style="flex:1;overflow:auto;min-width:0;">
+
+      <!-- ============ OVERVIEW ============ -->
+      <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:24px 28px;max-width:1180px;">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">
+            <h1 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;">Fleet overview</h1>
+            <span style="font-size:12px;color:var(--muted);">{{ fleetSummary }}</span>
+          </div>
+          <p style="margin:0 0 20px;font-size:13px;color:var(--muted);">What needs attention right now, across {{ connScopeLabel }}.</p>
+
+          <!-- stat tiles -->
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px;">
+            <sc-for list="{{ statTiles }}" as="st" hint-placeholder-count="6">
+              <div style="padding:13px 14px;background:var(--surface);">
+                <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;white-space:nowrap;">{{ st.label }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:25px;font-weight:700;margin-top:4px;color:{{ st.color }};">{{ st.value }}</div>
+                <div style="font-size:11px;margin-top:1px;color:{{ st.subColor }};">{{ st.sub }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start;">
+            <!-- repo table -->
+            <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);">
+              <div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 0.7fr 0.7fr 1fr;gap:8px;padding:9px 16px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;background:var(--surface-2);border-bottom:1px solid var(--border);">
+                <span>Repository</span><span style="text-align:right;">PRs</span><span style="text-align:center;">CI</span><span style="text-align:right;">Alerts</span><span style="text-align:right;">Release</span><span style="text-align:right;">Hygiene</span>
+              </div>
+              <sc-for list="{{ repoRows }}" as="r" hint-placeholder-count="9">
+                <div onClick="{{ r.open }}" style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 0.7fr 0.7fr 1fr;gap:8px;padding:11px 16px;align-items:center;border-bottom:1px solid var(--border-2);cursor:pointer;" style-hover="background:var(--hover)">
+                  <div style="min-width:0;">
+                    <div style="line-height:1.7;"><span style="font-weight:600;font-size:13px;margin-right:6px;">{{ r.name }}</span><span style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:1px 5px;vertical-align:middle;white-space:nowrap;">{{ r.connBadge }}</span></div>
+                    <div style="font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.desc }}</div>
+                  </div>
+                  <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap;">
+                    <span style="color:var(--fg);">{{ r.openPRs }}</span><span style="color:var(--warn);font-size:10px;white-space:nowrap;"> {{ r.depLabel }}</span>
+                  </div>
+                  <div style="text-align:center;font-family:'JetBrains Mono',monospace;font-size:13px;color:{{ r.ciColor }};" title="{{ r.ciTitle }}">{{ r.ciGlyph }}</div>
+                  <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ r.alertColor }};">{{ r.alertLabel }}</div>
+                  <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ r.relColor }};">{{ r.relLabel }}</div>
+                  <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;min-width:0;">
+                    <div style="flex:1 1 0;min-width:0;max-width:46px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;"><div style="width:{{ r.hygWidth }};height:100%;background:{{ r.hygColor }};"></div></div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:{{ r.hygColor }};flex:none;text-align:right;white-space:nowrap;">{{ r.hygLabel }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            <!-- attention feed -->
+            <div style="border:1px solid var(--border);border-radius:8px;background:var(--surface);overflow:hidden;">
+              <div style="padding:11px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);border-bottom:1px solid var(--border);background:var(--surface-2);">Needs attention · by urgency</div>
+              <sc-for list="{{ feed }}" as="f" hint-placeholder-count="6">
+                <div onClick="{{ f.open }}" style="padding:11px 16px;border-bottom:1px solid var(--border-2);border-left:3px solid {{ f.color }};cursor:pointer;" style-hover="background:var(--hover)">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                    <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:{{ f.color }};">{{ f.tag }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);">{{ f.repo }}</span>
+                  </div>
+                  <div style="font-size:13px;color:var(--fg);margin-top:3px;">{{ f.title }}</div>
+                </div>
+              </sc-for>
+              <div style="padding:10px 16px;font-size:11px;color:var(--muted);">Sorted: critical → CI → release → alerts → bot PRs</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ SCORECARD ============ -->
+      <sc-if value="{{ isScorecard }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:24px 28px;">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">
+            <h1 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;">Hygiene scorecard</h1>
+            <span style="font-size:12px;color:var(--muted);">{{ scComplianceLabel }}</span>
+          </div>
+          <p style="margin:0 0 16px;font-size:13px;color:var(--muted);">Active policy evaluated against every repo in {{ connScopeLabel }}.</p>
+
+          <!-- rollup + filter -->
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+            <span style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Top drift</span>
+            <sc-for list="{{ scRollup }}" as="ro" hint-placeholder-count="4">
+              <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--fail-bg);color:var(--fail);border-radius:14px;padding:3px 11px;font-weight:500;">
+                <span style="font-family:'JetBrains Mono',monospace;font-weight:700;">{{ ro.count }}</span> {{ ro.label }}
+              </span>
+            </sc-for>
+            <div onClick="{{ toggleScFailing }}" style="margin-left:auto;display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;font-weight:600;color:var(--fg-2);border:1px solid var(--border);border-radius:6px;padding:5px 11px;background:{{ scFilterBg }};" style-hover="background:var(--hover)">
+              <span style="width:8px;height:8px;border-radius:2px;background:{{ scFilterDot }};"></span>{{ scFilterLabel }}
+            </div>
+          </div>
+
+          <!-- matrix -->
+          <div style="border:1px solid var(--border);border-radius:8px;overflow:auto;background:var(--surface);">
+            <div style="min-width:max-content;">
+              <!-- group header -->
+              <div style="display:flex;border-bottom:1px solid var(--border);background:var(--surface-2);">
+                <div style="flex:none;width:230px;padding:7px 16px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);position:sticky;left:0;background:var(--surface-2);z-index:2;border-right:1px solid var(--border);">Repository</div>
+                <sc-for list="{{ scGroups }}" as="g" hint-placeholder-count="5">
+                  <div style="flex:none;width:{{ g.width }};padding:7px 10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);border-right:1px solid var(--border);">{{ g.label }}</div>
+                </sc-for>
+              </div>
+              <!-- check labels row -->
+              <div style="display:flex;border-bottom:1px solid var(--border);">
+                <div style="flex:none;width:230px;padding:8px 16px;font-size:10px;color:var(--muted);position:sticky;left:0;background:var(--surface);z-index:2;border-right:1px solid var(--border);">{{ scRepoCount }} repos · {{ scCheckCount }} checks</div>
+                <sc-for list="{{ scChecks }}" as="c" hint-placeholder-count="12">
+                  <div style="flex:none;width:42px;padding:6px 0;text-align:center;border-right:1px solid var(--border-2);" title="{{ c.label }}">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:{{ c.failColor }};font-weight:700;">{{ c.fail }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <!-- rows -->
+              <sc-for list="{{ scRows }}" as="row" hint-placeholder-count="9">
+                <div style="display:flex;border-bottom:1px solid var(--border-2);" style-hover="background:var(--hover)">
+                  <div onClick="{{ row.open }}" style="flex:none;width:230px;padding:9px 16px;position:sticky;left:0;background:var(--surface);z-index:1;border-right:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:8px;">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:{{ row.hygColor }};width:30px;">{{ row.hygLabel }}</span>
+                    <span style="font-weight:600;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.name }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:1px 4px;">{{ row.connBadge }}</span>
+                  </div>
+                  <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="12">
+                    <div style="flex:none;width:42px;display:flex;align-items:center;justify-content:center;border-right:1px solid var(--border-2);font-size:12px;color:{{ cell.color }};opacity:{{ cell.opacity }};" title="{{ cell.title }}">{{ cell.glyph }}</div>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:flex;gap:18px;margin-top:12px;font-size:11px;color:var(--muted);flex-wrap:wrap;">
+            <span><span style="color:var(--pass);">●</span> pass</span>
+            <span><span style="color:var(--fail);">✕</span> fail</span>
+            <span><span style="color:var(--unknown);">○</span> unknown (scope)</span>
+            <span><span style="color:var(--warn);">◐</span> remediation in flight</span>
+            <span>Click a repo to drill in →</span>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ CATALOG / POLICY ============ -->
+      <sc-if value="{{ isCatalog }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:24px 28px;max-width:920px;">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">
+            <h1 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;">Check catalog & policy</h1>
+            <span style="font-size:12px;color:var(--muted);">{{ policyEnabledLabel }}</span>
+          </div>
+          <p style="margin:0 0 20px;font-size:13px;color:var(--muted);">The catalog is data, not UI. Toggle a check into the fleet-wide policy or set its target — the scorecard recomputes live.</p>
+
+          <sc-for list="{{ catGroups }}" as="grp" hint-placeholder-count="5">
+            <div style="margin-bottom:22px;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:8px;">{{ grp.group }}</div>
+              <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);">
+                <sc-for list="{{ grp.checks }}" as="c" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--border-2);">
+                    <div onClick="{{ c.toggle }}" style="flex:none;width:34px;height:19px;border-radius:11px;background:{{ c.switchBg }};display:flex;align-items:center;padding:2px;cursor:pointer;justify-content:{{ c.switchJustify }};transition:background .15s;">
+                      <div style="width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);"></div>
+                    </div>
+                    <div style="flex:1;min-width:0;opacity:{{ c.opacity }};">
+                      <div style="display:flex;align-items:center;gap:9px;">
+                        <span style="font-weight:600;font-size:13px;">{{ c.label }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:1px 6px;text-transform:uppercase;letter-spacing:0.04em;">{{ c.tierLabel }}</span>
+                      </div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:2px;font-family:'JetBrains Mono',monospace;">{{ c.id }}</div>
+                    </div>
+                    <sc-if value="{{ c.hasTarget }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;align-items:center;gap:7px;">
+                        <span style="font-size:11px;color:var(--muted);">target</span>
+                        <input type="number" min="0" max="90" value="{{ c.target }}" onChange="{{ c.onTarget }}" style="width:52px;padding:5px 7px;border:1px solid var(--border);border-radius:5px;background:var(--surface-2);color:var(--fg);font-size:12px;text-align:center;" />
+                        <span style="font-size:11px;color:var(--muted);">days</span>
+                      </div>
+                    </sc-if>
+                    <div style="flex:none;width:120px;text-align:right;">
+                      <div style="display:flex;align-items:center;gap:7px;justify-content:flex-end;">
+                        <div style="width:44px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;"><div style="width:{{ c.passWidth }};height:100%;background:{{ c.passColor }};"></div></div>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg-2);width:42px;text-align:right;">{{ c.passLabel }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- ============ PROVIDERS ============ -->
+      <sc-if value="{{ isProviders }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:24px 28px;max-width:920px;">
+          <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;letter-spacing:-0.02em;">Providers & access</h1>
+          <p style="margin:0 0 20px;font-size:13px;color:var(--muted);">The way in is a homelab construct. Talking to a platform is a provider construct. Decoupled on purpose.</p>
+
+          <!-- access banner -->
+          <div style="border:1px solid var(--border);border-radius:8px;background:var(--surface-2);padding:15px 18px;margin-bottom:24px;display:flex;align-items:center;gap:16px;">
+            <span style="width:9px;height:9px;border-radius:50%;background:var(--pass);flex:none;"></span>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:600;">Access enforced at the homelab edge — forward-auth</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-top:3px;">HANGAR_FORWARD_AUTH=enabled · header Remote-User · allowed=paul · fail-closed when unset</div>
+            </div>
+            <span style="font-size:11px;font-weight:600;color:var(--pass);background:var(--pass-bg);border-radius:6px;padding:5px 11px;">Behind Traefik</span>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);">Provider connections</div>
+            <div onClick="{{ addConn }}" style="font-size:12px;font-weight:600;color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:5px 12px;cursor:pointer;" style-hover="background:var(--hover)">+ Add connection</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:28px;">
+            <sc-for list="{{ connCards }}" as="cn" hint-placeholder-count="3">
+              <div style="border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:16px 18px;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <span style="width:9px;height:9px;border-radius:50%;background:var(--pass);flex:none;"></span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;">{{ cn.label }}</span>
+                  <span style="font-size:10px;font-weight:600;color:var(--fg-2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;">{{ cn.type }}</span>
+                  <span style="font-size:11px;font-weight:600;color:{{ cn.writeColor }};background:{{ cn.writeBg }};border-radius:5px;padding:3px 9px;">{{ cn.writeLabel }}</span>
+                  <span style="margin-left:auto;font-size:11px;color:var(--muted);">synced {{ cn.sync }}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px;">
+                  <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;">Scope</div><div style="font-size:13px;margin-top:2px;">{{ cn.scope }}</div></div>
+                  <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;">Auth</div><div style="font-size:13px;margin-top:2px;">{{ cn.mode }}</div></div>
+                  <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;">Repos</div><div style="font-size:13px;margin-top:2px;font-family:'JetBrains Mono',monospace;">{{ cn.repos }}</div></div>
+                  <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;">Remediation</div><div style="font-size:13px;margin-top:2px;">{{ cn.remed }}</div></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <!-- audit log -->
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Audit log — every correction</div>
+          <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);">
+            <sc-for list="{{ auditRows }}" as="a" hint-placeholder-count="5">
+              <div style="display:grid;grid-template-columns:80px 1fr 1.2fr 1fr;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border-2);font-size:12px;align-items:center;">
+                <span style="font-size:11px;color:var(--muted);">{{ a.t }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-weight:600;">{{ a.repo }}</span>
+                <span style="color:var(--fg-2);">{{ a.check }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--pass);text-align:right;">{{ a.result }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============ REPO DRILL-DOWN ============ -->
+      <sc-if value="{{ isRepo }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:24px 28px;max-width:1000px;">
+          <div onClick="{{ back }}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:14px;" style-hover="color:var(--fg)">← {{ backLabel }}</div>
+
+          <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:22px;">
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-0.02em;font-family:'JetBrains Mono',monospace;">{{ rd.name }}</h1>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:2px 8px;">{{ rd.connLabel }}</span>
+                <sc-if value="{{ rd.readOnly }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:600;color:var(--warn);background:var(--warn-bg);border-radius:4px;padding:2px 8px;">read-only · deep-link only</span></sc-if>
+              </div>
+              <p style="margin:6px 0 0;font-size:13px;color:var(--muted);">{{ rd.desc }}</p>
+            </div>
+            <div style="flex:none;text-align:right;">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:34px;font-weight:700;line-height:1;color:{{ rd.hygColor }};">{{ rd.hygLabel }}</div>
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">hygiene · {{ rd.passCount }}</div>
+            </div>
+          </div>
+
+          <!-- activity strip -->
+          <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:24px;align-items:start;">
+            <div style="border:1px solid var(--border);border-radius:8px;background:var(--surface);overflow:hidden;">
+              <div style="padding:10px 15px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);border-bottom:1px solid var(--border);background:var(--surface-2);display:flex;justify-content:space-between;"><span>Open pull requests</span><span style="font-family:'JetBrains Mono',monospace;color:var(--fg-2);">{{ rd.openPRs }}</span></div>
+              <sc-for list="{{ rd.prList }}" as="pr" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:10px;padding:9px 15px;border-bottom:1px solid var(--border-2);">
+                  <span style="font-size:11px;width:14px;text-align:center;color:{{ pr.iconColor }};">{{ pr.icon }}</span>
+                  <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ pr.title }}</span>
+                  <span style="font-size:11px;font-weight:600;color:{{ pr.statusColor }};">{{ pr.status }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);">{{ pr.age }}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ rd.noPRs }}" hint-placeholder-val="{{ false }}"><div style="padding:14px 15px;font-size:12px;color:var(--muted);">No open pull requests.</div></sc-if>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div style="border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:13px 15px;">
+                <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-bottom:8px;">CI · default branch</div>
+                <div style="display:flex;align-items:center;gap:9px;"><span style="font-size:14px;color:{{ rd.ciColor }};">{{ rd.ciGlyph }}</span><span style="font-size:14px;font-weight:600;color:{{ rd.ciColor }};">{{ rd.ciLabel }}</span></div>
+              </div>
+              <div style="border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:13px 15px;">
+                <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-bottom:8px;">Security alerts</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <sc-for list="{{ rd.alertList }}" as="al" hint-placeholder-count="2">
+                    <span style="font-size:12px;font-weight:600;color:{{ al.color }};background:{{ al.bg }};border-radius:5px;padding:3px 9px;font-family:'JetBrains Mono',monospace;">{{ al.count }} {{ al.sev }}</span>
+                  </sc-for>
+                  <sc-if value="{{ rd.noAlerts }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;color:var(--pass);">No open alerts</span></sc-if>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- hygiene checks -->
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Policy checks & remediation</div>
+          <sc-for list="{{ rd.checkGroups }}" as="grp" hint-placeholder-count="5">
+            <div style="margin-bottom:16px;">
+              <div style="font-size:11px;font-weight:600;color:var(--fg-2);margin-bottom:7px;">{{ grp.group }}</div>
+              <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);">
+                <sc-for list="{{ grp.checks }}" as="c" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:13px;padding:12px 16px;border-bottom:1px solid var(--border-2);">
+                    <span style="font-size:14px;width:16px;text-align:center;color:{{ c.statusColor }};flex:none;">{{ c.statusGlyph }}</span>
+                    <div style="flex:1;min-width:0;">
+                      <div style="display:flex;align-items:center;gap:9px;">
+                        <span style="font-weight:600;font-size:13px;">{{ c.label }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:1px 6px;text-transform:uppercase;">{{ c.tierLabel }}</span>
+                      </div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:2px;">{{ c.evidence }}</div>
+                    </div>
+                    <sc-if value="{{ c.showNote }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;font-weight:600;color:{{ c.noteColor }};white-space:nowrap;">{{ c.note }}</span></sc-if>
+                    <sc-if value="{{ c.showSecondary }}" hint-placeholder-val="{{ false }}"><div onClick="{{ c.secondaryAction }}" style="font-size:12px;font-weight:600;color:var(--fg-2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;cursor:pointer;white-space:nowrap;" style-hover="background:var(--hover)">{{ c.secondaryLabel }}</div></sc-if>
+                    <sc-if value="{{ c.showPrimary }}" hint-placeholder-val="{{ false }}"><div onClick="{{ c.primaryAction }}" style="font-size:12px;font-weight:600;color:{{ c.primaryFg }};background:{{ c.primaryBg }};border:1px solid {{ c.primaryBorder }};border-radius:6px;padding:6px 13px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px;">{{ c.primaryLabel }}</div></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+
+  <!-- ================= TOAST ================= -->
+  <sc-if value="{{ toastVisible }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);font-size:13px;font-weight:600;padding:10px 18px;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.22);z-index:100;animation:hgfade .15s ease;display:flex;align-items:center;gap:9px;">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--pass);"></span>{{ toastMsg }}
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;}}">
+class Component extends DCLogic {
+  CONNECTIONS = [
+    {id:'gh-main', label:'gh:get2knowio', type:'GitHub', scope:'org · 9 repos', mode:'GitHub App #4471', writes:true, sync:'2m ago'},
+    {id:'gh-labs', label:'gh:get2know-labs', type:'GitHub', scope:'org · 3 repos', mode:'GitHub App #4471', writes:true, sync:'6m ago'},
+    {id:'gitea', label:'gitea:homelab', type:'Gitea', scope:'user · 2 repos', mode:'Scoped token', writes:false, sync:'12m ago'},
+  ];
+  GROUPS = ['Supply chain','Release','Governance','Security','Project meta'];
+  CHECKS = [
+    {id:'dependabot_alerts', label:'Dependabot alerts enabled', group:'Supply chain', action:'patch'},
+    {id:'dependabot_updates', label:'Version updates configured', group:'Supply chain', action:'pr'},
+    {id:'cooldown', label:'Update cooldown \u2265 target', group:'Supply chain', action:'pr', target:7},
+    {id:'lockfile', label:'Lockfile present', group:'Supply chain', action:'report'},
+    {id:'dep_review', label:'Dependency review enabled', group:'Supply chain', action:'link'},
+    {id:'release_please', label:'release-please configured', group:'Release', action:'pr'},
+    {id:'conventional', label:'Conventional commits enforced', group:'Release', action:'link'},
+    {id:'changelog', label:'CHANGELOG automated', group:'Release', action:'report'},
+    {id:'release_health', label:'Release health / commit age', group:'Release', action:'report'},
+    {id:'branch_protection', label:'Branch protection on default', group:'Governance', action:'link'},
+    {id:'codeowners', label:'CODEOWNERS present', group:'Governance', action:'pr'},
+    {id:'default_branch', label:'Default branch = main', group:'Governance', action:'report'},
+    {id:'security_md', label:'SECURITY.md present', group:'Security', action:'pr'},
+    {id:'secret_scanning', label:'Secret scanning + push protection', group:'Security', action:'link'},
+    {id:'code_scanning', label:'Code scanning (CodeQL)', group:'Security', action:'link'},
+    {id:'two_fa', label:'Org 2FA required', group:'Security', action:'link'},
+    {id:'license', label:'LICENSE present', group:'Project meta', action:'pr'},
+    {id:'readme', label:'README present', group:'Project meta', action:'report'},
+    {id:'description', label:'Description & topics set', group:'Project meta', action:'patch'},
+    {id:'templates', label:'Issue / PR templates', group:'Project meta', action:'pr'},
+  ];
+  REPOS = [
+    {id:'hola', conn:'gh-main', desc:'Homelab Compose deployer CLI', openPRs:4, depPRs:2, ci:'pass', alerts:{c:0,h:0,m:1,l:2}, rel:null, fails:['two_fa'], unknowns:[]},
+    {id:'hangar', conn:'gh-main', desc:'Fleet control plane (this app)', openPRs:6, depPRs:3, ci:'fail', alerts:{c:1,h:1,m:0,l:0}, rel:9, fails:['cooldown','license','branch_protection','code_scanning','conventional'], unknowns:['two_fa']},
+    {id:'get2know-web', conn:'gh-main', desc:'Marketing & docs site', openPRs:2, depPRs:1, ci:'pass', alerts:{c:0,h:0,m:0,l:1}, rel:3, fails:['security_md','templates'], unknowns:['two_fa']},
+    {id:'conventional-bot', conn:'gh-main', desc:'Commit-lint GitHub App', openPRs:1, depPRs:0, ci:'pass', alerts:{c:0,h:1,m:0,l:0}, rel:null, fails:['license','changelog'], unknowns:['dep_review']},
+    {id:'homelab-compose', conn:'gh-main', desc:'Traefik + services stack', openPRs:3, depPRs:2, ci:'fail', alerts:{c:0,h:0,m:2,l:1}, rel:21, fails:['cooldown','dependabot_updates','branch_protection'], unknowns:[]},
+    {id:'release-please-config', conn:'gh-main', desc:'Shared release config', openPRs:0, depPRs:0, ci:'pass', alerts:{c:0,h:0,m:0,l:0}, rel:null, fails:['two_fa'], unknowns:[]},
+    {id:'dotfiles', conn:'gh-main', desc:'Personal shell + editor config', openPRs:0, depPRs:0, ci:'none', alerts:{c:0,h:0,m:0,l:0}, rel:null, fails:['license','security_md','codeowners','dependabot_updates','branch_protection'], unknowns:['code_scanning','secret_scanning']},
+    {id:'ntfy-bridge', conn:'gh-main', desc:'Notification fan-out worker', openPRs:2, depPRs:1, ci:'pass', alerts:{c:0,h:0,m:1,l:0}, rel:5, fails:['cooldown','changelog'], unknowns:['two_fa']},
+    {id:'traefik-conf', conn:'gh-main', desc:'Edge routing rules', openPRs:1, depPRs:0, ci:'none', alerts:{c:0,h:0,m:0,l:0}, rel:null, fails:['license','readme','description'], unknowns:[]},
+    {id:'scorecard-exp', conn:'gh-labs', desc:'OSSF Scorecard spike', openPRs:1, depPRs:1, ci:'pass', alerts:{c:0,h:0,m:1,l:0}, rel:null, fails:['license','security_md','codeowners','branch_protection'], unknowns:['two_fa']},
+    {id:'webhook-lab', conn:'gh-labs', desc:'Webhook receiver experiments', openPRs:2, depPRs:1, ci:'fail', alerts:{c:0,h:1,m:0,l:0}, rel:14, fails:['cooldown'], unknowns:[]},
+    {id:'plex-grotesk', conn:'gh-labs', desc:'Type tokens playground', openPRs:0, depPRs:0, ci:'pass', alerts:{c:0,h:0,m:0,l:1}, rel:null, fails:['license','description','templates'], unknowns:[]},
+    {id:'backup-scripts', conn:'gitea', desc:'Restic backup cron', openPRs:0, depPRs:0, ci:'none', alerts:{c:0,h:0,m:0,l:0}, rel:null, fails:['license','branch_protection','cooldown'], unknowns:['secret_scanning','code_scanning','dep_review']},
+    {id:'lan-dns', conn:'gitea', desc:'Internal DNS records', openPRs:1, depPRs:0, ci:'pass', alerts:{c:0,h:0,m:0,l:0}, rel:null, fails:['readme','license'], unknowns:['secret_scanning','code_scanning']},
+  ];
+  EVID = {
+    cooldown:'No cooldown block in dependabot.yml', license:'No LICENSE file at repo root',
+    branch_protection:'No ruleset on `main`', code_scanning:'CodeQL workflow not found',
+    conventional:'No commitlint / PR-title workflow', security_md:'SECURITY.md missing',
+    templates:'.github/ISSUE_TEMPLATE absent', dependabot_updates:'dependabot.yml has no updates block',
+    codeowners:'CODEOWNERS missing', changelog:'No CHANGELOG.md / release notes',
+    readme:'README.md missing', description:'Repo description & topics empty',
+    two_fa:'Org 2FA enforcement not on', dep_review:'Dependency-review action absent',
+    secret_scanning:'Secret scanning off', dependabot_alerts:'Alerts disabled',
+    release_please:'No release-please manifest', lockfile:'No lockfile committed',
+    release_health:'Last release 9d behind main', default_branch:'Default branch not main',
+  };
+
+  state = {
+    theme:'light', screen:'overview', selectedRepo:null, repoFrom:'overview', activeConn:'all',
+    connMenuOpen:false, scFailingOnly:false, remediations:{}, prCounter:142,
+    audit:[
+      {t:'4m ago', repo:'get2know-web', check:'Description & topics set', conn:'gh:get2knowio', result:'Settings applied'},
+      {t:'1h ago', repo:'ntfy-bridge', check:'LICENSE present', conn:'gh:get2knowio', result:'PR #138 merged'},
+      {t:'yesterday', repo:'hola', check:'Dependabot alerts', conn:'gh:get2knowio', result:'Settings applied'},
+    ],
+    policy: this.buildPolicy(),
+    toast:null,
+  };
+
+  buildPolicy(){ const p={}; this.CHECKS.forEach(c=>{ p[c.id]={enabled:true, target:(c.target!=null?c.target:null)}; }); return p; }
+
+  // ---- helpers ----
+  connById(id){ return this.CONNECTIONS.find(c=>c.id===id); }
+  isReadOnly(r){ return !this.connById(r.conn).writes; }
+  enabledChecks(){ return this.CHECKS.filter(c=>this.state.policy[c.id].enabled); }
+  visibleRepos(){ const a=this.state.activeConn; return a==='all'?this.REPOS:this.REPOS.filter(r=>r.conn===a); }
+  remKey(r,id){ return r.id+'::'+id; }
+  effStatus(r,id){
+    const rem=this.state.remediations[this.remKey(r,id)];
+    if(rem){ if(rem.s==='fixed')return 'pass'; if(rem.s==='working')return 'working'; if(rem.s==='pr_open')return 'pending'; }
+    if(r.fails.includes(id))return 'fail';
+    if(r.unknowns.includes(id))return 'unknown';
+    return 'pass';
+  }
+  hygiene(r){ const E=this.enabledChecks(); if(!E.length)return 100; let p=0; E.forEach(c=>{ if(this.effStatus(r,c.id)==='pass')p++; }); return Math.round(p/E.length*100); }
+  hygColor(p){ return p>=85?'var(--pass)':(p>=65?'var(--warn)':'var(--fail)'); }
+  viz(s){
+    if(s==='pass') return {color:'var(--pass)', glyph:'\u25CF', label:'Pass'};
+    if(s==='fail') return {color:'var(--fail)', glyph:'\u2715', label:'Failing'};
+    if(s==='unknown') return {color:'var(--unknown)', glyph:'\u25CB', label:'Unknown'};
+    if(s==='working') return {color:'var(--warn)', glyph:'\u25D0', label:'Working'};
+    return {color:'var(--warn)', glyph:'\u25D0', label:'PR open'};
+  }
+  tierLabel(a){ return a==='patch'?'API':a==='pr'?'API · PR':a==='link'?'Deep-link':'Report'; }
+
+  // ---- actions ----
+  toggleTheme(){ this.setState(s=>({theme:s.theme==='light'?'dark':'light'})); }
+  toggleConnMenu(){ this.setState(s=>({connMenuOpen:!s.connMenuOpen})); }
+  selectConn(id){ this.setState({activeConn:id, connMenuOpen:false}); }
+  go(screen){ this.setState({screen, connMenuOpen:false}); }
+  openRepo(id){ this.setState(s=>({screen:'repo', selectedRepo:id, repoFrom:s.screen==='repo'?s.repoFrom:s.screen})); }
+  back(){ this.setState(s=>({screen:s.repoFrom||'overview', selectedRepo:null})); }
+  toggleScFailing(){ this.setState(s=>({scFailingOnly:!s.scFailingOnly})); }
+  toggleCheck(id){ this.setState(s=>({policy:{...s.policy,[id]:{...s.policy[id],enabled:!s.policy[id].enabled}}})); }
+  setTarget(id,v){ this.setState(s=>({policy:{...s.policy,[id]:{...s.policy[id],target:v}}})); }
+  toast(m){ this.setState({toast:m}); clearTimeout(this._tt); this._tt=setTimeout(()=>this.setState({toast:null}),2600); }
+
+  fire(r,c){
+    const key=this.remKey(r,c.id);
+    if(this.isReadOnly(r)){ this.deep(r,c); return; }
+    this.setState(s=>({remediations:{...s.remediations,[key]:{s:'working'}}}));
+    setTimeout(()=>{
+      this.setState(s=>{
+        const conn=this.connById(r.conn).label;
+        if(c.action==='pr'){
+          const pr=s.prCounter+1;
+          return {prCounter:pr, remediations:{...s.remediations,[key]:{s:'pr_open',pr}},
+            audit:[{t:'just now',repo:r.id,check:c.label,conn,result:'PR #'+pr+' opened'},...s.audit]};
+        }
+        return {remediations:{...s.remediations,[key]:{s:'fixed'}},
+          audit:[{t:'just now',repo:r.id,check:c.label,conn,result:'Settings applied'},...s.audit]};
+      });
+      this.toast(c.action==='pr'?('Opened fix PR · '+r.id):('Applied · '+c.label));
+    },1300);
+  }
+  markMerged(r,c){
+    const key=this.remKey(r,c.id);
+    this.setState(s=>({remediations:{...s.remediations,[key]:{s:'fixed'}},
+      audit:[{t:'just now',repo:r.id,check:c.label,conn:this.connById(r.conn).label,result:'PR merged'},...s.audit]}));
+    this.toast('Merged · '+c.label);
+  }
+  deep(r,c){
+    const w=this.connById(r.conn).type;
+    this.setState(s=>({audit:[{t:'just now',repo:r.id,check:c.label,conn:this.connById(r.conn).label,result:'Opened in '+w},...s.audit]}));
+    this.toast('Opening '+w+' \u2192');
+  }
+
+  themeVars(){
+    if(this.state.theme==='dark') return {
+      '--bg':'#0d100e','--surface':'#161a18','--surface-2':'#121514','--border':'#262b28','--border-2':'#1d211f',
+      '--fg':'#e9ebe6','--fg-2':'#a7aca5','--muted':'#6e736d','--hover':'#1c211e',
+      '--pass':'#5cc98a','--warn':'#e0a23c','--fail':'#f0635c','--unknown':'#6e736d',
+      '--pass-bg':'#13241a','--warn-bg':'#2a2113','--fail-bg':'#2a1715','--shadow':'0 1px 2px rgba(0,0,0,.4)'
+    };
+    return {
+      '--bg':'#f5f4f0','--surface':'#ffffff','--surface-2':'#faf9f6','--border':'#eceae5','--border-2':'#f3f1ec',
+      '--fg':'#1d1c1a','--fg-2':'#54514a','--muted':'#8a877e','--hover':'#f7f6f2',
+      '--pass':'#2f8f57','--warn':'#b9791a','--fail':'#c2443f','--unknown':'#9a968c',
+      '--pass-bg':'#e9f3ec','--warn-bg':'#f7efe0','--fail-bg':'#f6e7e6','--shadow':'0 1px 2px rgba(0,0,0,.06)'
+    };
+  }
+
+  buildCtl(r,c){
+    const st=this.effStatus(r,c.id); const v=this.viz(st);
+    const o={ id:c.id, label:c.label, statusColor:v.color, statusGlyph:v.glyph, tierLabel:this.tierLabel(c.action),
+      evidence:'', showNote:false, note:'', noteColor:'var(--muted)',
+      showPrimary:false, primaryLabel:'', primaryAction:()=>{}, primaryFg:'var(--bg)', primaryBg:'var(--fg)', primaryBorder:'var(--fg)',
+      showSecondary:false, secondaryLabel:'', secondaryAction:()=>{} };
+    const ro=this.isReadOnly(r);
+    let action=c.action; if(ro && (action==='pr'||action==='patch')) action='link';
+    const rem=this.state.remediations[this.remKey(r,c.id)];
+
+    if(st==='pass'){
+      if(rem && rem.s==='fixed'){ o.showNote=true; o.note='Fixed via Hangar \u2713'; o.noteColor='var(--pass)'; o.evidence='Re-evaluated after correction'; }
+      else { o.evidence='Detected'; o.showNote=true; o.note='Pass'; o.noteColor='var(--muted)'; }
+      return o;
+    }
+    if(st==='working'){ o.evidence='Submitting correction\u2026'; o.showNote=true; o.note='Working\u2026'; o.noteColor='var(--warn)'; return o; }
+    if(st==='pending'){
+      o.evidence='Correction opened as a pull request'; o.showNote=true; o.note='PR #'+rem.pr+' open \u2197'; o.noteColor='var(--warn)';
+      o.showSecondary=true; o.secondaryLabel='Mark merged'; o.secondaryAction=()=>this.markMerged(r,c); return o;
+    }
+    // fail / unknown
+    o.evidence=this.EVID[c.id] || (st==='unknown'?'Insufficient scope to read':'Not detected');
+    if(st==='unknown') o.evidence='Insufficient scope on this connection';
+    if(action==='report'){ o.showNote=true; o.note='Report only'; o.noteColor='var(--muted)'; return o; }
+    if(action==='link'){
+      o.showPrimary=true; o.primaryLabel='Open in '+this.connById(r.conn).type+' \u2197';
+      o.primaryFg='var(--fg-2)'; o.primaryBg='transparent'; o.primaryBorder='var(--border)';
+      o.primaryAction=()=>this.deep(r,c);
+      if(ro){ o.showNote=true; o.note='read-only'; o.noteColor='var(--muted)'; }
+      return o;
+    }
+    // patch / pr (writable)
+    o.showPrimary=true; o.primaryLabel = action==='pr' ? 'Open fix PR' : 'Enable';
+    o.primaryAction=()=>this.fire(r,c);
+    return o;
+  }
+
+  renderVals(){
+    const S=this.state;
+    const vis=this.visibleRepos();
+    const screenTitle={overview:'Fleet overview',scorecard:'Hygiene scorecard',catalog:'Catalog & policy',providers:'Providers & access',repo:'Repository'}[S.screen];
+
+    // connection options
+    const connOptions=[{id:'all',label:'All connections',meta:this.REPOS.length+' repos',dot:'var(--pass)'}].concat(
+      this.CONNECTIONS.map(c=>({id:c.id,label:c.label,meta:c.scope.split('· ')[1]||'',dot:c.writes?'var(--pass)':'var(--warn)'})));
+    connOptions.forEach(o=>{ o.tick=(S.activeConn===o.id)?'\u2713':''; o.select=()=>this.selectConn(o.id); });
+    const connLabel=S.activeConn==='all'?'All connections':this.connById(S.activeConn).label;
+    const connScopeLabel=S.activeConn==='all'?'all connections':this.connById(S.activeConn).label;
+    const topSync=S.activeConn==='all'?'2m ago':this.connById(S.activeConn).sync;
+
+    // nav
+    const counts={
+      overview:vis.filter(r=>r.ci==='fail').length + vis.reduce((a,r)=>a+r.alerts.c,0),
+      scorecard:vis.filter(r=>this.hygiene(r)<65).length,
+    };
+    const mk=(id,icon,label,badge)=>{
+      const active=S.screen===id || (id==='overview'&&S.screen==='repo'&&S.repoFrom==='overview') || (id==='scorecard'&&S.screen==='repo'&&S.repoFrom==='scorecard');
+      return {go:()=>this.go(id), icon, label, bg:active?'var(--hover)':'transparent', color:active?'var(--fg)':'var(--fg-2)',
+        weight:active?'700':'500', iconColor:active?'var(--fg)':'var(--muted)',
+        showBadge:badge>0, badge, badgeColor:id==='overview'?'var(--fail)':'var(--warn)'};
+    };
+    const navItems=[ mk('overview','\u25C9','Overview',counts.overview), mk('scorecard','\u25A4','Scorecard',counts.scorecard),
+      mk('catalog','\u2630','Catalog & policy',0), mk('providers','\u21C4','Providers',0) ];
+
+    // stats
+    const sum=(f)=>vis.reduce((a,r)=>a+f(r),0);
+    const openPRs=sum(r=>r.openPRs), depPRs=sum(r=>r.depPRs), ciFail=vis.filter(r=>r.ci==='fail').length;
+    const crit=sum(r=>r.alerts.c), alertsTot=sum(r=>r.alerts.c+r.alerts.h+r.alerts.m+r.alerts.l);
+    const relPending=vis.filter(r=>r.rel!=null).length;
+    const comp=vis.length?Math.round(vis.reduce((a,r)=>a+this.hygiene(r),0)/vis.length):100;
+    const statTiles=[
+      {label:'Open PRs', value:openPRs, color:'var(--fg)', sub:depPRs+' Dependabot', subColor:'var(--warn)'},
+      {label:'Bot PRs', value:depPRs, color:'var(--fg)', sub:'awaiting merge', subColor:'var(--muted)'},
+      {label:'CI failing', value:ciFail, color:ciFail?'var(--fail)':'var(--fg)', sub:'on default', subColor:'var(--muted)'},
+      {label:'Sec alerts', value:alertsTot, color:'var(--fg)', sub:crit+' critical', subColor:crit?'var(--fail)':'var(--muted)'},
+      {label:'Release pending', value:relPending, color:'var(--fg)', sub:'unreleased', subColor:'var(--muted)'},
+      {label:'Compliance', value:comp+'%', color:this.hygColor(comp), sub:'fleet avg', subColor:'var(--muted)'},
+    ];
+
+    // repo rows
+    const repoRows=vis.map(r=>{
+      const h=this.hygiene(r); const a=r.alerts; const at=a.c+a.h+a.m+a.l;
+      const ciMap={pass:{c:'var(--pass)',g:'\u25CF',t:'passing'},fail:{c:'var(--fail)',g:'\u25CF',t:'failing'},none:{c:'var(--muted)',g:'\u2013',t:'no CI'}};
+      return { name:r.id, connBadge:this.connById(r.conn).label.split(':')[1], desc:r.desc, openPRs:r.openPRs,
+        depLabel:r.depPRs?('\u00b7 '+r.depPRs+' \uD83E\uDD16'):'', ciColor:ciMap[r.ci].c, ciGlyph:ciMap[r.ci].g, ciTitle:ciMap[r.ci].t,
+        alertColor: a.c? 'var(--fail)':(a.h?'var(--warn)':'var(--muted)'), alertLabel: at?String(at):'\u2013',
+        relColor: r.rel>=14?'var(--fail)':(r.rel>=7?'var(--warn)':'var(--muted)'), relLabel: r.rel!=null?(r.rel+'d'):'\u2013',
+        hygWidth:h+'%', hygColor:this.hygColor(h), hygLabel:h+'%', open:()=>this.openRepo(r.id) };
+    });
+
+    // feed
+    const feed=[];
+    vis.forEach(r=>{ if(r.alerts.c>0) feed.push({rank:0,tag:'Critical',color:'var(--fail)',title:r.alerts.c+' critical security alert'+(r.alerts.c>1?'s':''),repo:r.id,open:()=>this.openRepo(r.id)}); });
+    vis.forEach(r=>{ if(r.ci==='fail') feed.push({rank:1,tag:'CI down',color:'var(--fail)',title:'CI failing on default branch',repo:r.id,open:()=>this.openRepo(r.id)}); });
+    vis.forEach(r=>{ if(r.rel!=null && r.rel>=14) feed.push({rank:2,tag:'Release',color:'var(--warn)',title:r.rel+'d of unreleased commits',repo:r.id,open:()=>this.openRepo(r.id)}); });
+    vis.forEach(r=>{ if(r.alerts.h>0) feed.push({rank:3,tag:'High alert',color:'var(--warn)',title:r.alerts.h+' high-severity alert'+(r.alerts.h>1?'s':''),repo:r.id,open:()=>this.openRepo(r.id)}); });
+    vis.forEach(r=>{ if(r.depPRs>=2) feed.push({rank:4,tag:'Bot PRs',color:'var(--fg-2)',title:r.depPRs+' Dependabot PRs awaiting merge',repo:r.id,open:()=>this.openRepo(r.id)}); });
+    feed.sort((a,b)=>a.rank-b.rank);
+    const feedTop=feed.slice(0,7);
+
+    // scorecard
+    const E=this.enabledChecks();
+    const scChecks=E.map(c=>{ let f=0; vis.forEach(r=>{ if(this.effStatus(r,c.id)!=='pass')f++; }); return {label:c.label, fail:f?String(f):'\u00b7', failColor:f?'var(--fail)':'var(--muted)'}; });
+    const scGroups=this.GROUPS.map(g=>{ const n=E.filter(c=>c.group===g).length; return n?{label:g, width:(n*42)+'px'}:null; }).filter(Boolean);
+    const scRows=vis.map(r=>{
+      const h=this.hygiene(r);
+      return { name:r.id, connBadge:this.connById(r.conn).label.split(':')[0], hygLabel:h+'%', hygColor:this.hygColor(h), open:()=>this.openRepo(r.id),
+        cells:E.map(c=>{ const st=this.effStatus(r,c.id); const v=this.viz(st); const dim=S.scFailingOnly && st==='pass';
+          return {glyph:v.glyph, color:v.color, opacity:dim?'0.12':'1', title:c.label+': '+v.label}; }) };
+    });
+    const scRollup=E.map(c=>{ let f=0; vis.forEach(r=>{ if(this.effStatus(r,c.id)==='fail')f++; }); return {label:c.label.toLowerCase().replace(' present','').replace(' enabled',''), count:f, raw:c}; })
+      .filter(x=>x.count>0).sort((a,b)=>b.count-a.count).slice(0,4);
+
+    // catalog
+    const catGroups=this.GROUPS.map(g=>({ group:g, checks:this.CHECKS.filter(c=>c.group===g).map(c=>{
+      const en=S.policy[c.id].enabled;
+      let pass=0; this.REPOS.forEach(r=>{ if(this.effStatus(r,c.id)==='pass')pass++; });
+      const pct=Math.round(pass/this.REPOS.length*100);
+      return { id:c.id, label:c.label, tierLabel:this.tierLabel(c.action), toggle:()=>this.toggleCheck(c.id),
+        switchBg:en?'var(--fg)':'var(--border)', switchJustify:en?'flex-end':'flex-start', opacity:en?'1':'0.45',
+        hasTarget:c.id==='cooldown', target:S.policy[c.id].target, onTarget:(e)=>this.setTarget('cooldown', Math.max(0,parseInt(e.target.value)||0)),
+        passLabel:pass+'/'+this.REPOS.length, passWidth:pct+'%', passColor:this.hygColor(pct) };
+    }) }));
+
+    // providers
+    const connCards=this.CONNECTIONS.map(c=>({ label:c.label, type:c.type, scope:c.scope, mode:c.mode, sync:c.sync,
+      repos:this.REPOS.filter(r=>r.conn===c.id).length, writeLabel:c.writes?'Read + write':'Read-only',
+      writeColor:c.writes?'var(--pass)':'var(--warn)', writeBg:c.writes?'var(--pass-bg)':'var(--warn-bg)',
+      remed:c.writes?'API + PR + deep-link':'Deep-link only' }));
+    const auditRows=S.audit.slice(0,6);
+
+    // repo detail
+    let rd={ name:'', connLabel:'', desc:'', readOnly:false, hygLabel:'', hygColor:'var(--fg)', passCount:'', openPRs:0,
+      prList:[], noPRs:true, ciColor:'var(--muted)', ciGlyph:'\u2013', ciLabel:'no CI', alertList:[], noAlerts:true, checkGroups:[] };
+    let backLabel='Back to overview';
+    if(S.selectedRepo){
+      const r=this.REPOS.find(x=>x.id===S.selectedRepo);
+      backLabel = S.repoFrom==='scorecard'?'Back to scorecard':'Back to overview';
+      const h=this.hygiene(r); const Ecnt=this.enabledChecks(); let pc=0; Ecnt.forEach(c=>{ if(this.effStatus(r,c.id)==='pass')pc++; });
+      const ciMap={pass:{c:'var(--pass)',g:'\u25CF',l:'Passing'},fail:{c:'var(--fail)',g:'\u25CF',l:'Failing'},none:{c:'var(--muted)',g:'\u2013',l:'No CI configured'}};
+      const prList=[]; const depTitles=['actions/checkout to v4.2','vite to 5.4.8','fastapi to 0.115','pydantic to 2.9','ruff to 0.6.9'];
+      for(let i=0;i<r.depPRs;i++) prList.push({icon:'\u2699', iconColor:'var(--warn)', title:'Bump '+depTitles[i%depTitles.length], status:i===0?'cooldown 4d':'ready', statusColor:i===0?'var(--warn)':'var(--pass)', age:(i+1)+'d'});
+      const human=['Refactor poller cadence','Add /health endpoint','Fix webhook retry backoff','Docs: homelab deploy guide'];
+      for(let i=0;i<(r.openPRs-r.depPRs);i++) prList.push({icon:'\u2197', iconColor:'var(--fg-2)', title:human[i%human.length], status:'in review', statusColor:'var(--fg-2)', age:(i+2)+'d'});
+      const a=r.alerts; const alertList=[];
+      if(a.c)alertList.push({sev:'critical',count:a.c,color:'var(--fail)',bg:'var(--fail-bg)'});
+      if(a.h)alertList.push({sev:'high',count:a.h,color:'var(--warn)',bg:'var(--warn-bg)'});
+      if(a.m)alertList.push({sev:'moderate',count:a.m,color:'var(--fg-2)',bg:'var(--surface-2)'});
+      if(a.l)alertList.push({sev:'low',count:a.l,color:'var(--muted)',bg:'var(--surface-2)'});
+      const checkGroups=this.GROUPS.map(g=>({ group:g, checks:Ecnt.filter(c=>c.group===g).map(c=>this.buildCtl(r,c)) })).filter(x=>x.checks.length);
+      rd={ name:r.id, connLabel:this.connById(r.conn).label, desc:r.desc, readOnly:this.isReadOnly(r),
+        hygLabel:h+'%', hygColor:this.hygColor(h), passCount:pc+'/'+Ecnt.length+' checks', openPRs:r.openPRs,
+        prList, noPRs:prList.length===0, ciColor:ciMap[r.ci].c, ciGlyph:ciMap[r.ci].g, ciLabel:ciMap[r.ci].l,
+        alertList, noAlerts:alertList.length===0, checkGroups };
+    }
+
+    const enabledCount=E.length;
+
+    return {
+      rootStyle:{...this.themeVars(), background:'var(--bg)', color:'var(--fg)', fontFamily:"'Public Sans',sans-serif", height:'100vh', display:'flex', flexDirection:'column', overflow:'hidden'},
+      screenTitle, themeBtn:S.theme==='dark'?'\u2600 Light':'\u263E Dark',
+      isOverview:S.screen==='overview', isScorecard:S.screen==='scorecard', isCatalog:S.screen==='catalog', isProviders:S.screen==='providers', isRepo:S.screen==='repo',
+      navItems, connOptions, connLabel, connMenuOpen:S.connMenuOpen, toggleConnMenu:()=>this.toggleConnMenu(), toggleTheme:()=>this.toggleTheme(), topSync, connScopeLabel,
+      fleetSummary:vis.length+' repos · '+comp+'% compliant', statTiles, repoRows, feed:feedTop,
+      // scorecard
+      scComplianceLabel:comp+'% fleet compliance · '+vis.filter(r=>this.hygiene(r)>=85).length+'/'+vis.length+' clear', scGroups, scChecks, scRows, scRollup,
+      scRepoCount:vis.length, scCheckCount:enabledCount, scFilterLabel:S.scFailingOnly?'Failing only':'All cells',
+      scFilterBg:S.scFailingOnly?'var(--hover)':'var(--surface)', scFilterDot:S.scFailingOnly?'var(--fail)':'var(--border)', toggleScFailing:()=>this.toggleScFailing(),
+      // catalog
+      catGroups, policyEnabledLabel:enabledCount+' of '+this.CHECKS.length+' checks active',
+      // providers
+      connCards, auditRows, addConn:()=>this.toast('Connection wizard \u2014 GitHub App or Gitea token'),
+      // repo
+      rd, backLabel, back:()=>this.back(),
+      // toast
+      toastVisible:!!S.toast, toastMsg:S.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>

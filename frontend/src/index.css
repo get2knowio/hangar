@@ -1,0 +1,52 @@
+@import "./styles/tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Public Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+input[type="number"] {
+  font-family: "JetBrains Mono", monospace;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+  border: 3px solid var(--surface);
+}
+@keyframes hgspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes hgfade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.mono {
+  font-family: "JetBrains Mono", monospace;
+}
