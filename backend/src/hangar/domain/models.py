@@ -161,9 +161,19 @@ class ProviderConnection(BaseModel):
     granted_capabilities: set[Capability] = Field(default_factory=set)
     last_sync_at: datetime | None = None
     has_credential: bool = False  # True when a real provider credential is stored
-    # Decrypted credential, attached in-memory only for live provider calls. Excluded
-    # from serialization and repr so it never lands in an API response or a log line.
+    # GitHub App config (non-secret): the App id and the installation id this
+    # connection authenticates as. None for PAT/token connections.
+    app_id: str | None = None
+    installation_id: int | None = None
+    # Decrypted secret material, attached in-memory only for live provider calls:
+    # the App private-key PEM for App connections, or the access token for PAT/Gitea.
+    # Excluded from serialization and repr so it never lands in a response or a log.
     token: str | None = Field(default=None, exclude=True, repr=False)
+
+    @property
+    def owner(self) -> str:
+        """The org/user that owns this connection's repos (from the label suffix)."""
+        return self.label.split(":")[-1]
 
     @property
     def writes(self) -> bool:

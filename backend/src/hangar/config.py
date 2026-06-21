@@ -63,7 +63,9 @@ class Settings(BaseSettings):
     # --- sync / poller (Constitution VI) ---
     poll_interval_seconds: int = Field(default=300)
     stale_after_seconds: int = Field(default=900)
-    seed_demo_data: bool = Field(default=True, description="load prototype fixtures on first boot")
+    # Off by default — production runs against real provider connections only. Set true
+    # (or use the test/offline harness) to load the prototype sample fixtures.
+    seed_demo_data: bool = Field(default=False, description="load sample fixtures on first boot")
 
     # --- static SPA (production single-stack) ---
     static_dir: str | None = Field(default=None, description="built SPA dir to serve at /")

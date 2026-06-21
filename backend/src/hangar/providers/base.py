@@ -64,8 +64,12 @@ class RepoProvider(Protocol):
         """The full capability set this adapter *can* offer."""
         ...
 
-    async def interrogate(self, connection: ProviderConnection, repo_ref: str) -> Repo:
-        """Read a repository into a normalized snapshot (read-only)."""
+    async def interrogate(self, connection: ProviderConnection, repo_ref: str) -> Repo | None:
+        """Read a repository into a normalized snapshot (read-only).
+
+        Returns None when the resource is unchanged since the last interrogation (a
+        conditional-request 304) so the caller keeps the cached snapshot.
+        """
         ...
 
     async def list_repos(self, connection: ProviderConnection) -> list[str]:

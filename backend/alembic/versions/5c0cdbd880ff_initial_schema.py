@@ -41,6 +41,8 @@ def upgrade() -> None:
     sa.Column('auth_mode', sa.String(length=128), nullable=False),
     sa.Column('credential_ciphertext', sa.LargeBinary(), nullable=True),
     sa.Column('granted_capabilities', sa.JSON(), nullable=False),
+    sa.Column('app_id', sa.String(length=32), nullable=True),
+    sa.Column('installation_id', sa.Integer(), nullable=True),
     sa.Column('last_sync_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id')

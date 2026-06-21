@@ -56,7 +56,11 @@ class NewConnection(BaseModel):
     label: str
     scope: str
     auth_mode: str | None = None
+    # For a GitHub App connection: the App private-key PEM. For PAT/Gitea: the token.
     credential: str | None = None
+    # GitHub App identity (omit for a PAT/token connection).
+    app_id: str | None = None
+    installation_id: int | None = None
     # Least-privilege default: a connection is read-only unless the operator declares
     # the credential is writable (FR-026/FR-018).
     writable: bool = False
@@ -74,6 +78,8 @@ async def add_provider(
         auth_mode=body.auth_mode or "",
         credential=body.credential,
         writable=body.writable,
+        app_id=body.app_id,
+        installation_id=body.installation_id,
     )
     repos = await repo_store.list_repos(session, conn.id)
     return await _connection_card(session, conn, len(repos))

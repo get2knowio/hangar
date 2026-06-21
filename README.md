@@ -122,7 +122,8 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 | `HANGAR_HOST` / `HANGAR_PORT` | no | `127.0.0.1` / `8000` | Bind host/port for startup safety checks. |
 | `HANGAR_DATABASE_URL` | no | `sqlite+aiosqlite:///./hangar.db` | DB URL. Postgres: `postgresql+asyncpg://hangar:hangar@postgres:5432/hangar`. |
 | `HANGAR_POLL_INTERVAL_SECONDS` | no | `300` | Per-connection poll ceiling (ETag/webhook-driven). |
-| `HANGAR_SEED_DEMO_DATA` | no | `true` | Load prototype fixtures on first boot. Set `false` for production. |
+| `HANGAR_WEBHOOK_SECRET` | no | — | HMAC secret for inbound provider webhooks; webhooks are refused (fail-closed) when unset. |
+| `HANGAR_SEED_DEMO_DATA` | no | `false` | Load sample fixtures on first boot (offline demo). Production runs against real connections. |
 | `HANGAR_DOMAIN` | compose | `example.com` | Base domain for the Traefik router rule (`hangar.${HANGAR_DOMAIN}`). |
 
 ### Generate the credential-encryption key
@@ -149,12 +150,31 @@ per-connection scopes and receive webhooks.
    *Administration / Repository settings: Read & write* only where settings-tier corrections
    are used, and read access to *Metadata*, *Actions*, *Dependabot* for detection. Subscribe
    to the repository / push / pull-request events you want to drive freshness.
-5. **Install** the App on the org/user whose repos you want in the fleet.
-6. In Hangar, open **Providers**, add a GitHub connection, and supply the App ID, the
-   private key, and the webhook secret. Credentials are encrypted at rest with
-   `HANGAR_SECRET_KEY`.
+5. **Install** the App on the org/user whose repos you want in the fleet, and note the
+   **installation ID** (in the installation's settings URL).
+6. Add the connection. Hangar mints short-lived installation tokens from the App key via
+   `githubkit` (real GitHub App auth — no PAT). `POST /api/v1/providers` with:
 
-Content changes are always delivered as pull requests; Hangar never pushes or force-pushes.
+   ```json
+   {
+     "provider_type": "github",
+     "label": "gh:your-org",
+     "scope": "org · N repos",
+     "app_id": "123456",
+     "installation_id": 7654321,
+     "credential": "<contents of the .pem private key>",
+     "writable": true
+   }
+   ```
+
+   `credential` (the private-key PEM) is encrypted at rest with `HANGAR_SECRET_KEY`.
+   Omit `writable` (or set `false`) for a read-only connection — write tiers are granted
+   only when you opt in (least-privilege). Set `HANGAR_WEBHOOK_SECRET` to enable inbound
+   webhooks (verified by HMAC; refused when unset).
+
+Reads use conditional requests (`If-None-Match`/ETag), so a poll that finds nothing
+changed costs no quota. Content changes are always delivered as pull requests; Hangar
+never pushes or force-pushes.
 
 ---
 

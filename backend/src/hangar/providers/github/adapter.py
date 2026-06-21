@@ -1,18 +1,22 @@
 """GitHub adapter — the MVP ``RepoProvider`` (Constitution I, research.md §1–2).
 
-Auth is a **GitHub App** installation per connection (least privilege, per-connection
-scopes, webhooks). Reads use conditional requests (ETag) and a per-connection token
-budget (Constitution VI). Writes are **human-triggered, PR-first** — settings via a
-scoped PATCH, content via an opened pull request, **never a push/force-push**
-(Constitution II).
+Auth is a **GitHub App** installation per connection: ``githubkit``'s
+``AppInstallationAuthStrategy`` signs a short-lived JWT with the App private key and
+exchanges it for an installation access token (minted, cached and refreshed by
+githubkit), giving least-privilege per-connection scopes. A PAT/token connection uses
+``TokenAuthStrategy``. There is no anonymous fallback — the adapter raises if no
+credential is attached.
 
-``githubkit`` is imported lazily so this module loads in environments that run on the
-seeded snapshot without the dependency; it is only required to talk to a live GitHub.
-The detection heuristics (interrogation → pass/fail/unknown) live in
-:mod:`hangar.providers.github.detection`.
+Reads are **real conditional requests**: each resource is fetched with
+``If-None-Match`` from a per-connection ETag store; a ``304 Not Modified`` skips the
+re-download and tells the poller the snapshot is unchanged (SC-010, Constitution VI).
+Writes are **human-triggered, PR-first** — settings via a scoped PATCH, content via an
+opened pull request, **never a push/force-push** (Constitution II, FR-014).
 """
 
 from __future__ import annotations
+
+import base64
 
 from hangar.domain.models import (
     Capability,
@@ -35,13 +39,15 @@ _PR_FILES = {
 
 
 class GitHubAdapter:
-    """Concrete adapter. Stateless except a per-instance ETag cache."""
+    """Concrete adapter. Holds a per-connection ETag store across poll cycles."""
 
     provider_type = "github"
     base_url = "https://github.com"
 
     def __init__(self) -> None:
-        self._etags: dict[str, str] = {}
+        # (connection_id, resource_path) -> ETag, persisted for the process lifetime so
+        # the long-lived poller issues genuine conditional requests across cycles.
+        self._etags: dict[tuple[str, str], str] = {}
 
     def declared_capabilities(self) -> set[Capability]:
         return {
@@ -55,35 +61,78 @@ class GitHubAdapter:
             Capability.subscribe_webhooks,
         }
 
-    # ------------------------------------------------------------------ reads
-    def _client(self, connection: ProviderConnection):  # pragma: no cover - needs live creds
-        from githubkit import GitHub  # lazy import
+    # ------------------------------------------------------------------ auth
+    def _client(self, connection: ProviderConnection):
+        """Build an authenticated githubkit client (real GitHub App or token auth).
 
-        # The decrypted credential is attached to ``connection.token`` by the caller
-        # (sync/remediation) via ``attach_credential``; without it the adapter cannot
-        # authenticate and we fail loudly rather than silently making anonymous calls.
+        http_cache is disabled because we manage conditional requests explicitly.
+        """
+        from githubkit import (
+            AppInstallationAuthStrategy,
+            GitHub,
+            TokenAuthStrategy,
+        )
+
         if not connection.token:
             raise RuntimeError(
                 f"GitHub connection '{connection.id}' has no decrypted credential attached; "
                 "cannot authenticate (call attach_credential before using the adapter)."
             )
-        return GitHub(connection.token)
+        if connection.app_id and connection.installation_id:
+            auth = AppInstallationAuthStrategy(
+                connection.app_id, connection.token, int(connection.installation_id)
+            )
+        else:
+            auth = TokenAuthStrategy(connection.token)
+        return GitHub(auth, http_cache=False)
 
-    async def list_repos(self, connection: ProviderConnection) -> list[str]:  # pragma: no cover
-        client = self._client(connection)
-        owner = connection.scope.split("·")[0].strip() or connection.label.split(":")[-1]
-        resp = await client.rest.repos.async_list_for_org(org=owner, per_page=100)
-        return [r.name for r in resp.parsed_data]
+    # --------------------------------------------------- conditional requests
+    async def _conditional_get(self, gh, connection_id: str, path: str, params: dict | None = None):
+        """GET ``path`` with If-None-Match. Returns the JSON body, ``NOT_MODIFIED``
+        (304 — caller keeps cache), or ``NOT_FOUND`` (404). Updates the ETag store."""
+        from githubkit.exception import RequestFailed
 
-    async def interrogate(self, connection: ProviderConnection, repo_ref: str) -> Repo:  # pragma: no cover
+        key = (connection_id, path)
+        headers = {}
+        if (etag := self._etags.get(key)) is not None:
+            headers["If-None-Match"] = etag
+        try:
+            resp = await gh.arequest("GET", path, params=params, headers=headers)
+        except RequestFailed as exc:
+            # 404 = resource absent (e.g. a file/ruleset that doesn't exist). Any other
+            # error (403/5xx) propagates to the poller's resilience boundary.
+            if exc.response.status_code == 404:
+                return _NOT_FOUND
+            raise
+        if resp.status_code == 304:  # githubkit passes 304 through (not an error)
+            return _NOT_MODIFIED
+        if (new_etag := resp.headers.get("ETag")) is not None:
+            self._etags[key] = new_etag
+        return resp.json()
+
+    async def list_repos(self, connection: ProviderConnection) -> list[str]:
+        gh = self._client(connection)
+        data = await self._conditional_get(
+            gh, connection.id, f"/orgs/{connection.owner}/repos", params={"per_page": 100}
+        )
+        if data in (_NOT_MODIFIED, _NOT_FOUND):
+            # Fall back to user repos if the owner isn't an org.
+            data = await self._conditional_get(
+                gh, connection.id, f"/users/{connection.owner}/repos", params={"per_page": 100}
+            )
+        if not isinstance(data, list):
+            return []
+        return [r["name"] for r in data]
+
+    async def interrogate(self, connection: ProviderConnection, repo_ref: str) -> Repo | None:
+        """Read a repo into a normalized snapshot, or None if unchanged since last poll."""
         from hangar.providers.github.detection import interrogate_repo
 
-        return await interrogate_repo(self._client(connection), connection, repo_ref, self._etags)
+        return await interrogate_repo(self, self._client(connection), connection, repo_ref)
 
     # ----------------------------------------------------------------- writes
     def deep_link(self, connection: ProviderConnection, repo: Repo, check_id: str) -> str:
-        owner = repo.connection_id  # display-only; real owner derived from connection scope
-        settings_anchor = {
+        anchor = {
             "two_fa": "/settings/security",
             "branch_protection": "/settings/branches",
             "secret_scanning": "/settings/security_analysis",
@@ -93,17 +142,15 @@ class GitHubAdapter:
             "workflow_permissions": "/settings/actions",
             "actions_pinned_sha": "/settings/actions",
         }.get(check_id, "")
-        return f"{self.base_url}/{owner}/{repo.id}{settings_anchor}"
+        return f"{self.base_url}/{connection.owner}/{repo.id}{anchor}"
 
     async def correct(
         self, connection: ProviderConnection, request: CorrectionRequest
     ) -> CorrectionResult:
         """Apply a human-triggered correction. PR-first; settings via scoped PATCH.
 
-        This method NEVER pushes to or force-pushes a branch: content changes are
-        delivered exclusively as an opened pull request (Constitution II, FR-014).
-        The live-GitHub I/O is exercised by integration tests with a mocked client;
-        the orchestration/idempotency lives in :mod:`hangar.domain.remediation`.
+        NEVER pushes to or force-pushes a branch: content changes are delivered
+        exclusively as an opened pull request (Constitution II, FR-014).
         """
         if request.kind is RemediationKind.deep_link:
             url = self.deep_link(connection, request.repo, request.check_id)
@@ -118,29 +165,25 @@ class GitHubAdapter:
 
     async def _apply_settings(
         self, connection: ProviderConnection, request: CorrectionRequest
-    ) -> CorrectionResult:  # pragma: no cover - needs live creds
-        client = self._client(connection)
-        owner = connection.label.split(":")[-1]
-        repo = request.repo.id
+    ) -> CorrectionResult:
+        gh = self._client(connection)
+        owner, repo = connection.owner, request.repo.id
         if request.check_id == "dependabot_alerts":
-            await client.rest.repos.async_enable_vulnerability_alerts(owner=owner, repo=repo)
+            await gh.rest.repos.async_enable_vulnerability_alerts(owner=owner, repo=repo)
         elif request.check_id == "description":
-            await client.rest.repos.async_update(
-                owner=owner, repo=repo, description=f"{request.repo.description}"
-            )
+            await gh.rest.repos.async_update(owner=owner, repo=repo, description=request.repo.description)
         return CorrectionResult(applied=True, summary="Settings applied")
 
     async def _open_pr(
         self, connection: ProviderConnection, request: CorrectionRequest
-    ) -> CorrectionResult:  # pragma: no cover - needs live creds
-        client = self._client(connection)
-        owner = connection.label.split(":")[-1]
-        repo = request.repo.id
+    ) -> CorrectionResult:
+        gh = self._client(connection)
+        owner, repo = connection.owner, request.repo.id
         branch = f"hangar/{request.check_id}"
         head = request.repo.default_branch
 
         # Idempotency: surface an existing open Hangar PR for this (repo, check) (FR-015).
-        existing = await client.rest.pulls.async_list(
+        existing = await gh.rest.pulls.async_list(
             owner=owner, repo=repo, state="open", head=f"{owner}:{branch}"
         )
         if existing.parsed_data:
@@ -152,18 +195,19 @@ class GitHubAdapter:
 
         # Create a branch off the default branch and commit the remediation file, then
         # open a PR. No direct push to the default branch ever occurs.
-        ref = await client.rest.git.async_get_ref(owner=owner, repo=repo, ref=f"heads/{head}")
-        await client.rest.git.async_create_ref(
+        ref = await gh.rest.git.async_get_ref(owner=owner, repo=repo, ref=f"heads/{head}")
+        await gh.rest.git.async_create_ref(
             owner=owner, repo=repo, ref=f"refs/heads/{branch}", sha=ref.parsed_data.object_.sha
         )
         path = _PR_FILES.get(request.check_id, f".github/hangar-{request.check_id}.md")
-        content = _remediation_body(request.check_id, request.check_label)
-        await client.rest.repos.async_create_or_update_file_contents(
+        body = base64.b64encode(
+            f"# {request.check_label}\n\nAdded by Hangar to remediate `{request.check_id}`.\n".encode()
+        ).decode()
+        await gh.rest.repos.async_create_or_update_file_contents(
             owner=owner, repo=repo, path=path,
-            message=f"chore: {request.check_label} (via Hangar)",
-            content=content, branch=branch,
+            message=f"chore: {request.check_label} (via Hangar)", content=body, branch=branch,
         )
-        pr = await client.rest.pulls.async_create(
+        pr = await gh.rest.pulls.async_create(
             owner=owner, repo=repo, title=f"{request.check_label} (via Hangar)",
             head=branch, base=head,
             body="Opened by Hangar — review and merge to remediate this finding.",
@@ -177,8 +221,13 @@ class GitHubAdapter:
         return None
 
 
-def _remediation_body(check_id: str, label: str) -> str:  # pragma: no cover
-    import base64
+class _Sentinel:
+    def __init__(self, name: str) -> None:
+        self.name = name
 
-    text = f"# {label}\n\nAdded by Hangar to remediate the `{check_id}` finding.\n"
-    return base64.b64encode(text.encode()).decode()
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<{self.name}>"
+
+
+_NOT_MODIFIED = _Sentinel("NOT_MODIFIED")
+_NOT_FOUND = _Sentinel("NOT_FOUND")

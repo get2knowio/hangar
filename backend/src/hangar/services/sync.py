@@ -93,6 +93,8 @@ class SyncService:
                 refs = await provider.list_repos(connection)
                 for ref in refs[:budget]:
                     snapshot = await provider.interrogate(connection, ref)
+                    if snapshot is None:
+                        continue  # 304 Not Modified — keep the cached snapshot (SC-010)
                     await self._upsert_repo(session, snapshot)
                     updated += 1
                 row.last_sync_at = datetime.now(UTC)

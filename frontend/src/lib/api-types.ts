@@ -390,8 +390,12 @@ export interface paths {
                         provider_type: "github" | "gitea";
                         label: string;
                         scope: string;
-                        /** @description write-only; encrypted at rest (FR-032) */
+                        /** @description write-only; GitHub App private-key PEM or a PAT/token. Encrypted at rest (FR-032) */
                         credential?: string;
+                        /** @description GitHub App id (App connections only) */
+                        app_id?: string | null;
+                        /** @description GitHub App installation id (App connections only) */
+                        installation_id?: number | null;
                         /**
                          * @description grant write tiers only if the credential can write (least-privilege
                          * @default false

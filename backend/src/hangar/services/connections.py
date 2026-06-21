@@ -65,6 +65,8 @@ async def add_connection(
     auth_mode: str = "",
     credential: str | None = None,
     writable: bool = False,
+    app_id: str | None = None,
+    installation_id: int | None = None,
     connection_id: str | None = None,
 ) -> ProviderConnection:
     """Add a connection. The credential is encrypted before it ever touches the DB.
@@ -92,6 +94,8 @@ async def add_connection(
         auth_mode=auth_mode or ("GitHub App" if provider_type == "github" else "Scoped token"),
         credential_ciphertext=ciphertext,
         granted_capabilities=[c.value for c in granted],
+        app_id=app_id,
+        installation_id=installation_id,
         last_sync_at=None,
         created_at=datetime.now(UTC),
     )

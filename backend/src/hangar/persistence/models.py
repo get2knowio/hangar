@@ -34,6 +34,8 @@ class ConnectionRow(Base):
     auth_mode: Mapped[str] = mapped_column(String(128))
     credential_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     granted_capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    app_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    installation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -45,6 +47,8 @@ class ConnectionRow(Base):
             scope=self.scope,
             auth_mode=self.auth_mode,
             granted_capabilities={Capability(c) for c in (self.granted_capabilities or [])},
+            app_id=self.app_id,
+            installation_id=self.installation_id,
             last_sync_at=self.last_sync_at,
             has_credential=self.credential_ciphertext is not None,
         )
