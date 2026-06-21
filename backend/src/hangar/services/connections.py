@@ -16,11 +16,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hangar.domain.models import Capability, ProviderConnection
 from hangar.persistence import repositories as repo
-from hangar.persistence.crypto import encrypt
+from hangar.persistence.crypto import decrypt, encrypt
 from hangar.persistence.models import ConnectionRow
 from hangar.providers.registry import get_provider
 
 log = structlog.get_logger(__name__)
+
+
+def attach_credential(connection: ProviderConnection, row: ConnectionRow) -> ProviderConnection:
+    """Decrypt and attach the stored credential for live provider calls (FR-032).
+
+    No-op for credential-less (seeded/demo) connections. The token lives only in memory
+    on ``connection.token`` (excluded from serialization/repr).
+    """
+    if row.credential_ciphertext:
+        connection.token = decrypt(row.credential_ciphertext)
+    return connection
 
 
 async def list_connections(session: AsyncSession) -> list[ProviderConnection]:
@@ -33,6 +44,18 @@ def _slugify(label: str, provider_type: str) -> str:
     return safe or f"{base}-conn"
 
 
+# Capabilities every connection gets (read + deep-link); write tiers are opt-in.
+_READ_CAPS = {
+    Capability.read_settings,
+    Capability.read_files,
+    Capability.read_alerts,
+    Capability.read_org_policy,
+    Capability.deep_link,
+    Capability.subscribe_webhooks,
+}
+_WRITE_CAPS = {Capability.write_settings, Capability.open_pull_request}
+
+
 async def add_connection(
     session: AsyncSession,
     *,
@@ -41,15 +64,22 @@ async def add_connection(
     scope: str,
     auth_mode: str = "",
     credential: str | None = None,
+    writable: bool = False,
     connection_id: str | None = None,
 ) -> ProviderConnection:
     """Add a connection. The credential is encrypted before it ever touches the DB.
 
-    Granted capabilities are the intersection of what the adapter can offer and what a
-    connection of this type is permitted at MVP (Gitea = read + deep-link only).
+    Granted capabilities are **least-privilege**: every connection gets read + deep-link
+    (intersected with what the adapter can offer), and the write tiers
+    (``write_settings``/``open_pull_request``) are granted ONLY when the operator
+    declares the credential is writable (FR-026). We never assume a token can write just
+    because the adapter *could* — a read-only PAT must register as read-only (FR-018).
     """
     provider = get_provider(provider_type)
-    granted = provider.declared_capabilities()
+    offered = provider.declared_capabilities()
+    granted = offered & _READ_CAPS
+    if writable:
+        granted |= offered & _WRITE_CAPS
 
     ciphertext = encrypt(credential) if credential else None
     cid = connection_id or _slugify(label, provider_type)

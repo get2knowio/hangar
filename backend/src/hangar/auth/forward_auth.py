@@ -14,6 +14,7 @@ The resolved identity is stashed on ``request.state.actor`` for the audit log.
 
 from __future__ import annotations
 
+import hmac
 import ipaddress
 
 import structlog
@@ -25,14 +26,20 @@ from hangar.config import AccessMode, Settings
 
 log = structlog.get_logger(__name__)
 
-# Paths reachable without authentication (liveness only).
+# Paths reachable without a proxy identity.
+#  - liveness probes (no data)
+#  - inbound provider webhooks: authenticated by their HMAC signature, not the proxy
+#    identity, since providers POST directly rather than through the forward-auth proxy.
 _PUBLIC_PATHS = {"/health", "/api/v1/health", "/docs", "/openapi.json", "/redoc"}
+_PUBLIC_PREFIXES = ("/api/v1/webhooks/",)
 
 
 def _peer_trusted(request: Request, settings: Settings) -> bool:
     if settings.trusted_proxy_secret:
         provided = request.headers.get("X-Hangar-Proxy-Secret")
-        if provided and provided == settings.trusted_proxy_secret:
+        # Constant-time compare — this secret is the bearer credential that lets a peer
+        # inject an identity header; a plain == would leak it via response timing.
+        if provided and hmac.compare_digest(provided, settings.trusted_proxy_secret):
             return True
     nets = settings.trusted_proxy_networks
     if not nets:
@@ -54,7 +61,12 @@ class ForwardAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if path in _PUBLIC_PATHS or path.startswith("/assets") or path == "/":
+        if (
+            path in _PUBLIC_PATHS
+            or path == "/"
+            or path.startswith("/assets/")
+            or path.startswith(_PUBLIC_PREFIXES)
+        ):
             return await call_next(request)
 
         mode = self.settings.access_mode

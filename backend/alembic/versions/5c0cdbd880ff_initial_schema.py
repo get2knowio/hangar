@@ -76,7 +76,7 @@ def upgrade() -> None:
     sa.Column('unknowns', sa.JSON(), nullable=False),
     sa.Column('last_evaluated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['connection_id'], ['connections.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id', 'connection_id')
     )
     # ### end Alembic commands ###
 

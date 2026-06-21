@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     # --- crypto (FR-032) ---
     secret_key: str | None = Field(default=None, description="Fernet key for credential encryption")
 
+    # --- webhooks (FR-033) ---
+    webhook_secret: str | None = Field(
+        default=None, description="HMAC secret for inbound provider webhooks; required to accept them"
+    )
+
     # --- persistence ---
     database_url: str = Field(default="sqlite+aiosqlite:///./hangar.db")
 

@@ -148,6 +148,9 @@ class ProviderConnection(BaseModel):
     granted_capabilities: set[Capability] = Field(default_factory=set)
     last_sync_at: datetime | None = None
     has_credential: bool = False  # True when a real provider credential is stored
+    # Decrypted credential, attached in-memory only for live provider calls. Excluded
+    # from serialization and repr so it never lands in an API response or a log line.
+    token: str | None = Field(default=None, exclude=True, repr=False)
 
     @property
     def writes(self) -> bool:

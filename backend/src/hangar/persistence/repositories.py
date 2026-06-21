@@ -51,8 +51,14 @@ async def list_repos(session: AsyncSession, connection_id: str | None = None) ->
     return [r.to_domain() for r in rows]
 
 
-async def get_repo(session: AsyncSession, repo_id: str) -> Repo | None:
-    row = await session.get(RepoRow, repo_id)
+async def get_repo(
+    session: AsyncSession, repo_id: str, connection_id: str | None = None
+) -> Repo | None:
+    stmt = select(RepoRow).where(RepoRow.id == repo_id)
+    if connection_id:
+        stmt = stmt.where(RepoRow.connection_id == connection_id)
+    stmt = stmt.order_by(RepoRow.connection_id).limit(1)
+    row = (await session.execute(stmt)).scalars().first()
     return row.to_domain() if row else None
 
 
@@ -134,6 +140,16 @@ async def append_audit(session: AsyncSession, entry: AuditLogEntry) -> AuditLogE
     await session.refresh(row)
     entry.id = row.id
     return entry
+
+
+async def get_audit(session: AsyncSession, audit_id: int) -> AuditLogEntry | None:
+    r = await session.get(AuditRow, audit_id)
+    if r is None:
+        return None
+    return AuditLogEntry(
+        id=r.id, timestamp=r.timestamp, connection_label=r.connection_label, actor=r.actor,
+        repo_id=r.repo_id, check_label=r.check_label, result=r.result, pr_url=r.pr_url,
+    )
 
 
 async def list_audit(session: AsyncSession, limit: int = 50) -> list[AuditLogEntry]:

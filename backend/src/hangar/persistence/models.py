@@ -53,8 +53,13 @@ class ConnectionRow(Base):
 class RepoRow(Base):
     __tablename__ = "repos"
 
+    # Composite key: the SAME repo name under two connections is two distinct rows,
+    # each attributed and evaluated independently (data-model.md; FR-023). Keying on
+    # name alone would let one connection's sync silently overwrite another's snapshot.
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    connection_id: Mapped[str] = mapped_column(ForeignKey("connections.id", ondelete="CASCADE"))
+    connection_id: Mapped[str] = mapped_column(
+        ForeignKey("connections.id", ondelete="CASCADE"), primary_key=True
+    )
     description: Mapped[str] = mapped_column(Text, default="")
     default_branch: Mapped[str] = mapped_column(String(64), default="main")
     open_prs: Mapped[int] = mapped_column(Integer, default=0)

@@ -57,6 +57,9 @@ class NewConnection(BaseModel):
     scope: str
     auth_mode: str | None = None
     credential: str | None = None
+    # Least-privilege default: a connection is read-only unless the operator declares
+    # the credential is writable (FR-026/FR-018).
+    writable: bool = False
 
 
 @router.post("/providers", status_code=201)
@@ -70,6 +73,7 @@ async def add_provider(
         scope=body.scope,
         auth_mode=body.auth_mode or "",
         credential=body.credential,
+        writable=body.writable,
     )
     return await _connection_card(session, conn)
 

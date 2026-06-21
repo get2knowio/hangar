@@ -36,7 +36,19 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<{ 
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  const data = res.status === 204 ? (undefined as T) : ((await res.json().catch(() => undefined)) as T);
+  // Surface server failures: a non-2xx must reject the mutation so onError (not
+  // onSuccess) runs — otherwise a 4xx/5xx is silently rendered as a success toast.
+  if (!res.ok) {
+    const detail =
+      data && typeof data === "object" && "detail" in (data as Record<string, unknown>)
+        ? String((data as Record<string, unknown>).detail)
+        : `${method} ${path} → ${res.status}`;
+    const err = new Error(detail) as Error & { status: number; data: T };
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
   return { status: res.status, data };
 }
 

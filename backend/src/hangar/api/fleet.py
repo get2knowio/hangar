@@ -22,7 +22,10 @@ async def overview(
     if connection != "all" and connection in ctx.connections:
         synced = format_relative(ctx.connections[connection].last_sync_at)
     else:
-        synced = "2m ago"
+        # Across the whole fleet, report the most recent successful sync among
+        # connections (honest staleness during an outage — never a hardcoded value).
+        syncs = [c.last_sync_at for c in ctx.connections.values() if c.last_sync_at]
+        synced = format_relative(max(syncs)) if syncs else "never"
     return build_overview(ctx.repos, ctx.connections, ctx.policy, ctx.remediations, synced=synced)
 
 

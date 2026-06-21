@@ -59,11 +59,15 @@ class GitHubAdapter:
     def _client(self, connection: ProviderConnection):  # pragma: no cover - needs live creds
         from githubkit import GitHub  # lazy import
 
-        # Real deployments mint an installation token from the stored App credential.
-        # The credential is decrypted by the connection service and passed via env/secret;
-        # here we accept a token on the connection's auth context if present.
-        token = getattr(connection, "_token", None)
-        return GitHub(token) if token else GitHub()
+        # The decrypted credential is attached to ``connection.token`` by the caller
+        # (sync/remediation) via ``attach_credential``; without it the adapter cannot
+        # authenticate and we fail loudly rather than silently making anonymous calls.
+        if not connection.token:
+            raise RuntimeError(
+                f"GitHub connection '{connection.id}' has no decrypted credential attached; "
+                "cannot authenticate (call attach_credential before using the adapter)."
+            )
+        return GitHub(connection.token)
 
     async def list_repos(self, connection: ProviderConnection) -> list[str]:  # pragma: no cover
         client = self._client(connection)

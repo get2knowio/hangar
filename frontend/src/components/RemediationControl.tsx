@@ -55,7 +55,10 @@ export function RemediationControl({ repoId, check }: { repoId: string; check: C
           label="Mark merged"
           variant="secondary"
           onClick={() => {
-            merge.mutate(check.id!, { onSuccess: () => show(`Merged · ${check.label}`) });
+            merge.mutate(check.id!, {
+            onSuccess: () => show(`Merged · ${check.label}`),
+            onError: () => show(`Couldn't mark merged · ${check.label}`),
+          });
           }}
         />
       </>
@@ -89,6 +92,7 @@ export function RemediationControl({ repoId, check }: { repoId: string; check: C
                 show(`Reported · ${check.label}`);
               }
             },
+            onError: () => show(`Remediation failed · ${check.label}`),
           },
         );
       }}

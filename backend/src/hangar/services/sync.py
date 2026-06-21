@@ -84,6 +84,9 @@ class SyncService:
             if row is None:
                 return 0
             connection = row.to_domain()
+            from hangar.services.connections import attach_credential
+
+            attach_credential(connection, row)
             provider = provider_for(connection)
             updated = 0
             try:
@@ -103,11 +106,12 @@ class SyncService:
             return updated
 
     async def _upsert_repo(self, session, snapshot) -> None:
-        row = await session.get(RepoRow, snapshot.id)
+        # Key on (id, connection_id) so a repo of the same name under another connection
+        # is never overwritten (composite PK).
+        row = await session.get(RepoRow, (snapshot.id, snapshot.connection_id))
         if row is None:
             row = RepoRow(id=snapshot.id, connection_id=snapshot.connection_id)
             session.add(row)
-        row.connection_id = snapshot.connection_id
         row.description = snapshot.description
         row.default_branch = snapshot.default_branch
         row.open_prs = snapshot.open_prs

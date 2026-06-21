@@ -13,6 +13,7 @@ from hangar.domain.models import RemediationKind, RemediationTier
 from hangar.domain.remediation import ReadOnlyCollapse, RemediationService
 from hangar.persistence import repositories as repo_store
 from hangar.providers.registry import provider_for
+from hangar.services.connections import attach_credential
 from hangar.services.repo_detail import build_repo_detail
 
 router = APIRouter(tags=["repos"])
@@ -78,9 +79,10 @@ async def remediate(
 
     audit = None
     if outcome.audit_id is not None:
-        entries = await repo_store.list_audit(session, 1)
-        if entries:
-            e = entries[0]
+        # Fetch the exact entry this call produced — never "the newest row", which races
+        # against concurrent remediations and could echo another correction's audit.
+        e = await repo_store.get_audit(session, outcome.audit_id)
+        if e is not None:
             audit = {
                 "timestamp": "just now", "repo_id": e.repo_id, "check_label": e.check_label,
                 "connection_label": e.connection_label, "actor": e.actor,
@@ -109,6 +111,7 @@ async def mark_merged(
     if conn_row is None:
         raise HTTPException(status_code=404, detail="connection not found")
     connection = conn_row.to_domain()
+    attach_credential(connection, conn_row)
     service = RemediationService(provider_for(connection))
     outcome = await service.mark_merged(
         session, connection=connection, repo=repo, check_id=check_id, actor=actor

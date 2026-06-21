@@ -388,6 +388,11 @@ export interface paths {
                         scope: string;
                         /** @description write-only; encrypted at rest (FR-032) */
                         credential?: string;
+                        /**
+                         * @description grant write tiers only if the credential can write (least-privilege
+                         * @default false
+                         */
+                        writable?: boolean;
                     };
                 };
             };

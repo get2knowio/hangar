@@ -231,6 +231,7 @@ paths:
                 label: { type: string }
                 scope: { type: string }
                 credential: { type: string, description: write-only; encrypted at rest (FR-032) }
+                writable: { type: boolean, default: false, description: grant write tiers only if the credential can write (least-privilege, FR-026) }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectionCard" } } } }
   /providers/{connection_id}:

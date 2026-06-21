@@ -28,12 +28,18 @@ def verify_signature(secret: str, body: bytes, signature_header: str | None) -> 
     return hmac.compare_digest(expected, provided)
 
 
-async def apply_event(session: AsyncSession, event: str, payload: dict) -> bool:
-    """Reconcile a verified event into the snapshot. Returns True if a repo updated."""
+async def apply_event(
+    session: AsyncSession, event: str, payload: dict, connection_id: str
+) -> bool:
+    """Reconcile a verified event into the snapshot. Returns True if a repo updated.
+
+    The repo is resolved by ``(name, connection_id)`` — the connection comes from the
+    webhook URL — so a same-named repo on another connection is never touched.
+    """
     repo_name = (payload.get("repository") or {}).get("name")
     if not repo_name:
         return False
-    row = await session.get(RepoRow, repo_name)
+    row = await session.get(RepoRow, (repo_name, connection_id))
     if row is None:
         return False
 
@@ -53,5 +59,7 @@ async def apply_event(session: AsyncSession, event: str, payload: dict) -> bool:
         return False
 
     await session.commit()
-    log.info("webhook.applied", event=event, repo=repo_name)
+    # NB: structlog reserves the ``event`` kwarg for the message, so the GitHub event
+    # name is logged as ``gh_event`` to avoid a TypeError collision.
+    log.info("webhook.applied", gh_event=event, repo=repo_name)
     return True
