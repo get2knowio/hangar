@@ -83,6 +83,8 @@ paths:
                       repo_count: { type: integer }
                       compliance_pct: { type: integer }
                       synced: { type: string, example: 2m ago }
+                      ci_failing: { type: integer, description: repos with failing default-branch CI }
+                      critical_alerts: { type: integer, description: total critical security alerts }
                   stats:
                     type: array
                     description: six tiles — Open PRs, Bot PRs, CI failing, Sec alerts, Release pending, Compliance

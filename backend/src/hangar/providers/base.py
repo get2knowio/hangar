@@ -26,6 +26,13 @@ from hangar.domain.models import (
     Repo,
 )
 
+# Canonical provider-type → display name (single source of truth).
+PROVIDER_NAMES = {"github": "GitHub", "gitea": "Gitea"}
+
+
+def provider_name(provider_type: str) -> str:
+    return PROVIDER_NAMES.get(provider_type, provider_type.title())
+
 
 @dataclass(slots=True)
 class CorrectionResult:

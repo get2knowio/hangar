@@ -63,13 +63,13 @@ export type RepoDetail = JSONResponse<"/repos/{repo_id}", "get">;
 export type Health = JSONResponse<"/health", "get">;
 export type Me = JSONResponse<"/me", "get">;
 
-export type RemediationKind = "report" | "deep_link" | "settings_patch" | "config_pr";
-export interface RemediateResult {
-  state: string;
-  pr_url: string | null;
-  idempotent_hit: boolean;
-  deep_link_url?: string;
-}
+// Derived from the generated contract — no hand-drifted types (Constitution VII).
+type RemediatePath = paths["/repos/{repo_id}/checks/{check_id}/remediate"]["post"];
+export type RemediationKind = NonNullable<
+  RemediatePath["requestBody"]
+>["content"]["application/json"]["kind"];
+type RemediateOk = RemediatePath["responses"][200]["content"]["application/json"];
+export type RemediateResult = RemediateOk & { deep_link_url?: string };
 
 // ---- Query hooks ----
 export const useHealth = () => useQuery({ queryKey: ["health"], queryFn: () => get<Health>("/health") });

@@ -37,18 +37,19 @@ class FleetContext:
     rem_pr_urls: dict[tuple[str, str], str | None]
 
 
-async def load_fleet(session: AsyncSession, connection: str = "all") -> FleetContext:
+async def load_fleet(
+    session: AsyncSession, connection: str = "all", *, with_pr_urls: bool = False
+) -> FleetContext:
     repos = await repo_store.list_repos(session, connection)
     conns = {c.id: c for c in await repo_store.list_connections(session)}
     policy = await repo_store.get_policy(session)
-    remediations = await repo_store.remediation_map(session)
-    # PR urls for pending findings
-    from sqlalchemy import select
-
-    from hangar.persistence.models import RemediationRow
-
-    rows = (await session.execute(select(RemediationRow))).scalars().all()
-    pr_urls = {(r.repo_id, r.check_id): r.pr_url for r in rows}
+    # Only the repo-detail path needs the PR-url overlay; the fleet endpoints
+    # (overview/scorecard) skip the extra RemediationRow scan.
+    if with_pr_urls:
+        remediations, pr_urls = await repo_store.remediation_map_and_pr_urls(session)
+    else:
+        remediations = await repo_store.remediation_map(session)
+        pr_urls = {}
     return FleetContext(repos, conns, policy, remediations, pr_urls)
 
 

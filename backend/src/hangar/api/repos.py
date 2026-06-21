@@ -26,7 +26,7 @@ async def repo_detail(
     repo = await repo_store.get_repo(session, repo_id)
     if repo is None:
         raise HTTPException(status_code=404, detail="repo not found")
-    ctx = await load_fleet(session, "all")
+    ctx = await load_fleet(session, "all", with_pr_urls=True)
     connection = ctx.connections.get(repo.connection_id)
     if connection is None:
         raise HTTPException(status_code=404, detail="connection not found")

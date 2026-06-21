@@ -9,23 +9,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from hangar.api.deps import session_dep, settings_dep
 from hangar.config import Settings
 from hangar.persistence import repositories as repo_store
+from hangar.providers.base import provider_name
 from hangar.services import connections as conn_service
 from hangar.services.sync import format_relative
 
 router = APIRouter(tags=["providers"])
 
-_TYPE_LABEL = {"github": "GitHub", "gitea": "Gitea"}
 
-
-async def _connection_card(session: AsyncSession, conn) -> dict:
-    repos = await repo_store.list_repos(session, conn.id)
+async def _connection_card(session: AsyncSession, conn, repo_count: int) -> dict:
     return {
         "id": conn.id,
         "label": conn.label,
-        "type": _TYPE_LABEL.get(conn.provider_type, conn.provider_type),
+        "type": provider_name(conn.provider_type),
         "scope": conn.scope,
         "auth_mode": conn.auth_mode,
-        "repos": len(repos),
+        "repos": repo_count,
         "writes": conn.writes,
         "write_label": "Read + write" if conn.writes else "Read-only",
         "remediation": "API + PR + deep-link" if conn.writes else "Deep-link only",
@@ -39,7 +37,9 @@ async def list_providers(
     settings: Settings = Depends(settings_dep),
 ) -> dict:
     conns = await repo_store.list_connections(session)
-    cards = [await _connection_card(session, c) for c in conns]
+    # One query for all repo counts grouped by connection, instead of N per-card queries.
+    counts = await repo_store.repo_counts_by_connection(session)
+    cards = [await _connection_card(session, c, counts.get(c.id, 0)) for c in conns]
     return {
         "access": {
             "mode": settings.access_mode.value if settings.access_mode else "disabled",
@@ -75,7 +75,8 @@ async def add_provider(
         credential=body.credential,
         writable=body.writable,
     )
-    return await _connection_card(session, conn)
+    repos = await repo_store.list_repos(session, conn.id)
+    return await _connection_card(session, conn, len(repos))
 
 
 @router.delete("/providers/{connection_id}", status_code=204)

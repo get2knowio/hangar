@@ -51,6 +51,16 @@ async def list_repos(session: AsyncSession, connection_id: str | None = None) ->
     return [r.to_domain() for r in rows]
 
 
+async def repo_counts_by_connection(session: AsyncSession) -> dict[str, int]:
+    """Repo count per connection in a single grouped query (avoids N+1 on /providers)."""
+    from sqlalchemy import func
+
+    rows = await session.execute(
+        select(RepoRow.connection_id, func.count()).group_by(RepoRow.connection_id)
+    )
+    return {cid: n for cid, n in rows.all()}
+
+
 async def get_repo(
     session: AsyncSession, repo_id: str, connection_id: str | None = None
 ) -> Repo | None:
@@ -91,6 +101,16 @@ async def save_policy(session: AsyncSession, policy: Policy) -> None:
 async def remediation_map(session: AsyncSession) -> RemediationMap:
     rows = (await session.execute(select(RemediationRow))).scalars().all()
     return {(r.repo_id, r.check_id): RemediationState(r.state) for r in rows}
+
+
+async def remediation_map_and_pr_urls(
+    session: AsyncSession,
+) -> tuple[RemediationMap, dict[tuple[str, str], str | None]]:
+    """State map + PR-url overlay in a single RemediationRow scan (repo-detail path)."""
+    rows = (await session.execute(select(RemediationRow))).scalars().all()
+    state = {(r.repo_id, r.check_id): RemediationState(r.state) for r in rows}
+    pr_urls = {(r.repo_id, r.check_id): r.pr_url for r in rows}
+    return state, pr_urls
 
 
 async def get_remediation(

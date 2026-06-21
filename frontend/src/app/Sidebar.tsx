@@ -6,14 +6,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useConnection } from "./state";
 import { useMe, useOverview, useScorecard } from "../lib/api";
 
-function overviewUrgency(stats: { label?: string; value?: string; sub?: string }[] | undefined): number {
-  if (!stats) return 0;
-  const ci = Number(stats.find((s) => s.label === "CI failing")?.value ?? 0);
-  const critSub = stats.find((s) => s.label === "Sec alerts")?.sub ?? "0";
-  const crit = Number(critSub.split(" ")[0] ?? 0);
-  return (Number.isFinite(ci) ? ci : 0) + (Number.isFinite(crit) ? crit : 0);
-}
-
 export function Sidebar() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -22,7 +14,10 @@ export function Sidebar() {
   const scorecard = useScorecard(active, false);
   const me = useMe();
 
-  const overviewBadge = overviewUrgency(overview.data?.stats);
+  // Urgency badge from structured summary fields (CI-fail + critical alerts), not a
+  // re-parsed display string.
+  const summary = overview.data?.summary;
+  const overviewBadge = (summary?.ci_failing ?? 0) + (summary?.critical_alerts ?? 0);
   const scorecardBadge = (scorecard.data?.rows ?? []).filter((r) => (r.hygiene_pct ?? 100) < 65).length;
 
   const items = [

@@ -12,11 +12,13 @@ from hangar.domain.policy import (
     RemediationMap,
     effective_status,
     enabled_checks,
-    hygiene,
 )
 
 
 def _badge_before_colon(label: str) -> str:
+    # The dense scorecard column shows the provider prefix ("gh"); the overview table,
+    # which has more room, shows the org ("get2knowio"). This asymmetry is intentional
+    # and matches the prototype — do not "unify" them.
     return label.split(":")[0]
 
 
@@ -29,44 +31,49 @@ def build_scorecard(
     failing_only: bool = False,
 ) -> dict:
     checks = enabled_checks(policy)
-    compliance = round(sum(hygiene(r, policy, remediations) for r in repos) / len(repos)) if repos else 100
-    clear = sum(1 for r in repos if hygiene(r, policy, remediations) >= 85)
+    n_checks = len(checks)
 
-    # group spans (only groups with at least one enabled check)
+    # Single O(repos × checks) pass: build the status matrix once, then derive every
+    # roll-up (compliance, clear, per-check counts, rows, top-drift) from it — instead
+    # of re-running effective_status/hygiene ~5× per cell.
+    matrix: dict[str, list[FindingStatus]] = {}
+    hyg: dict[str, int] = {}
+    for r in repos:
+        statuses = [effective_status(r, c.id, remediations) for c in checks]
+        matrix[r.id] = statuses
+        passing = sum(1 for s in statuses if s is FindingStatus.passing)
+        hyg[r.id] = round(passing / n_checks * 100) if n_checks else 100
+
+    compliance = round(sum(hyg.values()) / len(repos)) if repos else 100
+    clear = sum(1 for v in hyg.values() if v >= 85)
+
     groups = []
     for g in GROUPS:
         n = sum(1 for c in checks if c.group == g)
         if n:
             groups.append({"label": g, "span": n})
 
-    # per-check fail counts (across the visible fleet)
     check_meta = []
-    for c in checks:
-        fails = sum(1 for r in repos if effective_status(r, c.id, remediations) is not FindingStatus.passing)
-        check_meta.append({"id": c.id, "label": c.label, "fail_count": fails})
-
-    rows = []
-    for r in repos:
-        cells = []
-        for c in checks:
-            st = effective_status(r, c.id, remediations)
-            cells.append(st.value)
-        conn = connections.get(r.connection_id)
-        rows.append({
-            "repo_id": r.id,
-            "hygiene_pct": hygiene(r, policy, remediations),
-            "connection_badge": _badge_before_colon(conn.label) if conn else r.connection_id,
-            "cells": cells,
-        })
-
     rollup = []
-    for c in checks:
-        fails = sum(1 for r in repos if effective_status(r, c.id, remediations) is FindingStatus.fail)
+    for i, c in enumerate(checks):
+        not_pass = sum(1 for r in repos if matrix[r.id][i] is not FindingStatus.passing)
+        fails = sum(1 for r in repos if matrix[r.id][i] is FindingStatus.fail)
+        check_meta.append({"id": c.id, "label": c.label, "fail_count": not_pass})
         if fails:
             label = c.label.lower().replace(" present", "").replace(" enabled", "")
             rollup.append({"label": label, "count": fails})
     rollup.sort(key=lambda x: x["count"], reverse=True)
     rollup = rollup[:4]
+
+    rows = []
+    for r in repos:
+        conn = connections.get(r.connection_id)
+        rows.append({
+            "repo_id": r.id,
+            "hygiene_pct": hyg[r.id],
+            "connection_badge": _badge_before_colon(conn.label) if conn else r.connection_id,
+            "cells": [s.value for s in matrix[r.id]],
+        })
 
     return {
         "compliance_pct": compliance,

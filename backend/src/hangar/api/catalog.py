@@ -12,18 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hangar.api.deps import session_dep
 from hangar.domain.checks import GROUPS, all_checks
-from hangar.domain.models import FindingStatus, PolicyEntry, RemediationTier
+from hangar.domain.models import FindingStatus, PolicyEntry, tier_label
 from hangar.domain.policy import effective_status
 from hangar.persistence import repositories as repo_store
 
 router = APIRouter(tags=["catalog"])
-
-_TIER_LABEL = {
-    RemediationTier.patch: "API",
-    RemediationTier.pr: "API · PR",
-    RemediationTier.link: "Deep-link",
-    RemediationTier.report: "Report",
-}
 
 
 @router.get("/catalog")
@@ -47,7 +40,7 @@ async def catalog(session: AsyncSession = Depends(session_dep)) -> dict:
                 "id": c.id,
                 "label": c.label,
                 "tier": c.tier.value,
-                "tier_label": _TIER_LABEL[c.tier],
+                "tier_label": tier_label(c.tier),
                 "enabled": enabled,
                 "has_target": c.has_target,
                 "target": policy.target(c.id),

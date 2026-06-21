@@ -37,6 +37,19 @@ class RemediationTier(StrEnum):
     report = "report"        # surface only
 
 
+# Canonical tier → UI badge label (single source of truth; matches the prototype).
+TIER_LABELS: dict[RemediationTier, str] = {
+    RemediationTier.patch: "API",
+    RemediationTier.pr: "API · PR",
+    RemediationTier.link: "Deep-link",
+    RemediationTier.report: "Report",
+}
+
+
+def tier_label(tier: RemediationTier) -> str:
+    return TIER_LABELS[tier]
+
+
 class RemediationKind(StrEnum):
     report = "report"
     deep_link = "deep_link"

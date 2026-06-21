@@ -11,10 +11,9 @@ service owns idempotency/audit/state, so the simulation only needs to return the
 from __future__ import annotations
 
 from hangar.domain.models import Capability, ProviderConnection, RemediationKind, Repo
-from hangar.providers.base import CorrectionRequest, CorrectionResult
+from hangar.providers.base import CorrectionRequest, CorrectionResult, provider_name
 
 _PROVIDER_HOST = {"github": "github.com", "gitea": "gitea.local"}
-_PROVIDER_NAME = {"github": "GitHub", "gitea": "Gitea"}
 
 
 class DemoProvider:
@@ -39,7 +38,7 @@ class DemoProvider:
     async def correct(
         self, connection: ProviderConnection, request: CorrectionRequest
     ) -> CorrectionResult:
-        name = _PROVIDER_NAME.get(self.provider_type, self.provider_type.title())
+        name = provider_name(self.provider_type)
         if request.kind is RemediationKind.deep_link:
             return CorrectionResult(
                 applied=True,

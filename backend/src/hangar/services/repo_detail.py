@@ -14,6 +14,7 @@ from hangar.domain.models import (
     ProviderConnection,
     RemediationTier,
     Repo,
+    tier_label,
 )
 from hangar.domain.policy import (
     RemediationMap,
@@ -23,6 +24,7 @@ from hangar.domain.policy import (
     hygiene,
     pass_count,
 )
+from hangar.providers.base import provider_name
 
 _DEP_TITLES = ["actions/checkout to v4.2", "vite to 5.4.8", "fastapi to 0.115",
                "pydantic to 2.9", "ruff to 0.6.9"]
@@ -63,14 +65,6 @@ def _alerts(repo: Repo) -> list[dict]:
     return out
 
 
-_TIER_LABEL = {
-    RemediationTier.patch: "API",
-    RemediationTier.pr: "API · PR",
-    RemediationTier.link: "Deep-link",
-    RemediationTier.report: "Report",
-}
-
-
 def build_repo_detail(
     repo: Repo,
     connection: ProviderConnection,
@@ -95,7 +89,7 @@ def build_repo_detail(
                 "id": c.id,
                 "label": c.label,
                 "status": status.value,
-                "tier_label": _TIER_LABEL[tier],
+                "tier_label": tier_label(tier),
                 "evidence": evidence_for(repo, c.id, status),
                 "open_pr_url": open_pr,
                 "primary_action": primary,
@@ -132,13 +126,9 @@ def _actions(
     if tier is RemediationTier.report:
         return None, None
     if tier is RemediationTier.link:
-        return f"Open in {_provider_name(provider_type)} ↗", None
+        return f"Open in {provider_name(provider_type)} ↗", None
     if tier is RemediationTier.patch:
         return "Enable", None
     if tier is RemediationTier.pr:
         return "Open fix PR", None
     return None, None
-
-
-def _provider_name(provider_type: str) -> str:
-    return {"github": "GitHub", "gitea": "Gitea"}.get(provider_type, provider_type.title())

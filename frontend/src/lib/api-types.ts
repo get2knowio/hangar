@@ -126,6 +126,10 @@ export interface paths {
                                 compliance_pct?: number;
                                 /** @example 2m ago */
                                 synced?: string;
+                                /** @description repos with failing default-branch CI */
+                                ci_failing?: number;
+                                /** @description total critical security alerts */
+                                critical_alerts?: number;
                             };
                             /** @description six tiles — Open PRs, Bot PRs, CI failing, Sec alerts, Release pending, Compliance */
                             stats: {

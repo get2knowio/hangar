@@ -7,7 +7,10 @@ import { ConnectionProvider, ThemeProvider, ToastProvider } from "./app/state";
 import "./index.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 15_000, refetchOnWindowFocus: false } },
+  // Dashboards are snapshot/poll-driven (server polls every ~5 min), so cached reads
+  // need not re-run the heavy aggregations on every navigation. Mutations invalidate
+  // the relevant keys explicitly for immediate freshness.
+  defaultOptions: { queries: { staleTime: 60_000, refetchOnWindowFocus: false } },
 });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

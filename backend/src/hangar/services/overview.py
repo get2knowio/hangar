@@ -38,7 +38,9 @@ def build_overview(
     crit = s(lambda r: r.alerts.critical)
     alerts_total = s(lambda r: r.alerts.total)
     rel_pending = sum(1 for r in repos if r.release_pending_days is not None)
-    compliance = round(sum(hygiene(r, policy, remediations) for r in repos) / len(repos)) if repos else 100
+    # Hygiene once per repo, reused for the compliance average and the per-row bar.
+    hyg = {r.id: hygiene(r, policy, remediations) for r in repos}
+    compliance = round(sum(hyg.values()) / len(repos)) if repos else 100
 
     stats = [
         {"label": "Open PRs", "value": str(open_prs), "sub": f"{dep_prs} Dependabot", "tone": Tone.neutral},
@@ -64,7 +66,7 @@ def build_overview(
             "alerts_total": a.total,
             "alerts_tone": Tone.fail if a.critical else (Tone.warn if a.high else Tone.neutral),
             "release_pending_days": r.release_pending_days,
-            "hygiene_pct": hygiene(r, policy, remediations),
+            "hygiene_pct": hyg[r.id],
         })
 
     feed = _build_feed(repos)
@@ -74,6 +76,10 @@ def build_overview(
             "repo_count": len(repos),
             "compliance_pct": compliance,
             "synced": synced,
+            # Structured signals for the sidebar urgency badge — never re-parsed from a
+            # display string (FR-001).
+            "ci_failing": ci_fail,
+            "critical_alerts": crit,
         },
         "stats": stats,
         "repos": repo_rows,
