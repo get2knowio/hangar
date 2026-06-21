@@ -9,7 +9,20 @@ whose required capability/scope is absent — or whose resource returns 403 — 
 
 from __future__ import annotations
 
+import re
+
 from hangar.domain.models import AlertCounts, Capability, CIStatus, ProviderConnection, Repo
+
+# A workflow step's ``uses:`` reference (comments already stripped by the caller).
+_USES_RE = re.compile(r"""uses:\s*['"]?([^'"\s]+)""")
+# A 40-hex git commit SHA (a "pinned" action ref).
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+# Actions/config that indicate conventional-commit / PR-title enforcement.
+_CONVENTIONAL_ACTIONS = ("commitlint", "action-semantic-pull-request", "semantic-pull-request")
+_CONVENTIONAL_CONFIGS = (
+    "commitlint.config.js", "commitlint.config.cjs", "commitlint.config.mjs",
+    ".commitlintrc", ".commitlintrc.json", ".commitlintrc.yml", ".commitlintrc.yaml",
+)
 
 # Candidate paths whose presence satisfies a file-based check. (license is determined
 # from repo metadata below — GitHub's own license detection — not a filename match.)
@@ -127,10 +140,22 @@ async def interrogate_repo(adapter, gh, connection: ProviderConnection, repo_ref
     else:
         unknowns.append("two_fa")
 
-    # dep_review / conventional / actions_pinned_sha require deep workflow-file parsing
-    # we don't do in a single read; report unknown rather than a false pass (research §11),
-    # regardless of read_files scope.
-    unknowns.extend(["dep_review", "conventional", "actions_pinned_sha"])
+    # dep_review / conventional / actions_pinned_sha require parsing the workflow files.
+    if can_files:
+        refs = await _workflow_action_refs(cget, gh, connection.id, owner, repo_ref)
+        # dep_review: a workflow must run actions/dependency-review-action.
+        if not any("dependency-review-action" in r for r in refs):
+            fails.append("dep_review")
+        # conventional: a commitlint/semantic-PR workflow OR a commitlint config file.
+        has_conv_wf = any(any(a in r for a in _CONVENTIONAL_ACTIONS) for r in refs)
+        has_conv_cfg = has_conv_wf or any([await _present(p) for p in _CONVENTIONAL_CONFIGS])
+        if not has_conv_cfg:
+            fails.append("conventional")
+        # actions_pinned_sha: every external action ref must be pinned to a 40-hex SHA.
+        if _has_unpinned_action(refs):
+            fails.append("actions_pinned_sha")
+    else:
+        unknowns.extend(["dep_review", "conventional", "actions_pinned_sha"])
 
     # --- activity signals ---
     open_prs, dependabot_prs = await _pull_counts(cget, gh, connection.id, owner, repo_ref)
@@ -154,6 +179,47 @@ async def interrogate_repo(adapter, gh, connection: ProviderConnection, repo_ref
         fails=sorted(set(fails)),
         unknowns=sorted(set(unknowns) - set(fails)),
     )
+
+
+async def _workflow_action_refs(cget, gh, cid, owner, repo) -> list[str]:
+    """All ``uses:`` action references across ``.github/workflows/*.yml``.
+
+    Lists the workflows directory, reads each YAML file, and extracts the action refs
+    (comments stripped). Returns [] when there is no workflows directory (cget yields a
+    NOT_FOUND sentinel, not a list).
+    """
+    listing = await cget(gh, cid, f"/repos/{owner}/{repo}/contents/.github/workflows")
+    if not isinstance(listing, list):
+        return []
+    refs: list[str] = []
+    for item in listing:
+        name = item.get("name", "")
+        if item.get("type") != "file" or not name.endswith((".yml", ".yaml")):
+            continue
+        text = await _read_text(cget, gh, cid, owner, repo, item["path"])
+        if not text:
+            continue
+        for line in text.splitlines():
+            stripped = line.split("#", 1)[0]  # drop trailing comments
+            m = _USES_RE.search(stripped)
+            if m:
+                refs.append(m.group(1))
+    return refs
+
+
+def _has_unpinned_action(refs: list[str]) -> bool:
+    """True if any *external* action ref is not pinned to a 40-hex commit SHA.
+
+    Local (``./…``) and docker (``docker://…``) refs are exempt; reusable workflows and
+    marketplace actions (``owner/repo@ref``) must be SHA-pinned (supply-chain hardening).
+    """
+    for ref in refs:
+        if ref.startswith("./") or ref.startswith("docker://") or "/" not in ref:
+            continue
+        _, _, pinned = ref.partition("@")
+        if not _SHA_RE.match(pinned):
+            return True
+    return False
 
 
 async def _read_text(cget, gh, cid, owner, repo, path) -> str | None:

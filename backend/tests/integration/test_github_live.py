@@ -90,8 +90,11 @@ async def test_github_app_auth_mints_installation_token_and_interrogates(respx_m
     assert "default_branch" not in repo.fails  # main → ok
     assert "license" not in repo.fails  # license present in metadata
     assert "secret_scanning" not in repo.fails  # enabled in security_and_analysis
-    # Honest unknowns for checks needing deep workflow parsing.
-    assert {"dep_review", "conventional", "actions_pinned_sha"} <= set(repo.unknowns)
+    # Workflow checks are really evaluated (not blindly unknown): with no workflows dir,
+    # dep_review/conventional fail and actions_pinned_sha passes vacuously (nothing to pin).
+    assert "dep_review" in repo.fails
+    assert "conventional" in repo.fails
+    assert "actions_pinned_sha" not in repo.fails and "actions_pinned_sha" not in repo.unknowns
 
     # The conditional-request ETag was captured for next time.
     assert adapter._etags[("gh-main", "/repos/acme/hangar")] == '"v1"'
@@ -131,6 +134,57 @@ async def test_token_auth_path_for_pat_connection(respx_mock) -> None:
     assert repo is not None
     # PAT auth sends the token directly (no installation-token exchange).
     assert repo_route.calls.last.request.headers["authorization"] == "token ghp_pat"
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_workflow_parsing_resolves_dep_review_conventional_and_pinned_sha(respx_mock) -> None:
+    """Real .github/workflows parsing drives dep_review / conventional / actions_pinned_sha."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    workflow = (
+        "name: ci\n"
+        "on: [pull_request]\n"
+        "jobs:\n"
+        "  build:\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v4            # unpinned tag\n"
+        "      - uses: actions/dependency-review-action@v4\n"
+        "      - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed\n"
+    )
+    import base64 as _b64
+
+    # Register the workflow routes BEFORE the catch-all (_routes adds the 404 last;
+    # respx is first-match-wins).
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows").mock(
+        return_value=httpx.Response(200, json=[
+            {"name": "ci.yml", "path": ".github/workflows/ci.yml", "type": "file"},
+        ])
+    )
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows/ci.yml").mock(
+        return_value=httpx.Response(200, json={
+            "encoding": "base64", "content": _b64.b64encode(workflow.encode()).decode(),
+        })
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"w1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    # dependency-review-action present → dep_review passes.
+    assert "dep_review" not in repo.fails and "dep_review" not in repo.unknowns
+    # commitlint action present → conventional passes.
+    assert "conventional" not in repo.fails and "conventional" not in repo.unknowns
+    # actions/checkout@v4 is a mutable tag → actions_pinned_sha fails.
+    assert "actions_pinned_sha" in repo.fails
+
+
+def test_has_unpinned_action_logic() -> None:
+    from hangar.providers.github.detection import _has_unpinned_action
+
+    assert _has_unpinned_action(["actions/checkout@v4"]) is True
+    assert _has_unpinned_action(["actions/checkout@" + "a" * 40]) is False
+    assert _has_unpinned_action(["./.github/actions/local", "docker://alpine:3"]) is False
+    assert _has_unpinned_action(["owner/wf/.github/workflows/x.yml@v1"]) is True
 
 
 async def test_adapter_refuses_without_credential() -> None:
