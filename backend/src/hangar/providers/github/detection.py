@@ -23,6 +23,8 @@ _CONVENTIONAL_CONFIGS = (
     "commitlint.config.js", "commitlint.config.cjs", "commitlint.config.mjs",
     ".commitlintrc", ".commitlintrc.json", ".commitlintrc.yml", ".commitlintrc.yaml",
 )
+# Unreleased-commit age (HEAD − last release, in days) at/above which release_health fails.
+_RELEASE_STALE_DAYS = 14
 
 # Candidate paths whose presence satisfies a file-based check. (license is determined
 # from repo metadata below — GitHub's own license detection — not a filename match.)
@@ -47,7 +49,9 @@ async def interrogate_repo(adapter, gh, connection: ProviderConnection, repo_ref
     granted = connection.granted_capabilities
     cget = adapter._conditional_get
 
-    repo_data = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}")
+    # Only the primary repo resource is fetched conditionally — a 304 means no push /
+    # metadata change, so the whole repo is unchanged and the poll is skipped.
+    repo_data = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}", conditional=True)
     if repo_data is _NOT_MODIFIED:
         return None  # snapshot unchanged since the last poll — keep the cache
     if repo_data is _NOT_FOUND:
@@ -157,6 +161,11 @@ async def interrogate_repo(adapter, gh, connection: ProviderConnection, repo_ref
     else:
         unknowns.extend(["dep_review", "conventional", "actions_pinned_sha"])
 
+    # release_health: age of unreleased commits = default-branch HEAD date − last release.
+    release_pending = await _release_pending_days(cget, gh, connection.id, owner, repo_ref, default_branch)
+    if release_pending is not None and release_pending >= _RELEASE_STALE_DAYS:
+        fails.append("release_health")
+
     # --- activity signals ---
     open_prs, dependabot_prs = await _pull_counts(cget, gh, connection.id, owner, repo_ref)
     ci = await _ci_status(cget, gh, connection.id, owner, repo_ref, default_branch)
@@ -175,7 +184,7 @@ async def interrogate_repo(adapter, gh, connection: ProviderConnection, repo_ref
         dependabot_prs=dependabot_prs,
         ci_status=ci,
         alerts=alerts,
-        release_pending_days=None,
+        release_pending_days=release_pending,
         fails=sorted(set(fails)),
         unknowns=sorted(set(unknowns) - set(fails)),
     )
@@ -220,6 +229,38 @@ def _has_unpinned_action(refs: list[str]) -> bool:
         if not _SHA_RE.match(pinned):
             return True
     return False
+
+
+def _parse_dt(value):
+    from datetime import datetime
+
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+async def _release_pending_days(cget, gh, cid, owner, repo, branch) -> int | None:
+    """Days of unreleased commits = default-branch HEAD commit date − latest release date.
+
+    None when there is no release (nothing to be behind) or HEAD is not ahead of the
+    release. Fetched unconditionally so the value is always fresh.
+    """
+    rel = await cget(gh, cid, f"/repos/{owner}/{repo}/releases/latest")
+    if not isinstance(rel, dict):
+        return None  # 404 (no releases) → no baseline
+    rel_dt = _parse_dt(rel.get("published_at"))
+    if rel_dt is None:
+        return None
+    commit = await cget(gh, cid, f"/repos/{owner}/{repo}/commits/{branch}")
+    if not isinstance(commit, dict):
+        return None
+    head_dt = _parse_dt(((commit.get("commit") or {}).get("committer") or {}).get("date"))
+    if head_dt is None or head_dt <= rel_dt:
+        return None  # no unreleased commits
+    return (head_dt - rel_dt).days
 
 
 async def _read_text(cget, gh, cid, owner, repo, path) -> str | None:

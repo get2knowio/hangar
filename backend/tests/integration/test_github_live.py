@@ -178,6 +178,48 @@ async def test_workflow_parsing_resolves_dep_review_conventional_and_pinned_sha(
     assert "actions_pinned_sha" in repo.fails
 
 
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_release_health_from_release_and_head_dates(respx_mock) -> None:
+    """release_pending_days = HEAD commit date − latest release date; release_health
+    fails past the staleness threshold."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    # Register before the catch-all (respx first-match-wins).
+    respx_mock.get(f"{API}/repos/acme/hangar/releases/latest").mock(
+        return_value=httpx.Response(200, json={"published_at": "2024-01-01T00:00:00Z"})
+    )
+    respx_mock.get(f"{API}/repos/acme/hangar/commits/main").mock(
+        return_value=httpx.Response(200, json={
+            "commit": {"committer": {"date": "2024-01-21T00:00:00Z"}}  # 20 days later
+        })
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"r1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.release_pending_days == 20  # 20 unreleased days
+    assert "release_health" in repo.fails  # ≥ 14-day threshold
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_release_health_passes_when_head_at_release(respx_mock) -> None:
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/releases/latest").mock(
+        return_value=httpx.Response(200, json={"published_at": "2024-01-21T00:00:00Z"})
+    )
+    respx_mock.get(f"{API}/repos/acme/hangar/commits/main").mock(
+        return_value=httpx.Response(200, json={"commit": {"committer": {"date": "2024-01-21T00:00:00Z"}}})
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"r2"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.release_pending_days is None  # HEAD not ahead of the release
+    assert "release_health" not in repo.fails
+
+
 def test_has_unpinned_action_logic() -> None:
     from hangar.providers.github.detection import _has_unpinned_action
 

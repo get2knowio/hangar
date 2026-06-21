@@ -87,14 +87,22 @@ class GitHubAdapter:
         return GitHub(auth, http_cache=False)
 
     # --------------------------------------------------- conditional requests
-    async def _conditional_get(self, gh, connection_id: str, path: str, params: dict | None = None):
-        """GET ``path`` with If-None-Match. Returns the JSON body, ``NOT_MODIFIED``
-        (304 — caller keeps cache), or ``NOT_FOUND`` (404). Updates the ETag store."""
+    async def _conditional_get(
+        self, gh, connection_id: str, path: str, params: dict | None = None, *, conditional: bool = False
+    ):
+        """GET ``path``. Returns the JSON body, ``NOT_FOUND`` (404), or — only when
+        ``conditional=True`` — ``NOT_MODIFIED`` (304).
+
+        Conditional (``If-None-Match``) requests are used ONLY for the primary repo
+        resource: its ETag changes on any push/metadata edit, so a 304 means the repo is
+        genuinely unchanged and the whole poll can be skipped (SC-010). Sub-resources are
+        fetched unconditionally so their value is always fresh (recomputed each poll).
+        """
         from githubkit.exception import RequestFailed
 
         key = (connection_id, path)
         headers = {}
-        if (etag := self._etags.get(key)) is not None:
+        if conditional and (etag := self._etags.get(key)) is not None:
             headers["If-None-Match"] = etag
         try:
             resp = await gh.arequest("GET", path, params=params, headers=headers)
@@ -106,7 +114,7 @@ class GitHubAdapter:
             raise
         if resp.status_code == 304:  # githubkit passes 304 through (not an error)
             return _NOT_MODIFIED
-        if (new_etag := resp.headers.get("ETag")) is not None:
+        if conditional and (new_etag := resp.headers.get("ETag")) is not None:
             self._etags[key] = new_etag
         return resp.json()
 
