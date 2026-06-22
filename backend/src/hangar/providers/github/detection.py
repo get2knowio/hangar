@@ -12,8 +12,16 @@ returns ``403`` — yields ``unknown`` rather than a false pass/fail.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING, Any
 
 from hangar.domain.models import AlertCounts, Capability, CIStatus, ProviderConnection, Repo
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from githubkit import GitHub
+
+    from hangar.providers.github.adapter import GitHubAdapter
 
 # A workflow step's ``uses:`` reference. Anchored to the step-key position (start of line,
 # optionally after a ``- `` list marker) so a ``run:`` line that merely echoes the word
@@ -52,7 +60,11 @@ _FILE_CHECKS = {
 
 
 async def interrogate_repo(
-    adapter, gh, connection: ProviderConnection, repo_ref: str, previous: Repo | None = None
+    adapter: GitHubAdapter,
+    gh: GitHub,
+    connection: ProviderConnection,
+    repo_ref: str,
+    previous: Repo | None = None,
 ) -> Repo | None:
     """Interrogate one repo into a normalized snapshot.
 
@@ -98,7 +110,7 @@ async def interrogate_repo(
 
 
 def _metadata_checks(
-    repo_data: dict, granted: set[Capability]
+    repo_data: Any, granted: set[Capability]
 ) -> tuple[list[str], list[str], str, str]:
     """Checks derived from the primary repo resource body (license/description/branch/secret)."""
     fails: list[str] = []
@@ -133,7 +145,15 @@ def _metadata_from_previous(previous: Repo) -> tuple[list[str], list[str], str, 
     return fails, unknowns, previous.description, previous.default_branch
 
 
-async def _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted):
+async def _dynamic_checks(
+    adapter: GitHubAdapter,
+    gh: GitHub,
+    connection: ProviderConnection,
+    owner: str,
+    repo_ref: str,
+    default_branch: str,
+    granted: set[Capability],
+) -> tuple[list[str], list[str], int, int, CIStatus, AlertCounts, int | None]:
     """All checks that can change without the primary repo resource's ETag changing.
 
     Always re-evaluated each poll (even on a 304) so security/activity drift surfaces.
@@ -151,7 +171,7 @@ async def _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_bran
     can_alerts = Capability.read_alerts in granted
     can_org = Capability.read_org_policy in granted
 
-    async def _probe(path: str):
+    async def _probe(path: str) -> object:
         return await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/contents/{path}")
 
     async def _present(path: str) -> bool:
@@ -264,7 +284,9 @@ async def _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_bran
     return fails, unknowns, open_prs, dependabot_prs, ci, alerts, release_pending
 
 
-async def _workflow_action_refs(cget, gh, cid, owner, repo) -> list[str]:
+async def _workflow_action_refs(
+    cget: Any, gh: GitHub, cid: str, owner: str, repo: str
+) -> list[str]:
     """All ``uses:`` action references across ``.github/workflows/*.yml``.
 
     Lists the workflows directory, reads each YAML file, and extracts the action refs
@@ -305,7 +327,7 @@ def _has_unpinned_action(refs: list[str]) -> bool:
     return False
 
 
-def _parse_dt(value):
+def _parse_dt(value: object) -> datetime | None:
     from datetime import datetime
 
     if not isinstance(value, str):
@@ -316,7 +338,9 @@ def _parse_dt(value):
         return None
 
 
-async def _release_pending_days(cget, gh, cid, owner, repo, branch) -> int | None:
+async def _release_pending_days(
+    cget: Any, gh: GitHub, cid: str, owner: str, repo: str, branch: str
+) -> int | None:
     """Days of unreleased commits = default-branch HEAD commit date − latest release date.
 
     None when there is no release (nothing to be behind) or HEAD is not ahead of the
@@ -337,7 +361,9 @@ async def _release_pending_days(cget, gh, cid, owner, repo, branch) -> int | Non
     return (head_dt - rel_dt).days
 
 
-async def _read_text(cget, gh, cid, owner, repo, path) -> str | None:
+async def _read_text(
+    cget: Any, gh: GitHub, cid: str, owner: str, repo: str, path: str
+) -> str | None:
     import base64
 
     from hangar.providers.github.adapter import _FORBIDDEN, _NOT_FOUND, _NOT_MODIFIED
@@ -353,7 +379,9 @@ async def _read_text(cget, gh, cid, owner, repo, path) -> str | None:
     return None
 
 
-async def _pull_counts(cget, gh, cid, owner, repo) -> tuple[int, int]:
+async def _pull_counts(
+    cget: Any, gh: GitHub, cid: str, owner: str, repo: str
+) -> tuple[int, int]:
     data = await cget(gh, cid, f"/repos/{owner}/{repo}/pulls", {"state": "open", "per_page": 100})
     if not isinstance(data, list):
         return (0, 0)
@@ -362,7 +390,9 @@ async def _pull_counts(cget, gh, cid, owner, repo) -> tuple[int, int]:
     return len(data), dependabot
 
 
-async def _ci_status(cget, gh, cid, owner, repo, branch) -> CIStatus:
+async def _ci_status(
+    cget: Any, gh: GitHub, cid: str, owner: str, repo: str, branch: str
+) -> CIStatus:
 
     data = await cget(gh, cid, f"/repos/{owner}/{repo}/actions/runs",
                       {"branch": branch, "per_page": 1})
@@ -379,7 +409,9 @@ async def _ci_status(cget, gh, cid, owner, repo, branch) -> CIStatus:
     return CIStatus.none
 
 
-async def _alert_counts(cget, gh, cid, owner, repo) -> AlertCounts:
+async def _alert_counts(
+    cget: Any, gh: GitHub, cid: str, owner: str, repo: str
+) -> AlertCounts:
     data = await cget(gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100})
     if not isinstance(data, list):
         return AlertCounts()

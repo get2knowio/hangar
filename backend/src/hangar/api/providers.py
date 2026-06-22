@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hangar.api.deps import session_dep, settings_dep
 from hangar.config import Settings
+from hangar.domain.models import ProviderConnection
 from hangar.persistence import repositories as repo_store
 from hangar.providers.base import provider_name
 from hangar.services import connections as conn_service
@@ -16,7 +17,9 @@ from hangar.services.sync import format_relative
 router = APIRouter(tags=["providers"])
 
 
-async def _connection_card(session: AsyncSession, conn, repo_count: int) -> dict:
+async def _connection_card(
+    session: AsyncSession, conn: ProviderConnection, repo_count: int
+) -> dict:
     return {
         "id": conn.id,
         "label": conn.label,

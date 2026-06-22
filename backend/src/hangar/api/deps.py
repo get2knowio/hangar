@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
 from fastapi import Depends, Request
@@ -15,7 +16,7 @@ from hangar.persistence import repositories as repo_store
 from hangar.persistence.db import get_session
 
 
-async def session_dep() -> AsyncSession:  # pragma: no cover - thin wrapper
+async def session_dep() -> AsyncGenerator[AsyncSession, None]:  # pragma: no cover - thin wrapper
     async for s in get_session():
         yield s
 

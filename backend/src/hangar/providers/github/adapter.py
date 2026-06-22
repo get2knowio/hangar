@@ -17,6 +17,7 @@ opened pull request, **never a push/force-push** (Constitution II, FR-014).
 from __future__ import annotations
 
 import base64
+from typing import TYPE_CHECKING
 
 from hangar.domain.models import (
     Capability,
@@ -25,6 +26,13 @@ from hangar.domain.models import (
     Repo,
 )
 from hangar.providers.base import CorrectionRequest, CorrectionResult
+
+if TYPE_CHECKING:
+    from githubkit import (
+        AppInstallationAuthStrategy,
+        GitHub,
+        TokenAuthStrategy,
+    )
 
 # Files/config Hangar writes via PR for the writable PR-tier checks (research.md §9).
 _PR_FILES = {
@@ -62,7 +70,7 @@ class GitHubAdapter:
         }
 
     # ------------------------------------------------------------------ auth
-    def _client(self, connection: ProviderConnection):
+    def _client(self, connection: ProviderConnection) -> GitHub:
         """Build an authenticated githubkit client (real GitHub App or token auth).
 
         http_cache is disabled because we manage conditional requests explicitly.
@@ -78,9 +86,10 @@ class GitHubAdapter:
                 f"GitHub connection '{connection.id}' has no decrypted credential attached; "
                 "cannot authenticate (call attach_credential before using the adapter)."
             )
+        auth: AppInstallationAuthStrategy | TokenAuthStrategy
         has_app_id = connection.app_id is not None
         has_installation = connection.installation_id is not None
-        if has_app_id and has_installation:
+        if connection.app_id is not None and connection.installation_id is not None:
             auth = AppInstallationAuthStrategy(
                 connection.app_id, connection.token, int(connection.installation_id)
             )
@@ -97,8 +106,14 @@ class GitHubAdapter:
 
     # --------------------------------------------------- conditional requests
     async def _conditional_get(
-        self, gh, connection_id: str, path: str, params: dict | None = None, *, conditional: bool = False
-    ):
+        self,
+        gh: GitHub,
+        connection_id: str,
+        path: str,
+        params: dict | None = None,
+        *,
+        conditional: bool = False,
+    ) -> object:
         """GET ``path``. Returns the JSON body, ``NOT_FOUND`` (404), or — only when
         ``conditional=True`` — ``NOT_MODIFIED`` (304).
 
@@ -227,7 +242,10 @@ class GitHubAdapter:
             owner=owner, repo=repo, state="open", head=f"{owner}:{branch}"
         )
         if existing.parsed_data:
-            pr = existing.parsed_data[0]
+            # githubkit types parsed_data as Optional and mypy doesn't narrow the
+            # property access on re-read; the truthiness guard above ensures it is a
+            # non-empty list here.
+            pr = existing.parsed_data[0]  # type: ignore[index]
             return CorrectionResult(
                 applied=True, pr_url=pr.html_url, pr_number=pr.number, idempotent_hit=True,
                 summary=f"PR #{pr.number} already open",

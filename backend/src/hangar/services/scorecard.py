@@ -54,7 +54,7 @@ def build_scorecard(
             groups.append({"label": g, "span": n})
 
     check_meta = []
-    rollup = []
+    rollup: list[dict[str, str | int]] = []
     for i, c in enumerate(checks):
         not_pass = sum(1 for r in repos if matrix[r.id][i] is not FindingStatus.passing)
         fails = sum(1 for r in repos if matrix[r.id][i] is FindingStatus.fail)
@@ -62,7 +62,7 @@ def build_scorecard(
         if fails:
             label = c.label.lower().replace(" present", "").replace(" enabled", "")
             rollup.append({"label": label, "count": fails})
-    rollup.sort(key=lambda x: x["count"], reverse=True)
+    rollup.sort(key=lambda x: int(x["count"]), reverse=True)
     rollup = rollup[:4]
 
     rows = []

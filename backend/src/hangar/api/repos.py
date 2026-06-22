@@ -54,14 +54,14 @@ def _write_kind_for(check_id: str) -> RemediationKind:
     return _TIER_TO_KIND[CATALOG[check_id].tier]
 
 
-@router.post("/repos/{repo_id}/checks/{check_id}/remediate")
+@router.post("/repos/{repo_id}/checks/{check_id}/remediate", response_model=None)
 async def remediate(
     repo_id: str,
     check_id: str,
     body: RemediateBody,
     session: AsyncSession = Depends(session_dep),
     actor: str = Depends(actor_dep),
-):
+) -> dict | JSONResponse:
     repo = await repo_store.get_repo(session, repo_id)
     if repo is None or check_id not in CATALOG:
         raise HTTPException(status_code=404, detail="repo or check not found")
@@ -75,6 +75,7 @@ async def remediate(
 
     # Resolve the effective write kind server-side; never trust the client to pick a
     # write kind a check/connection doesn't support.
+    kind: RemediationKind
     if body.kind in (RemediationKind.report, RemediationKind.deep_link):
         kind = body.kind
     else:
