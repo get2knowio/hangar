@@ -6,6 +6,8 @@ for a connection filter. Pure transformation over cached snapshots — no live c
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from hangar.domain.models import (
     CIStatus,
     Policy,
@@ -29,7 +31,7 @@ def build_overview(
     *,
     synced: str,
 ) -> dict:
-    def s(fn) -> int:
+    def s(fn: Callable[[Repo], int]) -> int:
         return sum(fn(r) for r in repos)
 
     open_prs = s(lambda r: r.open_prs)

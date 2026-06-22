@@ -18,9 +18,13 @@ import hmac
 import ipaddress
 
 import structlog
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import (
+    BaseHTTPMiddleware,
+    RequestResponseEndpoint,
+)
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 from hangar.config import AccessMode, Settings
 
@@ -55,11 +59,13 @@ def _peer_trusted(request: Request, settings: Settings) -> bool:
 
 
 class ForwardAuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, settings: Settings) -> None:
+    def __init__(self, app: ASGIApp, settings: Settings) -> None:
         super().__init__(app)
         self.settings = settings
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         path = request.url.path
         if (
             path in _PUBLIC_PATHS

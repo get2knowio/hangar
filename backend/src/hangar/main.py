@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 
 from hangar.api import api_router
 from hangar.auth.forward_auth import ForwardAuthMiddleware
-from hangar.config import get_settings, validate_startup
+from hangar.config import Settings, get_settings, validate_startup
 from hangar.persistence.db import create_all, get_sessionmaker
 from hangar.services import webhooks
 from hangar.services.sync import SyncService
@@ -54,7 +54,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.sync = sync
     if not _is_testing():
         sync.start()
-    log.info("hangar.started", access_mode=settings.access_mode.value, host=settings.host)
+    mode = settings.access_mode
+    log.info(
+        "hangar.started",
+        access_mode=mode.value if mode else None,
+        host=settings.host,
+    )
     try:
         yield
     finally:
@@ -120,7 +125,7 @@ def create_app() -> FastAPI:
     return app
 
 
-def _mount_spa(app: FastAPI, settings) -> None:
+def _mount_spa(app: FastAPI, settings: Settings) -> None:
     """Serve the built SPA at / in the single-stack deployment (Constitution V).
 
     Unknown non-API paths fall back to index.html so client-side routes (/scorecard,

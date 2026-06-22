@@ -14,9 +14,10 @@ per-connection token budget caps calls per cycle.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import structlog
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hangar.config import get_settings
 from hangar.persistence import repositories as repo
@@ -24,6 +25,11 @@ from hangar.persistence.db import get_sessionmaker
 from hangar.persistence.models import ConnectionRow, RepoRow
 from hangar.persistence.seed import seed_if_empty
 from hangar.providers.registry import provider_for
+
+if TYPE_CHECKING:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    from hangar.domain.models import Repo
 
 log = structlog.get_logger(__name__)
 
@@ -62,7 +68,7 @@ class SyncService:
 
     def __init__(self, sessionmaker: async_sessionmaker | None = None) -> None:
         self._sessionmaker = sessionmaker or get_sessionmaker()
-        self._scheduler = None
+        self._scheduler: AsyncIOScheduler | None = None
 
     async def ensure_seed(self) -> None:
         if not get_settings().seed_demo_data:
@@ -126,7 +132,7 @@ class SyncService:
                 log.warning("sync.last_sync_failed", connection=connection_id, error=str(exc))
             return updated
 
-    async def _upsert_repo(self, session, snapshot) -> None:
+    async def _upsert_repo(self, session: AsyncSession, snapshot: Repo) -> None:
         # Key on (id, connection_id) so a repo of the same name under another connection
         # is never overwritten (composite PK).
         row = await session.get(RepoRow, (snapshot.id, snapshot.connection_id))
@@ -156,10 +162,11 @@ class SyncService:
     def start(self) -> None:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-        self._scheduler = AsyncIOScheduler()
+        scheduler = AsyncIOScheduler()
+        self._scheduler = scheduler
         interval = get_settings().poll_interval_seconds
-        self._scheduler.add_job(self.sync_all, "interval", seconds=interval, id="poll-all")
-        self._scheduler.start()
+        scheduler.add_job(self.sync_all, "interval", seconds=interval, id="poll-all")
+        scheduler.start()
         log.info("sync.scheduler_started", interval_seconds=interval)
 
     def shutdown(self) -> None:

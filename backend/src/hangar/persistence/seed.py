@@ -9,6 +9,7 @@ via the Providers screen are interrogated by the adapters and overwrite/augment 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TypedDict
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +28,45 @@ _READ_CAPS = [
     Capability.deep_link,
 ]
 
-CONNECTIONS = [
+class _Conn(TypedDict):
+    id: str
+    label: str
+    provider_type: str
+    scope: str
+    auth_mode: str
+    caps: list[Capability]
+    sync: str
+
+
+class _Alerts(TypedDict):
+    c: int
+    h: int
+    m: int
+    l: int  # noqa: E741 - mirrors the prototype fixture key (severity "low")
+
+
+class _Repo(TypedDict):
+    id: str
+    conn: str
+    desc: str
+    openPRs: int
+    depPRs: int
+    ci: str
+    alerts: _Alerts
+    rel: int | None
+    fails: list[str]
+    unknowns: list[str]
+
+
+class _Audit(TypedDict):
+    t: str
+    repo: str
+    check: str
+    conn: str
+    result: str
+
+
+CONNECTIONS: list[_Conn] = [
     dict(id="gh-main", label="gh:get2knowio", provider_type="github", scope="org · 9 repos",
          auth_mode="GitHub App #4471", caps=_WRITE_CAPS, sync="2m ago"),
     dict(id="gh-labs", label="gh:get2know-labs", provider_type="github", scope="org · 3 repos",
@@ -36,7 +75,7 @@ CONNECTIONS = [
          auth_mode="Scoped token", caps=_READ_CAPS, sync="12m ago"),
 ]
 
-REPOS = [
+REPOS: list[_Repo] = [
     dict(id="hola", conn="gh-main", desc="Homelab Compose deployer CLI", openPRs=4, depPRs=2, ci="pass", alerts=dict(c=0, h=0, m=1, l=2), rel=None, fails=["two_fa"], unknowns=[]),
     dict(id="hangar", conn="gh-main", desc="Fleet control plane (this app)", openPRs=6, depPRs=3, ci="fail", alerts=dict(c=1, h=1, m=0, l=0), rel=9, fails=["cooldown", "license", "branch_protection", "code_scanning", "conventional"], unknowns=["two_fa"]),
     dict(id="get2know-web", conn="gh-main", desc="Marketing & docs site", openPRs=2, depPRs=1, ci="pass", alerts=dict(c=0, h=0, m=0, l=1), rel=3, fails=["security_md", "templates"], unknowns=["two_fa"]),
@@ -53,7 +92,7 @@ REPOS = [
     dict(id="lan-dns", conn="gitea", desc="Internal DNS records", openPRs=1, depPRs=0, ci="pass", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["readme", "license"], unknowns=["secret_scanning", "code_scanning"]),
 ]
 
-AUDIT = [
+AUDIT: list[_Audit] = [
     dict(t="4m ago", repo="get2know-web", check="Description & topics set", conn="gh:get2knowio", result="Settings applied"),
     dict(t="1h ago", repo="ntfy-bridge", check="LICENSE present", conn="gh:get2knowio", result="PR #138 merged"),
     dict(t="yesterday", repo="hola", check="Dependabot alerts", conn="gh:get2knowio", result="Settings applied"),

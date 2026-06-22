@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -23,11 +24,11 @@ class Base(DeclarativeBase):
     """Declarative base for all persistence models."""
 
 
-_engine = None
+_engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
-def get_engine():
+def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         url = get_settings().database_url
