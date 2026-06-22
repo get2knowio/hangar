@@ -12,10 +12,9 @@ import asyncio
 import os
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
-
-from alembic import context
 
 # Import models so every table registers on Base.metadata.
 from hangar.persistence import models  # noqa: F401
