@@ -50,56 +50,93 @@ For production-like runs you also want:
 
 ---
 
-## Quickstart
+## Run it locally
 
-### 1. Configure
+Hangar is **fail-closed**: it refuses to start unless `HANGAR_FORWARD_AUTH` is set. For
+local work use `HANGAR_FORWARD_AUTH=disabled` (no SSO gate — you'll see a loud startup
+warning; fine on your own machine).
+
+### Fastest: demo mode, no GitHub App needed
+
+The quickest way to "fire it up and click around." `HANGAR_SEED_DEMO_DATA=true` loads the
+prototype's sample fleet on first boot, so every screen is populated without configuring a
+real provider. Run the backend and frontend in two terminals.
+
+**Terminal 1 — backend** (from `backend/`):
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate      # first time only
+pip install -e '.[dev]'                                # first time only
+
+export HANGAR_FORWARD_AUTH=disabled
+export HANGAR_SEED_DEMO_DATA=true
+export HANGAR_SECRET_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+uvicorn hangar.main:app --reload                       # API + /health on http://127.0.0.1:8000
+```
+
+**Terminal 2 — frontend** (from `frontend/`):
+
+```bash
+cd frontend
+npm install            # first time only
+npm run gen:api        # generate TS types from the OpenAPI contract (first time / after contract edits)
+npm run dev            # SPA on http://127.0.0.1:5173, proxies /api -> :8000
+```
+
+Open **http://127.0.0.1:5173**. You should land on a populated overview; the scorecard,
+repo detail, and providers screens all work against the seeded fleet. The SQLite db is
+written to `backend/hangar.db` — delete it to reset (the seed reloads on next boot).
+
+> Demo connections have no real credential, so remediations are *simulated* (no live PRs).
+> To exercise real detection/remediation, add a real GitHub connection (see below) and run
+> with `HANGAR_SEED_DEMO_DATA=false`.
+
+### Whole app in one process (built SPA served by the backend)
+
+Mirrors production wiring (one Uvicorn process serves the API **and** the built SPA) without
+Docker:
+
+```bash
+cd frontend && npm install && npm run gen:api && npm run build   # produces frontend/dist
+cd ../backend && pip install -e '.[dev]'
+export HANGAR_FORWARD_AUTH=disabled HANGAR_SEED_DEMO_DATA=true
+export HANGAR_SECRET_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+export HANGAR_STATIC_DIR="$(pwd)/../frontend/dist"
+uvicorn hangar.main:app                                          # full app on http://127.0.0.1:8000
+```
+
+### Full container stack (Docker Compose)
+
+Builds the SPA + backend into one image and runs it the way it deploys. One-time setup:
 
 ```bash
 cp deploy/.env.example deploy/.env
-# Generate the credential-encryption key (FR-032) and paste it into HANGAR_SECRET_KEY:
+# In deploy/.env set at minimum:
+#   HANGAR_FORWARD_AUTH=disabled
+#   HANGAR_SEED_DEMO_DATA=true            # for a populated demo; false for real connections
+#   HANGAR_SECRET_KEY=<paste the output of the command below>
 python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-# Edit deploy/.env: set HANGAR_FORWARD_AUTH, HANGAR_SECRET_KEY, HANGAR_DOMAIN, etc.
+
+# The compose file attaches to a shared Traefik network named `proxy`. Create it once
+# (harmless locally even without Traefik running):
+docker network create proxy
 ```
 
-Hangar is **fail-closed**: if `HANGAR_FORWARD_AUTH` is unset it refuses to start. Use
-`disabled` for a quick local look (you'll see a loud startup warning) or `enabled` behind
-your proxy.
-
-### 2a. Run with Docker Compose (production-like)
+Then:
 
 ```bash
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-This builds the SPA, builds the backend image, and starts the `hangar` service. The port is
-published on `127.0.0.1:8000` only (internal bind); real access is meant to come through
-Traefik. Open the app, go to **Providers**, add a GitHub connection, and let the first sync
-run. To use Postgres instead of SQLite:
+The app is published on `127.0.0.1:8000` only (internal bind) — open
+**http://127.0.0.1:8000**. Real external access is meant to come through Traefik + SSO;
+the Traefik/`homepage`/`hola` labels in the compose file are inert until that proxy exists.
+To use Postgres instead of SQLite:
 
 ```bash
-# set HANGAR_DATABASE_URL=postgresql+asyncpg://hangar:hangar@postgres:5432/hangar in .env
+# set HANGAR_DATABASE_URL=postgresql+asyncpg://hangar:hangar@postgres:5432/hangar in deploy/.env
 docker compose -f deploy/docker-compose.yml --profile postgres up --build
-```
-
-### 2b. Run locally (dev)
-
-Backend:
-
-```bash
-cd backend
-pip install -e '.[dev]'
-export HANGAR_FORWARD_AUTH=disabled
-export HANGAR_SECRET_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
-uvicorn hangar.main:app --reload          # API + /health on http://127.0.0.1:8000
-```
-
-Frontend (separate terminal):
-
-```bash
-cd frontend
-npm install
-npm run gen:api      # regenerate TS types from the OpenAPI contract
-npm run dev          # SPA on http://127.0.0.1:5173 (proxies /api -> :8000)
 ```
 
 ---
