@@ -58,7 +58,6 @@ class Settings(BaseSettings):
     # --- networking / runtime ---
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8000)
-    public_bind: bool = Field(default=False, description="internal alias used by some deploys")
 
     # --- sync / poller (Constitution VI) ---
     poll_interval_seconds: int = Field(default=300)
@@ -150,7 +149,8 @@ def validate_startup(settings: Settings) -> list[str]:
             "Run this only on a trusted internal network."
         )
 
-    if settings.binds_public and not (settings.allow_public_bind or settings.public_bind):
+    # The ONLY authorized override is HANGAR_ALLOW_PUBLIC_BIND (FR-030, Constitution III).
+    if settings.binds_public and not settings.allow_public_bind:
         raise StartupError(
             f"Refusing to bind a public interface ({settings.host}) without "
             "HANGAR_ALLOW_PUBLIC_BIND=1. Bind to an internal/loopback address instead "

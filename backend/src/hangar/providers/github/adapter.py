@@ -78,9 +78,18 @@ class GitHubAdapter:
                 f"GitHub connection '{connection.id}' has no decrypted credential attached; "
                 "cannot authenticate (call attach_credential before using the adapter)."
             )
-        if connection.app_id and connection.installation_id:
+        has_app_id = connection.app_id is not None
+        has_installation = connection.installation_id is not None
+        if has_app_id and has_installation:
             auth = AppInstallationAuthStrategy(
                 connection.app_id, connection.token, int(connection.installation_id)
+            )
+        elif has_app_id or has_installation:
+            # A half-configured App would otherwise fall through to TokenAuthStrategy and
+            # send the App private-key PEM as a bearer token. Fail closed with a clear error.
+            raise RuntimeError(
+                f"GitHub connection '{connection.id}' is a partial GitHub App config: "
+                "both app_id and installation_id are required (or set neither for a token/PAT)."
             )
         else:
             auth = TokenAuthStrategy(connection.token)
@@ -94,9 +103,13 @@ class GitHubAdapter:
         ``conditional=True`` — ``NOT_MODIFIED`` (304).
 
         Conditional (``If-None-Match``) requests are used ONLY for the primary repo
-        resource: its ETag changes on any push/metadata edit, so a 304 means the repo is
-        genuinely unchanged and the whole poll can be skipped (SC-010). Sub-resources are
-        fetched unconditionally so their value is always fresh (recomputed each poll).
+        resource: its ETag changes on any push/metadata edit, so a 304 lets the caller
+        reuse the repo-body-derived checks from the prior snapshot (SC-010). Sub-resources
+        are fetched unconditionally so their value is always fresh (recomputed each poll).
+
+        Returns the JSON body, or a sentinel: ``NOT_FOUND`` (404), ``FORBIDDEN`` (403 —
+        feature disabled / insufficient fine-grained scope; the caller maps it to
+        ``unknown``), or — only when ``conditional=True`` — ``NOT_MODIFIED`` (304).
         """
         from githubkit.exception import RequestFailed
 
@@ -107,10 +120,14 @@ class GitHubAdapter:
         try:
             resp = await gh.arequest("GET", path, params=params, headers=headers)
         except RequestFailed as exc:
-            # 404 = resource absent (e.g. a file/ruleset that doesn't exist). Any other
-            # error (403/5xx) propagates to the poller's resilience boundary.
+            # 404 = resource absent (e.g. a file/ruleset that doesn't exist).
+            # 403 = readable repo but this resource/feature is unavailable to the token
+            #       (GitHub Advanced Security off, narrower fine-grained scope) → unknown,
+            #       NOT an exception that would abort the whole snapshot. 5xx propagates.
             if exc.response.status_code == 404:
                 return _NOT_FOUND
+            if exc.response.status_code == 403:
+                return _FORBIDDEN
             raise
         if resp.status_code == 304:  # githubkit passes 304 through (not an error)
             return _NOT_MODIFIED
@@ -132,11 +149,19 @@ class GitHubAdapter:
             return []
         return [r["name"] for r in data]
 
-    async def interrogate(self, connection: ProviderConnection, repo_ref: str) -> Repo | None:
-        """Read a repo into a normalized snapshot, or None if unchanged since last poll."""
+    async def interrogate(
+        self, connection: ProviderConnection, repo_ref: str, *, previous: Repo | None = None
+    ) -> Repo | None:
+        """Read a repo into a normalized snapshot.
+
+        ``previous`` is the last cached snapshot (if any); on a primary-resource 304 its
+        repo-body-derived checks are carried forward while volatile signals re-evaluate.
+        """
         from hangar.providers.github.detection import interrogate_repo
 
-        return await interrogate_repo(self, self._client(connection), connection, repo_ref)
+        return await interrogate_repo(
+            self, self._client(connection), connection, repo_ref, previous
+        )
 
     # ----------------------------------------------------------------- writes
     def deep_link(self, connection: ProviderConnection, repo: Repo, check_id: str) -> str:
@@ -151,6 +176,9 @@ class GitHubAdapter:
             "actions_pinned_sha": "/settings/actions",
         }.get(check_id, "")
         return f"{self.base_url}/{connection.owner}/{repo.id}{anchor}"
+
+    def pr_url(self, connection: ProviderConnection, repo: Repo, pr_number: int | None) -> str:
+        return f"{self.base_url}/{connection.owner}/{repo.id}/pull/{pr_number}"
 
     async def correct(
         self, connection: ProviderConnection, request: CorrectionRequest
@@ -178,9 +206,13 @@ class GitHubAdapter:
         owner, repo = connection.owner, request.repo.id
         if request.check_id == "dependabot_alerts":
             await gh.rest.repos.async_enable_vulnerability_alerts(owner=owner, repo=repo)
-        elif request.check_id == "description":
-            await gh.rest.repos.async_update(owner=owner, repo=repo, description=request.repo.description)
-        return CorrectionResult(applied=True, summary="Settings applied")
+            return CorrectionResult(applied=True, summary="Dependabot alerts enabled")
+        # A settings PATCH must converge the finding. Anything not handled here would be a
+        # silent no-op that falsely reports success, so refuse it (checks that Hangar
+        # cannot auto-apply are modelled as link/report tiers, not settings_patch).
+        raise ValueError(
+            f"no settings-patch remediation implemented for check '{request.check_id}'"
+        )
 
     async def _open_pr(
         self, connection: ProviderConnection, request: CorrectionRequest
@@ -239,3 +271,4 @@ class _Sentinel:
 
 _NOT_MODIFIED = _Sentinel("NOT_MODIFIED")
 _NOT_FOUND = _Sentinel("NOT_FOUND")
+_FORBIDDEN = _Sentinel("FORBIDDEN")

@@ -1,8 +1,11 @@
 /* Status → glyph/color/label and hygiene-color helpers — mirrors the prototype `viz`
    and `hygColor`. Color is the ONLY semantic signal (status-only color). */
 
-export type FindingStatus = "pass" | "fail" | "unknown" | "pending" | "working";
-export type Tone = "pass" | "warn" | "fail" | "unknown" | "neutral";
+import type { components } from "./api-types";
+
+// Derived from the generated OpenAPI contract — no hand-drifted types (Constitution VII).
+export type FindingStatus = components["schemas"]["FindingStatus"];
+export type Tone = components["schemas"]["Tone"];
 
 export interface Viz {
   color: string;

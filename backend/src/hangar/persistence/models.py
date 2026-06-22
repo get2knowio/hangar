@@ -101,6 +101,10 @@ class RepoRow(Base):
 class RemediationRow(Base):
     __tablename__ = "remediations"
 
+    # Connection-scoped: the same repo name under two connections has independent
+    # remediation state, mirroring RepoRow's composite key. Keying on repo_id alone would
+    # let a fix opened on one connection's repo overlay another connection's same-named repo.
+    connection_id: Mapped[str] = mapped_column(String(64), primary_key=True, default="")
     repo_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     check_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     kind: Mapped[str] = mapped_column(String(32))

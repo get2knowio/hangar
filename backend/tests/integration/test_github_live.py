@@ -9,7 +9,7 @@ import respx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from hangar.domain.models import Capability, ProviderConnection
+from hangar.domain.models import Capability, ProviderConnection, Repo
 from hangar.providers.github.adapter import GitHubAdapter
 
 API = "https://api.github.com"
@@ -218,6 +218,66 @@ async def test_release_health_passes_when_head_at_release(respx_mock) -> None:
     assert repo is not None
     assert repo.release_pending_days is None  # HEAD not ahead of the release
     assert "release_health" not in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_304_with_previous_refreshes_volatile_signals(respx_mock) -> None:
+    """A primary 304 reuses the prior snapshot's repo-body checks but STILL re-fetches
+    volatile signals (alerts/CI/PRs/release) — a new critical alert must surface even
+    though the repo resource is unchanged."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    adapter._etags[("gh-main", "/repos/acme/hangar")] = '"v1"'
+
+    # A new critical Dependabot alert appears though the repo body is unchanged (304).
+    # Distinct regex from _routes' alerts pattern so respx keeps both routes (it dedupes
+    # identical patterns); registered first so first-match-wins picks the critical one.
+    respx_mock.get(url__regex=r".*/dependabot/alerts(\?.*)?$").mock(
+        return_value=httpx.Response(200, json=[{"security_advisory": {"severity": "critical"}}])
+    )
+    _routes(respx_mock, httpx.Response(304, headers={"ETag": '"v1"'}))
+
+    previous = Repo(
+        id="hangar", connection_id="gh-main", default_branch="main",
+        description="Fleet control plane", fails=["license"], unknowns=[],
+    )
+    repo = await adapter.interrogate(conn, "hangar", previous=previous)
+
+    assert repo is not None, "304 with a cached snapshot must still produce a snapshot"
+    assert repo.alerts.critical == 1  # volatile signal refreshed despite the 304
+    assert "license" in repo.fails  # repo-body check carried over from the previous snapshot
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_403_on_subresource_yields_unknown_not_crash(respx_mock) -> None:
+    """A 403 (e.g. Advanced Security disabled) maps the check to `unknown` and does NOT
+    abort the whole snapshot (detection docstring contract)."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    respx_mock.get(f"{API}/repos/acme/hangar/code-scanning/analyses").mock(
+        return_value=httpx.Response(403, json={"message": "Advanced Security disabled"})
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"f1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None  # the 403 did not propagate and abort interrogation
+    assert "code_scanning" in repo.unknowns
+    assert "code_scanning" not in repo.fails
+    assert "default_branch" not in repo.fails  # the rest of the snapshot still evaluated
+
+
+async def test_partial_app_config_fails_closed() -> None:
+    """A half-configured App (app_id without installation_id) must NOT fall through to
+    token auth and send the PEM as a bearer token — it fails closed."""
+    adapter = GitHubAdapter()
+    conn = ProviderConnection(
+        id="gh-partial", label="gh:acme", provider_type="github", scope="org",
+        auth_mode="App", app_id="123", installation_id=None,
+        has_credential=True, token=_rsa_pem(),
+    )
+    with pytest.raises(RuntimeError, match="partial GitHub App"):
+        await adapter.interrogate(conn, "hangar")
 
 
 def test_has_unpinned_action_logic() -> None:

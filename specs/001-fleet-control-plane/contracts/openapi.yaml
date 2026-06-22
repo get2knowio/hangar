@@ -330,6 +330,13 @@ paths:
                   state: { type: string, enum: [fixed] }
                   pr_url: { type: string, nullable: true }
                   idempotent_hit: { type: boolean }
+        "409":
+          description: >
+            No open Hangar PR exists for this check, so there is nothing to mark merged
+            (prevents fabricating a 'PR merged' pass + audit entry, FR-016).
+          content:
+            application/json:
+              schema: { type: object, properties: { detail: { type: string } } }
 
 components:
   parameters:

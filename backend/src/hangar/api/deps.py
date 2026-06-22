@@ -34,7 +34,7 @@ class FleetContext:
     connections: dict[str, ProviderConnection]
     policy: Policy
     remediations: RemediationMap
-    rem_pr_urls: dict[tuple[str, str], str | None]
+    rem_pr_urls: dict[tuple[str, str, str], str | None]
 
 
 async def load_fleet(

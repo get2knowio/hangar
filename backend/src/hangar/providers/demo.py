@@ -27,13 +27,20 @@ class DemoProvider:
         # No discovery for demo connections — seeded snapshots stand as-is.
         return []
 
-    async def interrogate(self, connection: ProviderConnection, repo_ref: str) -> Repo:
-        return Repo(id=repo_ref, connection_id=connection.id)
+    async def interrogate(
+        self, connection: ProviderConnection, repo_ref: str, *, previous: Repo | None = None
+    ) -> Repo | None:
+        # Demo connections have no live data; the seeded snapshot stands as-is. Prefer the
+        # cached snapshot so a refresh never clobbers rich fixtures with empty defaults.
+        return previous if previous is not None else Repo(id=repo_ref, connection_id=connection.id)
 
     def deep_link(self, connection: ProviderConnection, repo: Repo, check_id: str) -> str:
         host = _PROVIDER_HOST.get(self.provider_type, "example.com")
-        owner = connection.label.split(":")[-1]
-        return f"https://{host}/{owner}/{repo.id}"
+        return f"https://{host}/{connection.owner}/{repo.id}"
+
+    def pr_url(self, connection: ProviderConnection, repo: Repo, pr_number: int | None) -> str:
+        host = _PROVIDER_HOST.get(self.provider_type, "example.com")
+        return f"https://{host}/{connection.owner}/{repo.id}/pull/{pr_number}"
 
     async def correct(
         self, connection: ProviderConnection, request: CorrectionRequest

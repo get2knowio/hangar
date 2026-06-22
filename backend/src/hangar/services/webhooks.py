@@ -52,6 +52,13 @@ async def apply_event(
         if action in {"opened", "reopened", "closed"}:
             delta = 1 if action in {"opened", "reopened"} else -1
             row.open_prs = max(0, row.open_prs + delta)
+            # Keep the Dependabot sub-count consistent with open_prs (a closed bot PR must
+            # decrement both, else dependabot_prs can exceed open_prs and corrupt the
+            # derived human-PR count until the next poll reconciles).
+            login = ((payload.get("pull_request") or {}).get("user") or {}).get("login")
+            if login in {"dependabot[bot]", "dependabot-preview[bot]"}:
+                row.dependabot_prs = max(0, row.dependabot_prs + delta)
+            row.dependabot_prs = min(row.dependabot_prs, row.open_prs)
     elif event in {"repository_vulnerability_alert", "dependabot_alert"}:
         # Re-derive on next poll; mark for freshness here.
         pass

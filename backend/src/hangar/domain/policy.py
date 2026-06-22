@@ -20,8 +20,9 @@ from hangar.domain.models import (
     Tone,
 )
 
-# (repo_id, check_id) -> RemediationState
-RemediationMap = dict[tuple[str, str], RemediationState]
+# (connection_id, repo_id, check_id) -> RemediationState. Connection-scoped so a fix on
+# one connection's repo never overlays a same-named repo under another connection.
+RemediationMap = dict[tuple[str, str, str], RemediationState]
 
 
 def default_policy() -> Policy:
@@ -45,7 +46,7 @@ def effective_status(
     repo: Repo, check_id: str, remediations: RemediationMap | None = None
 ) -> FindingStatus:
     """Effective status incl. remediation overlay (prototype ``effStatus``)."""
-    rem = (remediations or {}).get((repo.id, check_id))
+    rem = (remediations or {}).get((repo.connection_id, repo.id, check_id))
     if rem is not None:
         if rem is RemediationState.fixed:
             return FindingStatus.passing

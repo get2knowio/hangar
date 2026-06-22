@@ -641,6 +641,17 @@ export interface paths {
                         };
                     };
                 };
+                /** @description No open Hangar PR exists for this check, so there is nothing to mark merged (prevents fabricating a 'PR merged' pass + audit entry, FR-016). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            detail?: string;
+                        };
+                    };
+                };
             };
         };
         delete?: never;

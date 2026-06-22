@@ -91,20 +91,39 @@ class SyncService:
             updated = 0
             try:
                 refs = await provider.list_repos(connection)
-                for ref in refs[:budget]:
-                    snapshot = await provider.interrogate(connection, ref)
-                    if snapshot is None:
-                        continue  # 304 Not Modified — keep the cached snapshot (SC-010)
-                    await self._upsert_repo(session, snapshot)
-                    updated += 1
-                row.last_sync_at = datetime.now(UTC)
-                await session.commit()
-            except Exception as exc:  # noqa: BLE001 - resilience boundary
+            except Exception as exc:  # noqa: BLE001 - resilience boundary (whole connection)
                 log.warning(
                     "sync.connection_failed",
                     connection=connection_id, error=str(exc),
-                    note="serving last good snapshot",
+                    note="serving last good snapshots",
                 )
+                return 0
+
+            # Per-repo isolation: a single repo's failure must not discard the snapshots
+            # of repos already synced this cycle (SC-009). Each success is committed
+            # immediately so a later failure can only roll back its own partial work.
+            for ref in refs[:budget]:
+                try:
+                    existing = await session.get(RepoRow, (ref, connection_id))
+                    previous = existing.to_domain() if existing else None
+                    snapshot = await provider.interrogate(connection, ref, previous=previous)
+                    if snapshot is None:
+                        continue  # unreadable/unchanged — keep the cached snapshot (SC-010)
+                    await self._upsert_repo(session, snapshot)
+                    await session.commit()
+                    updated += 1
+                except Exception as exc:  # noqa: BLE001 - resilience boundary (one repo)
+                    log.warning("sync.repo_failed", connection=connection_id, repo=ref,
+                                error=str(exc), note="keeping last good snapshot for this repo")
+                    await session.rollback()
+
+            try:
+                row = await session.get(ConnectionRow, connection_id)
+                if row is not None:
+                    row.last_sync_at = datetime.now(UTC)
+                    await session.commit()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("sync.last_sync_failed", connection=connection_id, error=str(exc))
             return updated
 
     async def _upsert_repo(self, session, snapshot) -> None:

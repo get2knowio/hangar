@@ -98,30 +98,38 @@ async def save_policy(session: AsyncSession, policy: Policy) -> None:
 
 
 # --------------------------------------------------------------- remediations
+def _rem_key(row: RemediationRow) -> tuple[str, str, str]:
+    return (row.connection_id, row.repo_id, row.check_id)
+
+
 async def remediation_map(session: AsyncSession) -> RemediationMap:
     rows = (await session.execute(select(RemediationRow))).scalars().all()
-    return {(r.repo_id, r.check_id): RemediationState(r.state) for r in rows}
+    return {_rem_key(r): RemediationState(r.state) for r in rows}
 
 
 async def remediation_map_and_pr_urls(
     session: AsyncSession,
-) -> tuple[RemediationMap, dict[tuple[str, str], str | None]]:
+) -> tuple[RemediationMap, dict[tuple[str, str, str], str | None]]:
     """State map + PR-url overlay in a single RemediationRow scan (repo-detail path)."""
     rows = (await session.execute(select(RemediationRow))).scalars().all()
-    state = {(r.repo_id, r.check_id): RemediationState(r.state) for r in rows}
-    pr_urls = {(r.repo_id, r.check_id): r.pr_url for r in rows}
+    state = {_rem_key(r): RemediationState(r.state) for r in rows}
+    pr_urls = {_rem_key(r): r.pr_url for r in rows}
     return state, pr_urls
 
 
 async def get_remediation(
-    session: AsyncSession, repo_id: str, check_id: str
+    session: AsyncSession, connection_id: str, repo_id: str, check_id: str
 ) -> RemediationRow | None:
-    return await session.get(RemediationRow, (repo_id, check_id))
+    return await session.get(
+        RemediationRow,
+        {"connection_id": connection_id, "repo_id": repo_id, "check_id": check_id},
+    )
 
 
 async def upsert_remediation(
     session: AsyncSession,
     *,
+    connection_id: str,
     repo_id: str,
     check_id: str,
     kind: str,
@@ -130,16 +138,19 @@ async def upsert_remediation(
     pr_number: int | None = None,
     idempotency_key: str | None = None,
 ) -> RemediationRow:
-    row = await session.get(RemediationRow, (repo_id, check_id))
+    row = await session.get(
+        RemediationRow,
+        {"connection_id": connection_id, "repo_id": repo_id, "check_id": check_id},
+    )
     if row is None:
-        row = RemediationRow(repo_id=repo_id, check_id=check_id)
+        row = RemediationRow(connection_id=connection_id, repo_id=repo_id, check_id=check_id)
+        row.created_at = datetime.now(UTC)  # set once, on creation
         session.add(row)
     row.kind = kind
     row.state = state
     row.pr_url = pr_url
     row.pr_number = pr_number
     row.idempotency_key = idempotency_key
-    row.created_at = datetime.now(UTC)
     await session.commit()
     return row
 
@@ -196,5 +207,5 @@ async def list_audit(session: AsyncSession, limit: int = 50) -> list[AuditLogEnt
 async def next_pr_number(session: AsyncSession) -> int:
     """Monotonic PR number for demo corrections (prototype ``prCounter`` seeded at 142)."""
     rows = (await session.execute(select(RemediationRow.pr_number))).scalars().all()
-    existing = [n for n in rows if n]
+    existing = [n for n in rows if n is not None]
     return (max(existing) if existing else 142) + 1

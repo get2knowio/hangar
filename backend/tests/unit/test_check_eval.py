@@ -40,13 +40,14 @@ def test_effective_status_pass_fail_unknown() -> None:
 
 def test_remediation_overlay_changes_status() -> None:
     repo = _repo(fails=["license"])
-    base = {(repo.id, "license"): RemediationState.working}
+    key = (repo.connection_id, repo.id, "license")
+    base = {key: RemediationState.working}
     assert effective_status(repo, "license", base) is FindingStatus.working
 
-    pr_open = {(repo.id, "license"): RemediationState.pr_open}
+    pr_open = {key: RemediationState.pr_open}
     assert effective_status(repo, "license", pr_open) is FindingStatus.pending
 
-    fixed = {(repo.id, "license"): RemediationState.fixed}
+    fixed = {key: RemediationState.fixed}
     assert effective_status(repo, "license", fixed) is FindingStatus.passing
 
 
@@ -63,7 +64,7 @@ def test_hygiene_rollup_math() -> None:
     assert hygiene(one_fail, policy) == expected
 
     # a fixed remediation restores that check to passing → back to 100
-    fixed_map = {(one_fail.id, "license"): RemediationState.fixed}
+    fixed_map = {(one_fail.connection_id, one_fail.id, "license"): RemediationState.fixed}
     assert hygiene(one_fail, policy, fixed_map) == 100
 
 

@@ -70,7 +70,7 @@ def build_repo_detail(
     connection: ProviderConnection,
     policy: Policy,
     remediations: RemediationMap,
-    rem_pr_urls: dict[tuple[str, str], str | None],
+    rem_pr_urls: dict[tuple[str, str, str], str | None],
 ) -> dict:
     checks = enabled_checks(policy)
     hyg = hygiene(repo, policy, remediations)
@@ -84,7 +84,10 @@ def build_repo_detail(
             status = effective_status(repo, c.id, remediations)
             tier = c.tier_for(connection.granted_capabilities)
             primary, secondary = _actions(status, tier, connection.provider_type)
-            open_pr = rem_pr_urls.get((repo.id, c.id)) if status is FindingStatus.pending else None
+            open_pr = (
+                rem_pr_urls.get((repo.connection_id, repo.id, c.id))
+                if status is FindingStatus.pending else None
+            )
             group_checks.append({
                 "id": c.id,
                 "label": c.label,

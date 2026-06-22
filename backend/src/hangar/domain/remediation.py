@@ -39,6 +39,18 @@ class ReadOnlyCollapse(Exception):
         self.deep_link_url = deep_link_url
 
 
+class NoOpenPullRequest(Exception):
+    """Raised when ``mark_merged`` is called for a check with no open Hangar PR.
+
+    Prevents fabricating a 'PR merged' pass + audit entry for a PR that never existed
+    (FR-016 audit integrity → API 409).
+    """
+
+    def __init__(self, check_id: str) -> None:
+        super().__init__(f"no open Hangar PR to mark merged for check '{check_id}'")
+        self.check_id = check_id
+
+
 @dataclass(slots=True)
 class RemediationOutcome:
     state: RemediationState
@@ -90,7 +102,7 @@ class RemediationService:
 
         # Idempotency for PR corrections (FR-015): surface an existing open Hangar PR.
         if kind is RemediationKind.config_pr:
-            existing = await repo_store.get_remediation(session, repo.id, check_id)
+            existing = await repo_store.get_remediation(session, connection.id, repo.id, check_id)
             if existing is not None and existing.state == RemediationState.pr_open.value:
                 return RemediationOutcome(
                     state=RemediationState.pr_open, pr_url=existing.pr_url,
@@ -130,12 +142,13 @@ class RemediationService:
             pr_number = result.pr_number
             if pr_number is None and not result.idempotent_hit:
                 pr_number = await repo_store.next_pr_number(session)
-            pr_url = result.pr_url or _demo_pr_url(connection, repo, pr_number)
+            # URL construction is the provider's job (provider-agnostic core, Constitution I).
+            pr_url = result.pr_url or self.provider.pr_url(connection, repo, pr_number)
             await repo_store.upsert_remediation(
-                session, repo_id=repo.id, check_id=check_id,
+                session, connection_id=connection.id, repo_id=repo.id, check_id=check_id,
                 kind=kind.value, state=RemediationState.pr_open.value,
                 pr_url=pr_url, pr_number=pr_number,
-                idempotency_key=f"{repo.id}::{check_id}",
+                idempotency_key=f"{connection.id}::{repo.id}::{check_id}",
             )
             if result.idempotent_hit:
                 return RemediationOutcome(
@@ -154,7 +167,7 @@ class RemediationService:
 
         # settings_patch
         await repo_store.upsert_remediation(
-            session, repo_id=repo.id, check_id=check_id,
+            session, connection_id=connection.id, repo_id=repo.id, check_id=check_id,
             kind=kind.value, state=RemediationState.fixed.value,
         )
         entry = await audit.record_correction(
@@ -176,24 +189,28 @@ class RemediationService:
         actor: str,
     ) -> RemediationOutcome:
         check = CATALOG[check_id]
+        # Only a check with an open Hangar PR can be "merged" — otherwise this would
+        # fabricate a pass + 'PR merged' audit entry for a PR that never existed (FR-016).
+        existing = await repo_store.get_remediation(session, connection.id, repo.id, check_id)
+        if existing is None or existing.state != RemediationState.pr_open.value:
+            raise NoOpenPullRequest(check_id)
         await repo_store.upsert_remediation(
-            session, repo_id=repo.id, check_id=check_id,
+            session, connection_id=connection.id, repo_id=repo.id, check_id=check_id,
             kind=RemediationKind.config_pr.value, state=RemediationState.fixed.value,
+            pr_url=existing.pr_url, pr_number=existing.pr_number,
         )
         entry = await audit.record_correction(
             session, actor=actor, connection_label=connection.label,
-            repo_id=repo.id, check_label=check.label, result="PR merged",
+            repo_id=repo.id, check_label=check.label, result="PR merged", pr_url=existing.pr_url,
         )
         return RemediationOutcome(
-            state=RemediationState.fixed, pr_url=None, idempotent_hit=False,
+            state=RemediationState.fixed, pr_url=existing.pr_url, idempotent_hit=False,
             audit_id=entry.id, result_text="PR merged",
         )
 
 
-def _demo_pr_url(connection: ProviderConnection, repo: Repo, pr_number: int | None) -> str:
-    owner = connection.label.split(":")[-1]
-    return f"https://github.com/{owner}/{repo.id}/pull/{pr_number}"
-
-
 # Capability re-export so callers don't reach into models for the common check.
-__all__ = ["RemediationService", "RemediationOutcome", "ReadOnlyCollapse", "resolve_kind", "Capability"]
+__all__ = [
+    "RemediationService", "RemediationOutcome", "ReadOnlyCollapse", "NoOpenPullRequest",
+    "resolve_kind", "Capability",
+]

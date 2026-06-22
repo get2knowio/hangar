@@ -54,6 +54,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('remediations',
+    sa.Column('connection_id', sa.String(length=64), nullable=False),
     sa.Column('repo_id', sa.String(length=128), nullable=False),
     sa.Column('check_id', sa.String(length=64), nullable=False),
     sa.Column('kind', sa.String(length=32), nullable=False),
@@ -62,7 +63,7 @@ def upgrade() -> None:
     sa.Column('pr_number', sa.Integer(), nullable=True),
     sa.Column('idempotency_key', sa.String(length=256), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=True),
-    sa.PrimaryKeyConstraint('repo_id', 'check_id')
+    sa.PrimaryKeyConstraint('connection_id', 'repo_id', 'check_id')
     )
     op.create_table('repos',
     sa.Column('id', sa.String(length=128), nullable=False),

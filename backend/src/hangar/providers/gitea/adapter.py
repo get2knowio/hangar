@@ -28,12 +28,23 @@ class GiteaAdapter:
     async def list_repos(self, connection: ProviderConnection) -> list[str]:  # pragma: no cover
         return []
 
-    async def interrogate(self, connection: ProviderConnection, repo_ref: str) -> Repo:  # pragma: no cover
-        return Repo(id=repo_ref, connection_id=connection.id)
+    async def interrogate(  # pragma: no cover
+        self, connection: ProviderConnection, repo_ref: str, *, previous: Repo | None = None
+    ) -> Repo | None:
+        return previous
 
     def deep_link(self, connection: ProviderConnection, repo: Repo, check_id: str) -> str:
-        host = connection.label.split(":")[-1]
-        return f"https://{host}/{repo.id}"
+        # A Gitea deep link needs the self-hosted instance base URL, which is not yet
+        # modelled per connection (Gitea is read-only/designed-for at MVP). The label
+        # suffix is the OWNER (per ProviderConnection.owner), not a host, so we emit an
+        # owner-qualified path rather than fabricating a wrong absolute host. Resolving it
+        # against the operator's Gitea instance URL is a Gitea fast-follow item.
+        return f"{connection.owner}/{repo.id}"
+
+    def pr_url(self, connection: ProviderConnection, repo: Repo, pr_number: int | None) -> str:
+        # Gitea is read-only at MVP (write tiers collapse to deep-link), so this is only a
+        # protocol fallback; like deep_link it needs the instance base URL to be absolute.
+        return f"{connection.owner}/{repo.id}/pulls/{pr_number}"
 
     async def correct(
         self, connection: ProviderConnection, request: CorrectionRequest

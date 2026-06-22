@@ -10,7 +10,7 @@ from starlette.responses import JSONResponse
 from hangar.api.deps import actor_dep, load_fleet, session_dep
 from hangar.domain.checks import CATALOG
 from hangar.domain.models import RemediationKind, RemediationTier
-from hangar.domain.remediation import ReadOnlyCollapse, RemediationService
+from hangar.domain.remediation import NoOpenPullRequest, ReadOnlyCollapse, RemediationService
 from hangar.persistence import repositories as repo_store
 from hangar.providers.registry import provider_for
 from hangar.services.connections import attach_credential
@@ -37,13 +37,21 @@ class RemediateBody(BaseModel):
     kind: RemediationKind
 
 
+_TIER_TO_KIND = {
+    RemediationTier.patch: RemediationKind.settings_patch,
+    RemediationTier.pr: RemediationKind.config_pr,
+    RemediationTier.link: RemediationKind.deep_link,
+    RemediationTier.report: RemediationKind.report,
+}
+
+
 def _write_kind_for(check_id: str) -> RemediationKind:
-    check = CATALOG[check_id]
-    return (
-        RemediationKind.settings_patch
-        if check.tier is RemediationTier.patch
-        else RemediationKind.config_pr
-    )
+    """Resolve the server-authoritative remediation kind from the check's tier.
+
+    Maps every tier (not just patch vs pr) so a link-tier check resolves to a deep-link
+    rather than wrongly attempting a config PR.
+    """
+    return _TIER_TO_KIND[CATALOG[check_id].tier]
 
 
 @router.post("/repos/{repo_id}/checks/{check_id}/remediate")
@@ -61,6 +69,9 @@ async def remediate(
     if conn_row is None:
         raise HTTPException(status_code=404, detail="connection not found")
     connection = conn_row.to_domain()
+    # Decrypt and attach the stored credential so live (writable) connections can actually
+    # reach the provider — without this a real GitHub App connection raises in _client.
+    attach_credential(connection, conn_row)
 
     # Resolve the effective write kind server-side; never trust the client to pick a
     # write kind a check/connection doesn't support.
@@ -113,7 +124,10 @@ async def mark_merged(
     connection = conn_row.to_domain()
     attach_credential(connection, conn_row)
     service = RemediationService(provider_for(connection))
-    outcome = await service.mark_merged(
-        session, connection=connection, repo=repo, check_id=check_id, actor=actor
-    )
+    try:
+        outcome = await service.mark_merged(
+            session, connection=connection, repo=repo, check_id=check_id, actor=actor
+        )
+    except NoOpenPullRequest as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"state": outcome.state.value, "pr_url": outcome.pr_url, "idempotent_hit": False}

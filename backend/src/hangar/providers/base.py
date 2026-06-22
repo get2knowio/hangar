@@ -64,11 +64,14 @@ class RepoProvider(Protocol):
         """The full capability set this adapter *can* offer."""
         ...
 
-    async def interrogate(self, connection: ProviderConnection, repo_ref: str) -> Repo | None:
+    async def interrogate(
+        self, connection: ProviderConnection, repo_ref: str, *, previous: Repo | None = None
+    ) -> Repo | None:
         """Read a repository into a normalized snapshot (read-only).
 
-        Returns None when the resource is unchanged since the last interrogation (a
-        conditional-request 304) so the caller keeps the cached snapshot.
+        ``previous`` is the last cached snapshot, if any. Returns None when the repo is
+        unreadable or unchanged with nothing to carry forward, so the caller keeps the
+        cached snapshot.
         """
         ...
 
@@ -84,6 +87,10 @@ class RepoProvider(Protocol):
 
     def deep_link(self, connection: ProviderConnection, repo: Repo, check_id: str) -> str:
         """Build a deep link into the provider UI for a finding."""
+        ...
+
+    def pr_url(self, connection: ProviderConnection, repo: Repo, pr_number: int | None) -> str:
+        """Build the URL for a Hangar-opened pull request (provider-specific)."""
         ...
 
     async def subscribe(self, connection: ProviderConnection) -> None:
