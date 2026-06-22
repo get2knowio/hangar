@@ -1,0 +1,461 @@
+openapi: 3.1.0
+info:
+  title: Hangar Fleet Control Plane API
+  version: 0.1.0
+  description: >
+    Typed, versioned contract between the Hangar FastAPI backend and the React SPA.
+    Frontend TypeScript types are generated from this document (Constitution VII —
+    no hand-drifted types). All reads serve the cached snapshot (no live provider
+    bursts, SC-010). All write corrections are human-triggered, idempotent, and
+    audit-logged (FR-013–FR-018). Access is enforced upstream by forward-auth; the
+    identity reaches the API via the trusted proxy header.
+servers:
+  - url: /api/v1
+tags:
+  - { name: system }
+  - { name: fleet }
+  - { name: scorecard }
+  - { name: catalog }
+  - { name: providers }
+  - { name: repos }
+  - { name: remediation }
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Liveness/readiness (Constitution VI). Unauthenticated.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, connections]
+                properties:
+                  status: { type: string, enum: [ok, degraded] }
+                  access_mode: { type: string, enum: [forward-auth, disabled] }
+                  connections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        last_sync_at: { type: string, format: date-time }
+                        stale: { type: boolean }
+
+  /me:
+    get:
+      tags: [system]
+      summary: Resolved operator identity + access mode (drives sidebar access badge).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actor, access_mode]
+                properties:
+                  actor: { type: string, description: proxy identity, or HANGAR_OPERATOR in disabled mode }
+                  access_mode: { type: string, enum: [forward-auth, disabled] }
+                  user_header: { type: string, example: Remote-User }
+
+  /fleet/overview:
+    get:
+      tags: [fleet]
+      summary: Fleet overview screen — stat tiles, repo table, attention feed (FR-001–FR-004).
+      parameters:
+        - $ref: "#/components/parameters/Connection"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary, stats, repos, feed]
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      repo_count: { type: integer }
+                      compliance_pct: { type: integer }
+                      synced: { type: string, example: 2m ago }
+                      ci_failing: { type: integer, description: repos with failing default-branch CI }
+                      critical_alerts: { type: integer, description: total critical security alerts }
+                  stats:
+                    type: array
+                    description: six tiles — Open PRs, Bot PRs, CI failing, Sec alerts, Release pending, Compliance
+                    items:
+                      type: object
+                      properties:
+                        label: { type: string }
+                        value: { type: string }
+                        sub: { type: string }
+                        tone: { $ref: "#/components/schemas/Tone" }
+                  repos:
+                    type: array
+                    items: { $ref: "#/components/schemas/RepoRow" }
+                  feed:
+                    type: array
+                    description: needs-attention items sorted by urgency (critical→CI→release→alerts→bot PRs)
+                    items:
+                      type: object
+                      properties:
+                        tag: { type: string }
+                        title: { type: string }
+                        repo_id: { type: string }
+                        tone: { $ref: "#/components/schemas/Tone" }
+
+  /fleet/scorecard:
+    get:
+      tags: [scorecard]
+      summary: Hygiene scorecard matrix + roll-up (FR-005–FR-007).
+      parameters:
+        - $ref: "#/components/parameters/Connection"
+        - { name: failing_only, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [compliance_pct, checks, rows, rollup]
+                properties:
+                  compliance_pct: { type: integer }
+                  clear_count: { type: integer }
+                  repo_count: { type: integer }
+                  groups:
+                    type: array
+                    items: { type: object, properties: { label: {type: string}, span: {type: integer} } }
+                  checks:
+                    type: array
+                    items: { type: object, properties: { id: { type: string }, label: { type: string }, fail_count: { type: integer } } }
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        repo_id: { type: string }
+                        hygiene_pct: { type: integer }
+                        connection_badge: { type: string }
+                        cells:
+                          type: array
+                          items: { $ref: "#/components/schemas/FindingStatus" }
+                  rollup:
+                    type: array
+                    description: top drift — checks with most failures
+                    items: { type: object, properties: { label: { type: string }, count: { type: integer } } }
+
+  /catalog:
+    get:
+      tags: [catalog]
+      summary: Check catalog grouped, with current policy enablement, targets, and pass rates (FR-008, FR-009, FR-019).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled_count: { type: integer }
+                  total_count: { type: integer }
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        group: { type: string }
+                        checks:
+                          type: array
+                          items: { $ref: "#/components/schemas/CatalogCheck" }
+
+  /policy:
+    get:
+      tags: [catalog]
+      summary: The single fleet-wide policy (FR-019).
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Policy" } } } }
+    patch:
+      tags: [catalog]
+      summary: Toggle a check or set a target; scorecard recomputes (FR-019).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                check_id: { type: string }
+                enabled: { type: boolean }
+                params: { type: object, additionalProperties: true, example: { target: 7 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Policy" } } } }
+
+  /providers:
+    get:
+      tags: [providers]
+      summary: Connection cards + access banner state (FR-021–FR-026, FR-027–FR-032).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access:
+                    type: object
+                    properties:
+                      mode: { type: string, enum: [forward-auth, disabled] }
+                      user_header: { type: string }
+                      allowed_user: { type: string, nullable: true }
+                      fail_closed: { type: boolean }
+                  connections:
+                    type: array
+                    items: { $ref: "#/components/schemas/ConnectionCard" }
+    post:
+      tags: [providers]
+      summary: Add a provider connection — configuration, not code (FR-024, SC-004).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_type, label, scope]
+              properties:
+                provider_type: { type: string, enum: [github, gitea] }
+                label: { type: string }
+                scope: { type: string }
+                credential: { type: string, description: "write-only; GitHub App private-key PEM or a PAT/token. Encrypted at rest (FR-032)" }
+                app_id: { type: string, nullable: true, description: GitHub App id (App connections only) }
+                installation_id: { type: integer, nullable: true, description: GitHub App installation id (App connections only) }
+                writable: { type: boolean, default: false, description: grant write tiers only if the credential can write (least-privilege, FR-026) }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectionCard" } } } }
+  /providers/{connection_id}:
+    delete:
+      tags: [providers]
+      summary: Remove a connection — drops its repos/findings/snapshots; audit entries retained (clarification).
+      parameters: [ { name: connection_id, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Removed } }
+
+  /providers/audit:
+    get:
+      tags: [providers]
+      summary: Audit log — every correction, immutable (FR-016).
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEntry" }
+
+  /repos/{repo_id}:
+    get:
+      tags: [repos]
+      summary: Repo drill-down — activity strip + grouped policy checks with remediation controls (Story 3).
+      parameters: [ { name: repo_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RepoDetail" }
+        "404": { description: Not found }
+
+  /repos/{repo_id}/checks/{check_id}/remediate:
+    post:
+      tags: [remediation]
+      summary: >
+        Human-triggered remediation (FR-011–FR-018). kind=settings_patch applies a scoped
+        change; kind=config_pr opens a PR (never push/force-push, FR-014); deep_link/report
+        are recorded only. Idempotent: an existing open Hangar PR is surfaced, not duplicated (FR-015).
+      parameters:
+        - { name: repo_id, in: path, required: true, schema: { type: string } }
+        - { name: check_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [report, deep_link, settings_patch, config_pr] }
+      responses:
+        "200":
+          description: Result of the correction
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: { type: string, enum: [working, pr_open, fixed, deep_link] }
+                  pr_url: { type: string, nullable: true }
+                  audit: { $ref: "#/components/schemas/AuditEntry" }
+                  idempotent_hit: { type: boolean, description: true if an existing open PR was surfaced (FR-015) }
+        "403":
+          description: Connection lacks write scope — collapses to deep-link (FR-018)
+          content:
+            application/json:
+              schema: { type: object, properties: { deep_link_url: { type: string } } }
+
+  /repos/{repo_id}/checks/{check_id}/merge:
+    post:
+      tags: [remediation]
+      summary: >
+        Mark a Hangar-authored PR merged — the finding flips to pass and the merge is
+        audited (prototype markMerged; FR-005a, FR-016).
+      parameters:
+        - { name: repo_id, in: path, required: true, schema: { type: string } }
+        - { name: check_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Finding flipped to pass
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: { type: string, enum: [fixed] }
+                  pr_url: { type: string, nullable: true }
+                  idempotent_hit: { type: boolean }
+        "409":
+          description: >
+            No open Hangar PR exists for this check, so there is nothing to mark merged
+            (prevents fabricating a 'PR merged' pass + audit entry, FR-016).
+          content:
+            application/json:
+              schema: { type: object, properties: { detail: { type: string } } }
+
+components:
+  parameters:
+    Connection:
+      name: connection
+      in: query
+      required: false
+      description: Filter the fleet to one connection id, or "all" (FR-004).
+      schema: { type: string, default: all }
+  schemas:
+    Tone:
+      type: string
+      enum: [pass, warn, fail, unknown, neutral]
+      description: status-only color token (maps to --pass/--warn/--fail/--unknown)
+    FindingStatus:
+      type: string
+      enum: [pass, fail, unknown, pending, working]
+      description: effective status incl. remediation overlay (FR-005, FR-005a)
+    RepoRow:
+      type: object
+      properties:
+        id: { type: string }
+        connection_badge: { type: string }
+        description: { type: string }
+        open_prs: { type: integer }
+        dependabot_prs: { type: integer }
+        ci: { type: string, enum: [pass, fail, none] }
+        alerts_total: { type: integer }
+        alerts_tone: { $ref: "#/components/schemas/Tone" }
+        release_pending_days: { type: integer, nullable: true }
+        hygiene_pct: { type: integer }
+    CatalogCheck:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        tier: { type: string, enum: [patch, pr, link, report] }
+        tier_label: { type: string, example: "API · PR" }
+        enabled: { type: boolean }
+        has_target: { type: boolean }
+        target: { type: integer, nullable: true }
+        pass_count: { type: integer }
+        repo_count: { type: integer }
+    Policy:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              check_id: { type: string }
+              enabled: { type: boolean }
+              params: { type: object, additionalProperties: true }
+              severity: { type: string, enum: [low, medium, high] }
+    ConnectionCard:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        type: { type: string, enum: [GitHub, Gitea] }
+        scope: { type: string }
+        auth_mode: { type: string }
+        repos: { type: integer }
+        writes: { type: boolean }
+        write_label: { type: string, example: "Read + write" }
+        remediation: { type: string, example: "API + PR + deep-link" }
+        synced: { type: string }
+    AuditEntry:
+      type: object
+      properties:
+        timestamp: { type: string }
+        repo_id: { type: string }
+        check_label: { type: string }
+        connection_label: { type: string }
+        actor: { type: string }
+        result: { type: string }
+        pr_url: { type: string, nullable: true }
+    RepoDetail:
+      type: object
+      properties:
+        id: { type: string }
+        connection_label: { type: string }
+        description: { type: string }
+        read_only: { type: boolean }
+        hygiene_pct: { type: integer }
+        pass_count: { type: string, example: "14/23 checks" }
+        open_prs: { type: integer }
+        ci: { type: string, enum: [pass, fail, none] }
+        pull_requests:
+          type: array
+          items:
+            type: object
+            properties:
+              title: { type: string }
+              kind: { type: string, enum: [dependabot, human] }
+              status: { type: string }
+              age: { type: string }
+        alerts:
+          type: array
+          items: { type: object, properties: { severity: { type: string }, count: { type: integer } } }
+        check_groups:
+          type: array
+          items:
+            type: object
+            properties:
+              group: { type: string }
+              checks:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    label: { type: string }
+                    status: { $ref: "#/components/schemas/FindingStatus" }
+                    tier_label: { type: string }
+                    evidence: { type: string }
+                    open_pr_url: { type: string, nullable: true }
+                    primary_action: { type: string, nullable: true, description: "Open fix PR | Enable | Open in GitHub" }
+                    secondary_action: { type: string, nullable: true, example: "Mark merged" }

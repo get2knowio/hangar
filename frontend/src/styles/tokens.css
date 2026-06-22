@@ -1,0 +1,44 @@
+/* Design tokens lifted verbatim from docs/prototype/Hangar.dc.html :root + dark theme.
+   Color is status-only; chrome stays monochrome. The theme toggle swaps the whole set
+   by setting data-theme="dark" on <html> (see ThemeProvider). (contracts/ui-spec.md) */
+
+:root,
+:root[data-theme="light"] {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --surface-2: #faf9f6;
+  --border: #eceae5;
+  --border-2: #f3f1ec;
+  --fg: #1d1c1a;
+  --fg-2: #54514a;
+  --muted: #8a877e;
+  --hover: #f7f6f2;
+  --pass: #2f8f57;
+  --warn: #b9791a;
+  --fail: #c2443f;
+  --unknown: #9a968c;
+  --pass-bg: #e9f3ec;
+  --warn-bg: #f7efe0;
+  --fail-bg: #f6e7e6;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d100e;
+  --surface: #161a18;
+  --surface-2: #121514;
+  --border: #262b28;
+  --border-2: #1d211f;
+  --fg: #e9ebe6;
+  --fg-2: #a7aca5;
+  --muted: #6e736d;
+  --hover: #1c211e;
+  --pass: #5cc98a;
+  --warn: #e0a23c;
+  --fail: #f0635c;
+  --unknown: #6e736d;
+  --pass-bg: #13241a;
+  --warn-bg: #2a2113;
+  --fail-bg: #2a1715;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}

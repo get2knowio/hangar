@@ -1,0 +1,123 @@
+# =============================================================================
+# Hangar — single-stack deployment (Constitution V: Homelab Simplicity).
+#
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# One app service (`hangar`) fronted by Traefik with ForwardAuth, plus an
+# OPTIONAL Postgres service behind the `postgres` profile. State lives in named
+# volumes. The published port is bound to 127.0.0.1 only (internal bind, FR-030);
+# external access is meant to come THROUGH Traefik, which terminates TLS and
+# enforces forward-auth.
+# =============================================================================
+
+services:
+  hangar:
+    build:
+      # Context is the repo root so the Dockerfile can reach backend/ and frontend/.
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: hangar:latest
+    container_name: hangar
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # SQLite db + app state. Matches HANGAR_DATABASE_URL default (/data/hangar.db).
+      - hangar-data:/data
+    networks:
+      - hangar-internal   # app <-> postgres
+      - proxy             # Traefik routes here (must already exist; see below)
+    # Internal bind: publish the port on the loopback host interface only, so the
+    # app is never directly reachable from the LAN — only via Traefik. Remove this
+    # `ports:` block entirely once Traefik fronts it and you don't need host curl.
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      # ---------------------------------------------------------------------
+      # Traefik routing + TLS + ForwardAuth (realistic Traefik + Authentik homelab).
+      # Uncomment and adapt once Traefik (with an `authentik` forward-auth
+      # middleware and a `letsencrypt` cert resolver) is running on the `proxy`
+      # network. ${HANGAR_DOMAIN} comes from .env.
+      # ---------------------------------------------------------------------
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.hangar.rule=Host(`hangar.${HANGAR_DOMAIN}`)"
+      - "traefik.http.routers.hangar.entrypoints=websecure"
+      - "traefik.http.routers.hangar.tls=true"
+      - "traefik.http.routers.hangar.tls.certresolver=letsencrypt"
+      - "traefik.http.services.hangar.loadbalancer.server.port=8000"
+      # Attach the shared forward-auth middleware (Authentik outpost). This is
+      # what enforces SSO; Hangar trusts the resulting identity header only from
+      # the proxy CIDR (HANGAR_TRUSTED_PROXY_CIDR). Set HANGAR_FORWARD_AUTH=enabled.
+      - "traefik.http.routers.hangar.middlewares=authentik@docker"
+      # Reference definition of an Authentik forward-auth middleware (usually
+      # declared on the Authentik proxy outpost container, shown here for clarity):
+      #   traefik.http.middlewares.authentik.forwardauth.address=http://authentik-proxy:9000/outpost.goauthentik.io/auth/traefik
+      #   traefik.http.middlewares.authentik.forwardauth.trustForwardHeader=true
+      #   traefik.http.middlewares.authentik.forwardauth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email
+
+      # ---------------------------------------------------------------------
+      # Homepage tile (gethomepage.dev)
+      # ---------------------------------------------------------------------
+      - "homepage.group=Platform"
+      - "homepage.name=Hangar"
+      - "homepage.icon=hangar.png"
+      - "homepage.href=https://hangar.${HANGAR_DOMAIN}"
+      - "homepage.description=Fleet control plane — repo hygiene & remediation"
+      - "homepage.widget.type=customapi"
+      - "homepage.widget.url=https://hangar.${HANGAR_DOMAIN}/health"
+
+      # ---------------------------------------------------------------------
+      # hola-* fleet metadata — Hangar is itself watched/deployed by a sibling
+      # `hola` deployer. These advertise how to keep this deployment current.
+      # ---------------------------------------------------------------------
+      - "hola.enable=true"
+      - "hola.name=hangar"
+      - "hola.group=platform"
+      - "hola.repo=hangar"
+      - "hola.compose.file=deploy/docker-compose.yml"
+      - "hola.update.strategy=pull-request"
+      - "hola.healthcheck=/health"
+
+  # ---------------------------------------------------------------------------
+  # OPTIONAL Postgres (Constitution V: SQLite is the default; Postgres is an
+  # upgrade path). Enable with:  docker compose --profile postgres up
+  # and set HANGAR_DATABASE_URL=postgresql+asyncpg://hangar:hangar@postgres:5432/hangar
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: hangar-postgres
+    restart: unless-stopped
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hangar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hangar}
+      POSTGRES_DB: ${POSTGRES_DB:-hangar}
+    volumes:
+      - hangar-postgres:/var/lib/postgresql/data
+    networks:
+      - hangar-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hangar} -d ${POSTGRES_DB:-hangar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  hangar-data:
+  hangar-postgres:
+
+networks:
+  # App<->db traffic stays on this private network.
+  hangar-internal:
+    driver: bridge
+  # Shared Traefik network. Create it once with `docker network create proxy`,
+  # or mark it external:false to let compose manage it for a standalone test.
+  proxy:
+    external: true

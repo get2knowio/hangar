@@ -1,0 +1,392 @@
+"""GitHub detection heuristics (research.md §11) — real, read-only interrogation.
+
+Each catalog check maps to a live GitHub read (repo metadata, contents API, rulesets,
+org policy, alerts). The primary repo resource is fetched conditionally (If-None-Match);
+a ``304`` means the **repo body** is unchanged, so the checks derived from that body are
+reused from the previous snapshot — but every other signal (alerts, CI, PRs, releases,
+settings, rulesets) is still re-fetched, because those change without altering the repo
+resource's ETag. A check whose required capability/scope is absent — or whose resource
+returns ``403`` — yields ``unknown`` rather than a false pass/fail.
+"""
+
+from __future__ import annotations
+
+import re
+
+from hangar.domain.models import AlertCounts, Capability, CIStatus, ProviderConnection, Repo
+
+# A workflow step's ``uses:`` reference. Anchored to the step-key position (start of line,
+# optionally after a ``- `` list marker) so a ``run:`` line that merely echoes the word
+# "uses:" inside a string is not mistaken for an action reference. Comments are already
+# stripped by the caller.
+_USES_RE = re.compile(r"""^\s*-?\s*uses:\s*['"]?([^'"\s]+)""")
+# A 40-hex git commit SHA (a "pinned" action ref).
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+# Actions/config that indicate conventional-commit / PR-title enforcement.
+_CONVENTIONAL_ACTIONS = ("commitlint", "action-semantic-pull-request", "semantic-pull-request")
+_CONVENTIONAL_CONFIGS = (
+    "commitlint.config.js", "commitlint.config.cjs", "commitlint.config.mjs",
+    ".commitlintrc", ".commitlintrc.json", ".commitlintrc.yml", ".commitlintrc.yaml",
+)
+# Unreleased-commit age (HEAD − last release, in days) at/above which release_health fails.
+_RELEASE_STALE_DAYS = 14
+
+# Checks whose outcome is derived purely from the primary repo resource body. On a 304
+# (repo body unchanged) these are carried over from the previous snapshot; everything
+# else is always re-evaluated.
+_METADATA_CHECKS = frozenset({"license", "description", "default_branch", "secret_scanning"})
+
+# Candidate paths whose presence satisfies a file-based check. (license is determined
+# from repo metadata below — GitHub's own license detection — not a filename match.)
+_FILE_CHECKS = {
+    "readme": ["README.md", "README.rst", "README"],
+    "security_md": ["SECURITY.md", ".github/SECURITY.md"],
+    "codeowners": ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
+    "changelog": ["CHANGELOG.md", "CHANGELOG"],
+    "lockfile": ["poetry.lock", "package-lock.json", "pnpm-lock.yaml", "uv.lock", "Cargo.lock"],
+    "release_please": ["release-please-config.json", ".release-please-manifest.json"],
+    "templates": [".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE",
+                  ".github/PULL_REQUEST_TEMPLATE.md"],
+    "dependabot_updates": [".github/dependabot.yml", ".github/dependabot.yaml"],
+}
+
+
+async def interrogate_repo(
+    adapter, gh, connection: ProviderConnection, repo_ref: str, previous: Repo | None = None
+) -> Repo | None:
+    """Interrogate one repo into a normalized snapshot.
+
+    Returns ``None`` only when the repo is unreadable (404/403) or when it is unchanged
+    *and* there is no prior snapshot to carry forward. A primary-resource ``304`` reuses
+    the repo-body-derived checks from ``previous`` and re-fetches all volatile signals.
+    """
+    from hangar.providers.github.adapter import _FORBIDDEN, _NOT_FOUND, _NOT_MODIFIED
+
+    owner = connection.owner
+    granted = connection.granted_capabilities
+    cget = adapter._conditional_get
+
+    repo_data = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}", conditional=True)
+    if repo_data is _NOT_FOUND or repo_data is _FORBIDDEN:
+        return None  # repo unreadable on this connection — keep any cached snapshot
+    if repo_data is _NOT_MODIFIED:
+        if previous is None:
+            return None  # nothing cached to carry forward
+        meta_fails, meta_unknowns, description, default_branch = _metadata_from_previous(previous)
+    else:
+        meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data, granted)
+
+    (dyn_fails, dyn_unknowns, open_prs, dependabot_prs, ci, alerts, release_pending) = (
+        await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
+    )
+
+    fails = meta_fails + dyn_fails
+    unknowns = meta_unknowns + dyn_unknowns
+    return Repo(
+        id=repo_ref,
+        connection_id=connection.id,
+        description=description,
+        default_branch=default_branch,
+        open_prs=open_prs,
+        dependabot_prs=dependabot_prs,
+        ci_status=ci,
+        alerts=alerts,
+        release_pending_days=release_pending,
+        fails=sorted(set(fails)),
+        unknowns=sorted(set(unknowns) - set(fails)),
+    )
+
+
+def _metadata_checks(
+    repo_data: dict, granted: set[Capability]
+) -> tuple[list[str], list[str], str, str]:
+    """Checks derived from the primary repo resource body (license/description/branch/secret)."""
+    fails: list[str] = []
+    unknowns: list[str] = []
+
+    if not repo_data.get("license"):
+        fails.append("license")
+    if not (repo_data.get("description") and repo_data.get("topics")):
+        fails.append("description")
+    default_branch = repo_data.get("default_branch") or "main"
+    if default_branch != "main":
+        fails.append("default_branch")
+
+    saa = repo_data.get("security_and_analysis")
+    if saa is not None:
+        ss = (saa.get("secret_scanning") or {}).get("status")
+        pp = (saa.get("secret_scanning_push_protection") or {}).get("status")
+        if ss != "enabled" or pp != "enabled":
+            fails.append("secret_scanning")
+    elif Capability.read_settings in granted:
+        fails.append("secret_scanning")  # readable but field absent → not enabled
+    else:
+        unknowns.append("secret_scanning")
+
+    return fails, unknowns, repo_data.get("description") or "", default_branch
+
+
+def _metadata_from_previous(previous: Repo) -> tuple[list[str], list[str], str, str]:
+    """Carry the repo-body-derived checks from a prior snapshot on a 304."""
+    fails = [c for c in previous.fails if c in _METADATA_CHECKS]
+    unknowns = [c for c in previous.unknowns if c in _METADATA_CHECKS]
+    return fails, unknowns, previous.description, previous.default_branch
+
+
+async def _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted):
+    """All checks that can change without the primary repo resource's ETag changing.
+
+    Always re-evaluated each poll (even on a 304) so security/activity drift surfaces.
+    A ``403`` on any resource yields ``unknown`` for the affected check(s) rather than
+    propagating an exception that would abort the whole snapshot.
+    """
+    from hangar.providers.github.adapter import _FORBIDDEN, _NOT_FOUND
+
+    cget = adapter._conditional_get
+    fails: list[str] = []
+    unknowns: list[str] = []
+
+    can_files = Capability.read_files in granted
+    can_settings = Capability.read_settings in granted
+    can_alerts = Capability.read_alerts in granted
+    can_org = Capability.read_org_policy in granted
+
+    async def _probe(path: str):
+        return await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/contents/{path}")
+
+    async def _present(path: str) -> bool:
+        r = await _probe(path)
+        return r is not _NOT_FOUND and r is not _FORBIDDEN
+
+    # --- file-presence checks (contents API; 404 = absent, 403 = unknown) ---
+    dependabot_unknown = False
+    for check_id, candidates in _FILE_CHECKS.items():
+        if not can_files:
+            unknowns.append(check_id)
+            continue
+        present = forbidden = False
+        for path in candidates:
+            r = await _probe(path)
+            if r is _FORBIDDEN:
+                forbidden = True
+                break
+            if r is not _NOT_FOUND:
+                present = True
+                break
+        if forbidden:
+            unknowns.append(check_id)
+            if check_id == "dependabot_updates":
+                dependabot_unknown = True
+        elif not present:
+            fails.append(check_id)
+
+    # cooldown: dependabot.yml must contain a cooldown block (requires reading content)
+    if not can_files or dependabot_unknown:
+        unknowns.append("cooldown")
+    elif "dependabot_updates" in fails:
+        fails.append("cooldown")  # no dependabot.yml at all
+    else:
+        content = await _read_text(cget, gh, connection.id, owner, repo_ref, ".github/dependabot.yml")
+        if content is None or "cooldown" not in content:
+            fails.append("cooldown")
+
+    # --- settings/ruleset checks (403 = unknown, 404 = not configured = fail) ---
+    if can_settings:
+        prot = await cget(
+            gh, connection.id, f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection"
+        )
+        if prot is _FORBIDDEN:
+            unknowns.append("branch_protection")
+        elif prot is _NOT_FOUND:
+            fails.append("branch_protection")
+        wf_perms = await cget(
+            gh, connection.id, f"/repos/{owner}/{repo_ref}/actions/permissions/workflow"
+        )
+        if isinstance(wf_perms, dict):
+            if wf_perms.get("default_workflow_permissions") != "read":
+                fails.append("workflow_permissions")
+        elif wf_perms is _FORBIDDEN:
+            unknowns.append("workflow_permissions")
+        elif wf_perms is _NOT_FOUND:
+            fails.append("workflow_permissions")
+        cs = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/code-scanning/analyses")
+        if cs is _FORBIDDEN:
+            unknowns.append("code_scanning")
+        elif cs is _NOT_FOUND:
+            fails.append("code_scanning")
+    else:
+        unknowns.extend(["branch_protection", "workflow_permissions", "code_scanning"])
+
+    # org 2FA enforcement (org policy scope)
+    if can_org:
+        org = await cget(gh, connection.id, f"/orgs/{owner}")
+        if isinstance(org, dict) and not org.get("two_factor_requirement_enabled"):
+            fails.append("two_fa")
+        elif org is _NOT_FOUND or org is _FORBIDDEN:
+            unknowns.append("two_fa")
+    else:
+        unknowns.append("two_fa")
+
+    # dep_review / conventional / actions_pinned_sha require parsing the workflow files.
+    if can_files:
+        refs = await _workflow_action_refs(cget, gh, connection.id, owner, repo_ref)
+        if not any("dependency-review-action" in r for r in refs):
+            fails.append("dep_review")
+        has_conv = any(any(a in r for a in _CONVENTIONAL_ACTIONS) for r in refs)
+        if not has_conv:
+            for p in _CONVENTIONAL_CONFIGS:
+                if await _present(p):  # short-circuits on the first config that exists
+                    has_conv = True
+                    break
+        if not has_conv:
+            fails.append("conventional")
+        if _has_unpinned_action(refs):
+            fails.append("actions_pinned_sha")
+    else:
+        unknowns.extend(["dep_review", "conventional", "actions_pinned_sha"])
+
+    # release_health: age of unreleased commits = default-branch HEAD date − last release.
+    release_pending = await _release_pending_days(
+        cget, gh, connection.id, owner, repo_ref, default_branch
+    )
+    if release_pending is not None and release_pending >= _RELEASE_STALE_DAYS:
+        fails.append("release_health")
+
+    # --- activity signals ---
+    open_prs, dependabot_prs = await _pull_counts(cget, gh, connection.id, owner, repo_ref)
+    ci = await _ci_status(cget, gh, connection.id, owner, repo_ref, default_branch)
+    if ci is CIStatus.fail:
+        fails.append("ci_workflow_green")
+    elif ci is CIStatus.none:
+        unknowns.append("ci_workflow_green")
+    alerts = await _alert_counts(cget, gh, connection.id, owner, repo_ref) if can_alerts else AlertCounts()
+
+    return fails, unknowns, open_prs, dependabot_prs, ci, alerts, release_pending
+
+
+async def _workflow_action_refs(cget, gh, cid, owner, repo) -> list[str]:
+    """All ``uses:`` action references across ``.github/workflows/*.yml``.
+
+    Lists the workflows directory, reads each YAML file, and extracts the action refs
+    (comments stripped). Returns [] when there is no workflows directory (cget yields a
+    NOT_FOUND/FORBIDDEN sentinel, not a list).
+    """
+    listing = await cget(gh, cid, f"/repos/{owner}/{repo}/contents/.github/workflows")
+    if not isinstance(listing, list):
+        return []
+    refs: list[str] = []
+    for item in listing:
+        name = item.get("name", "")
+        if item.get("type") != "file" or not name.endswith((".yml", ".yaml")):
+            continue
+        text = await _read_text(cget, gh, cid, owner, repo, item["path"])
+        if not text:
+            continue
+        for line in text.splitlines():
+            stripped = line.split("#", 1)[0]  # drop trailing comments
+            m = _USES_RE.match(stripped)
+            if m:
+                refs.append(m.group(1))
+    return refs
+
+
+def _has_unpinned_action(refs: list[str]) -> bool:
+    """True if any *external* action ref is not pinned to a 40-hex commit SHA.
+
+    Local (``./…``) and docker (``docker://…``) refs are exempt; reusable workflows and
+    marketplace actions (``owner/repo@ref``) must be SHA-pinned (supply-chain hardening).
+    """
+    for ref in refs:
+        if ref.startswith("./") or ref.startswith("docker://") or "/" not in ref:
+            continue
+        _, _, pinned = ref.partition("@")
+        if not _SHA_RE.match(pinned):
+            return True
+    return False
+
+
+def _parse_dt(value):
+    from datetime import datetime
+
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+async def _release_pending_days(cget, gh, cid, owner, repo, branch) -> int | None:
+    """Days of unreleased commits = default-branch HEAD commit date − latest release date.
+
+    None when there is no release (nothing to be behind) or HEAD is not ahead of the
+    release. Fetched unconditionally so the value is always fresh.
+    """
+    rel = await cget(gh, cid, f"/repos/{owner}/{repo}/releases/latest")
+    if not isinstance(rel, dict):
+        return None  # 404 (no releases) → no baseline
+    rel_dt = _parse_dt(rel.get("published_at"))
+    if rel_dt is None:
+        return None
+    commit = await cget(gh, cid, f"/repos/{owner}/{repo}/commits/{branch}")
+    if not isinstance(commit, dict):
+        return None
+    head_dt = _parse_dt(((commit.get("commit") or {}).get("committer") or {}).get("date"))
+    if head_dt is None or head_dt <= rel_dt:
+        return None  # no unreleased commits
+    return (head_dt - rel_dt).days
+
+
+async def _read_text(cget, gh, cid, owner, repo, path) -> str | None:
+    import base64
+
+    from hangar.providers.github.adapter import _FORBIDDEN, _NOT_FOUND, _NOT_MODIFIED
+
+    data = await cget(gh, cid, f"/repos/{owner}/{repo}/contents/{path}")
+    if data in (_NOT_FOUND, _NOT_MODIFIED, _FORBIDDEN) or not isinstance(data, dict):
+        return None
+    if data.get("encoding") == "base64" and data.get("content"):
+        try:
+            return base64.b64decode(data["content"]).decode("utf-8", "replace")
+        except ValueError:
+            return None
+    return None
+
+
+async def _pull_counts(cget, gh, cid, owner, repo) -> tuple[int, int]:
+    data = await cget(gh, cid, f"/repos/{owner}/{repo}/pulls", {"state": "open", "per_page": 100})
+    if not isinstance(data, list):
+        return (0, 0)
+    dependabot = sum(1 for pr in data if (pr.get("user") or {}).get("login") in
+                     ("dependabot[bot]", "dependabot-preview[bot]"))
+    return len(data), dependabot
+
+
+async def _ci_status(cget, gh, cid, owner, repo, branch) -> CIStatus:
+
+    data = await cget(gh, cid, f"/repos/{owner}/{repo}/actions/runs",
+                      {"branch": branch, "per_page": 1})
+    if not isinstance(data, dict):
+        return CIStatus.none
+    runs = data.get("workflow_runs") or []
+    if not runs:
+        return CIStatus.none
+    conclusion = runs[0].get("conclusion")
+    if conclusion == "success":
+        return CIStatus.passing
+    if conclusion in ("failure", "timed_out", "cancelled"):
+        return CIStatus.fail
+    return CIStatus.none
+
+
+async def _alert_counts(cget, gh, cid, owner, repo) -> AlertCounts:
+    data = await cget(gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100})
+    if not isinstance(data, list):
+        return AlertCounts()
+    counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
+    for alert in data:
+        sev = ((alert.get("security_advisory") or {}).get("severity")
+               or (alert.get("security_vulnerability") or {}).get("severity"))
+        if sev in counts:
+            counts[sev] += 1
+    return AlertCounts(**counts)
