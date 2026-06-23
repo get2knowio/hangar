@@ -44,7 +44,8 @@ def build_scorecard(
         passing = sum(1 for s in statuses if s is FindingStatus.passing)
         hyg[r.id] = round(passing / n_checks * 100) if n_checks else 100
 
-    compliance = round(sum(hyg.values()) / len(repos)) if repos else 100
+    # An empty fleet has nothing evaluated — report 0%, never a misleading "100% healthy".
+    compliance = round(sum(hyg.values()) / len(repos)) if repos else 0
     clear = sum(1 for v in hyg.values() if v >= 85)
 
     groups = []

@@ -42,7 +42,8 @@ def build_overview(
     rel_pending = sum(1 for r in repos if r.release_pending_days is not None)
     # Hygiene once per repo, reused for the compliance average and the per-row bar.
     hyg = {r.id: hygiene(r, policy, remediations) for r in repos}
-    compliance = round(sum(hyg.values()) / len(repos)) if repos else 100
+    # An empty fleet has nothing evaluated — report 0%, never a misleading "100% healthy".
+    compliance = round(sum(hyg.values()) / len(repos)) if repos else 0
 
     # `tone` colors the value; `sub_tone` colors the sub-label — both structured so the UI
     # never re-derives color by matching tile titles or parsing the value (Constitution VII).

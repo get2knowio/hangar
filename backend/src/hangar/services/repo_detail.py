@@ -152,4 +152,4 @@ def _actions(
         return "Enable", None
     if tier is RemediationTier.pr:
         return "Open fix PR", None
-    return None, None
+    return None, None  # defensive default for any future tier not handled above

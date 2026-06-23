@@ -80,6 +80,7 @@ async def add_connection(
     app_id: str | None = None,
     installation_id: int | None = None,
     webhook_secret: str | None = None,
+    owner: str | None = None,
     connection_id: str | None = None,
 ) -> ProviderConnection:
     """Add a connection. The credential is encrypted before it ever touches the DB.
@@ -116,6 +117,9 @@ async def add_connection(
         scope=scope,
         # The default auth-mode label is provided by the adapter (no platform branch here).
         auth_mode=auth_mode or provider.default_auth_mode,
+        # Persist the owner explicitly (derived from the label unless given), so provider
+        # API addressing no longer depends on re-parsing the display label on every read.
+        owner=owner or (label.split(":")[-1] if ":" in label else label),
         credential_ciphertext=ciphertext,
         webhook_secret_ciphertext=webhook_ciphertext,
         granted_capabilities=[c.value for c in granted],

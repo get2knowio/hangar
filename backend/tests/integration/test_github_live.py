@@ -393,6 +393,32 @@ async def test_list_repos_raises_when_forbidden_everywhere(respx_mock) -> None:
 
 
 @respx.mock(base_url=API, assert_all_called=False)
+async def test_pull_counts_paginate_beyond_one_page(respx_mock) -> None:
+    """Open-PR counts paginate instead of silently capping at 100 (code-review fix)."""
+    from urllib.parse import parse_qs, urlparse
+
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    def _pulls(request: httpx.Request) -> httpx.Response:
+        page = int(parse_qs(urlparse(str(request.url)).query).get("page", ["1"])[0])
+        if page == 1:
+            return httpx.Response(200, json=[{"user": {"login": "u"}}] * 100)
+        if page == 2:
+            return httpx.Response(200, json=[{"user": {"login": "u"}}] * 30)
+        return httpx.Response(200, json=[])
+
+    # Distinct regex from _routes' pulls pattern (respx dedupes identical patterns) and
+    # registered first so first-match-wins picks the paginating mock.
+    respx_mock.get(url__regex=r".*/repos/acme/hangar/pulls\?.*").mock(side_effect=_pulls)
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"p1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.open_prs == 130  # 100 (page 1) + 30 (page 2)
+
+
+@respx.mock(base_url=API, assert_all_called=False)
 async def test_secret_scanning_unknown_when_field_absent(respx_mock) -> None:
     """security_and_analysis omitted (token not repo-admin) ⇒ secret_scanning is unknown,
     not a fabricated fail (code-review fix)."""

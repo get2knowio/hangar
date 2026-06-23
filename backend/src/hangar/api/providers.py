@@ -66,6 +66,8 @@ class NewConnection(BaseModel):
     installation_id: int | None = None
     # Optional per-connection inbound-webhook HMAC secret (else the global secret applies).
     webhook_secret: str | None = None
+    # Optional owner (org/user) override; defaults to the label suffix.
+    owner: str | None = None
     # Least-privilege default: a connection is read-only unless the operator declares
     # the credential is writable (FR-026/FR-018).
     writable: bool = False
@@ -87,6 +89,7 @@ async def add_provider(
             app_id=body.app_id,
             installation_id=body.installation_id,
             webhook_secret=body.webhook_secret,
+            owner=body.owner,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

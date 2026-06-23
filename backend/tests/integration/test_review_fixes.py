@@ -130,6 +130,30 @@ def test_overview_tiles_expose_sub_tone(client) -> None:
         assert "sub_tone" in tile
 
 
+async def test_connection_owner_persisted_and_overridable(session) -> None:
+    """owner is a first-class field: derived from the label by default, or set explicitly
+    for a label that doesn't follow the prefix:owner convention (#9)."""
+    gh = await conn_service.add_connection(
+        session, provider_type="github", label="gh:get2knowio", scope="org", credential="x"
+    )
+    assert gh.owner == "get2knowio"
+    custom = await conn_service.add_connection(
+        session, provider_type="github", label="prod", scope="org", credential="x",
+        owner="acme-inc",
+    )
+    assert custom.owner == "acme-inc"
+
+
+def test_empty_fleet_compliance_is_zero() -> None:
+    """An empty fleet reports 0% compliance, not a misleading 100% (#9)."""
+    from hangar.services.overview import build_overview
+    from hangar.services.scorecard import build_scorecard
+
+    policy = default_policy()
+    assert build_overview([], {}, policy, {}, synced="never")["summary"]["compliance_pct"] == 0
+    assert build_scorecard([], {}, policy, {})["compliance_pct"] == 0
+
+
 def test_pr_list_not_fabricated_for_live_connections() -> None:
     """A live (credentialed) connection gets no fabricated PR rows; the demo-only path keeps
     the illustrative list and tags each row with a structured status_tone (#4, #9)."""

@@ -432,12 +432,27 @@ async def _read_text(
     return None
 
 
+_MAX_PAGES = 10  # bound a list resource at ~1000 items rather than silently capping at 100
+
+
+async def _paged(cget: Any, gh: GitHub, cid: str, path: str, params: dict[str, Any]) -> list:
+    """Accumulate a paginated list endpoint so a count isn't silently capped at one page."""
+    per_page = int(params.get("per_page", 100))
+    items: list = []
+    for page in range(1, _MAX_PAGES + 1):
+        data = await cget(gh, cid, path, {**params, "page": page})
+        if not isinstance(data, list) or not data:
+            break
+        items.extend(data)
+        if len(data) < per_page:
+            break
+    return items
+
+
 async def _pull_counts(
     cget: Any, gh: GitHub, cid: str, owner: str, repo: str
 ) -> tuple[int, int]:
-    data = await cget(gh, cid, f"/repos/{owner}/{repo}/pulls", {"state": "open", "per_page": 100})
-    if not isinstance(data, list):
-        return (0, 0)
+    data = await _paged(cget, gh, cid, f"/repos/{owner}/{repo}/pulls", {"state": "open", "per_page": 100})
     dependabot = sum(1 for pr in data if (pr.get("user") or {}).get("login") in
                      ("dependabot[bot]", "dependabot-preview[bot]"))
     return len(data), dependabot
@@ -465,9 +480,9 @@ async def _ci_status(
 async def _alert_counts(
     cget: Any, gh: GitHub, cid: str, owner: str, repo: str
 ) -> AlertCounts:
-    data = await cget(gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100})
-    if not isinstance(data, list):
-        return AlertCounts()
+    data = await _paged(
+        cget, gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100}
+    )
     counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
     for alert in data:
         sev = ((alert.get("security_advisory") or {}).get("severity")

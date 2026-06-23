@@ -408,6 +408,8 @@ export interface paths {
                         writable?: boolean;
                         /** @description write-only; per-connection inbound-webhook HMAC secret. Encrypted at rest; falls back to the global secret when omitted (FR-033) */
                         webhook_secret?: string;
+                        /** @description org/user that owns the repos; defaults to the label suffix when omitted */
+                        owner?: string;
                     };
                 };
             };
