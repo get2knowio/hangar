@@ -8,6 +8,8 @@ labels, evidence, open-PR overlay).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from hangar.domain.checks import GROUPS
 from hangar.domain.models import (
     FindingStatus,
@@ -35,14 +37,42 @@ _HUMAN_TITLES = ["Refactor poller cadence", "Add /health endpoint",
                  "Fix webhook retry backoff", "Docs: homelab deploy guide"]
 
 
+def _relative_age(iso: str | None) -> str:
+    """Compact age ("3d"/"5h"/"12m") from an ISO timestamp; "" when absent/unparseable."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    secs = int((datetime.now(UTC) - dt).total_seconds())
+    if secs < 3600:
+        return f"{max(secs // 60, 0)}m"
+    if secs < 86400:
+        return f"{secs // 3600}h"
+    return f"{secs // 86400}d"
+
+
 def _pr_list(repo: Repo, *, synthesize: bool) -> list[dict]:
     """Per-PR rows for the activity strip.
 
-    Hangar does not yet interrogate real PR titles/statuses (only counts), so for a LIVE
-    connection we return no rows rather than fabricate them (honest state) — the header
-    still shows the true open-PR count. For credential-less demo connections we keep the
-    prototype's illustrative list so the offline demo renders as designed.
+    Prefers the real open PRs the poller captured into the snapshot. For a credential-less
+    demo connection with no captured PRs we keep the prototype's illustrative list so the
+    offline demo renders as designed; for a live connection with none we return no rows
+    (honest state) — the header still shows the true open-PR count.
     """
+    if repo.pull_requests:
+        return [
+            {
+                "title": pr.title,
+                "kind": pr.kind,
+                "status": "draft" if pr.draft else "open",
+                "status_tone": (Tone.warn if pr.draft else Tone.neutral).value,
+                "age": _relative_age(pr.created_at),
+                "url": pr.url,
+            }
+            for pr in repo.pull_requests
+        ]
     if not synthesize:
         return []
     prs: list[dict] = []

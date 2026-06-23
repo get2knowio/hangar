@@ -214,6 +214,18 @@ class AlertCounts(BaseModel):
         return self.critical + self.high + self.moderate + self.low
 
 
+class PullRequestSummary(BaseModel):
+    """A real open pull request, captured by the poller into the cached snapshot so the
+    repo-detail read can show actual PRs without a live provider call (Constitution VI)."""
+
+    title: str = ""
+    number: int | None = None
+    url: str | None = None
+    kind: str = "human"  # "dependabot" | "human"
+    created_at: str | None = None  # ISO timestamp; display age is derived at render
+    draft: bool = False
+
+
 class Repo(BaseModel):
     """A watched repository with a normalized snapshot (FR-001, FR-034)."""
 
@@ -228,6 +240,8 @@ class Repo(BaseModel):
     release_pending_days: int | None = None
     fails: list[str] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
+    # The most-recent open PRs (capped), captured by the poller for the activity strip.
+    pull_requests: list[PullRequestSummary] = Field(default_factory=list)
     last_evaluated_at: datetime | None = None
 
 

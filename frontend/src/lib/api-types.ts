@@ -675,6 +675,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/checks/{check_id}/remediate-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fleet-wide remediation — apply one check's correction across many repos in a single operator action (PR-first, idempotent, one audit entry per repo; read-only connections collapse to a deep-link). The kind is resolved server-side. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    check_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        targets: {
+                            connection_id: string;
+                            repo_id: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Per-target outcomes + a status roll-up */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            check_id?: string;
+                            /** @description count of targets per outcome status */
+                            summary?: {
+                                [key: string]: number;
+                            };
+                            results?: {
+                                connection_id?: string;
+                                repo_id?: string;
+                                /** @enum {string} */
+                                status?: "pr_open" | "fixed" | "deep_link" | "not_found" | "error";
+                                pr_url?: string | null;
+                                deep_link_url?: string | null;
+                                idempotent_hit?: boolean;
+                                detail?: string | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Unknown check */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -769,10 +839,12 @@ export interface components {
                 title?: string;
                 /** @enum {string} */
                 kind?: "dependabot" | "human";
-                /** @description human-display status (e.g. "cooldown 4d") */
+                /** @description human-display status (e.g. "open", "draft") */
                 status?: string;
                 status_tone?: components["schemas"]["Tone"];
                 age?: string;
+                /** @description link to the PR on the provider */
+                url?: string | null;
             }[];
             alerts?: {
                 severity?: string;

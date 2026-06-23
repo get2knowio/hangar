@@ -14,6 +14,7 @@ from hangar.domain.remediation import NoOpenPullRequest, ReadOnlyCollapse, Remed
 from hangar.persistence import repositories as repo_store
 from hangar.providers.registry import provider_for
 from hangar.services.connections import attach_credential
+from hangar.services.fleet_remediation import remediate_check_across
 from hangar.services.repo_detail import build_repo_detail
 
 router = APIRouter(tags=["repos"])
@@ -104,6 +105,57 @@ async def remediate(
         "pr_url": outcome.pr_url,
         "audit": audit,
         "idempotent_hit": outcome.idempotent_hit,
+    }
+
+
+class BatchTarget(BaseModel):
+    connection_id: str
+    repo_id: str
+
+
+class RemediateBatchBody(BaseModel):
+    targets: list[BatchTarget]
+
+
+@router.post("/checks/{check_id}/remediate-batch")
+async def remediate_batch(
+    check_id: str,
+    body: RemediateBatchBody,
+    session: AsyncSession = Depends(session_dep),
+    actor: str = Depends(actor_dep),
+) -> dict:
+    """Fleet-wide remediation: apply ``check_id`` across many repos in one operator action.
+
+    Each target is corrected via the same PR-first, idempotent, per-repo-audited path; the
+    kind is resolved server-side and read-only connections collapse to a deep-link. Results
+    are reported per target with a status roll-up.
+    """
+    if check_id not in CATALOG:
+        raise HTTPException(status_code=404, detail="check not found")
+    results = await remediate_check_across(
+        session,
+        check_id=check_id,
+        targets=[(t.connection_id, t.repo_id) for t in body.targets],
+        actor=actor,
+    )
+    summary: dict[str, int] = {}
+    for r in results:
+        summary[r.status] = summary.get(r.status, 0) + 1
+    return {
+        "check_id": check_id,
+        "results": [
+            {
+                "connection_id": r.connection_id,
+                "repo_id": r.repo_id,
+                "status": r.status,
+                "pr_url": r.pr_url,
+                "deep_link_url": r.deep_link_url,
+                "idempotent_hit": r.idempotent_hit,
+                "detail": r.detail,
+            }
+            for r in results
+        ],
+        "summary": summary,
     }
 
 
