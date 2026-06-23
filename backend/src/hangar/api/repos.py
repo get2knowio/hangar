@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 
-from hangar.api.deps import actor_dep, load_fleet, session_dep
+from hangar.api.deps import actor_dep, session_dep
 from hangar.domain.checks import CATALOG
 from hangar.domain.models import RemediationKind, RemediationTier
 from hangar.domain.remediation import NoOpenPullRequest, ReadOnlyCollapse, RemediationService
@@ -26,11 +26,17 @@ async def repo_detail(
     repo = await repo_store.get_repo(session, repo_id, connection_id)
     if repo is None:
         raise HTTPException(status_code=404, detail="repo not found")
-    ctx = await load_fleet(session, "all", with_pr_urls=True)
-    connection = ctx.connections.get(repo.connection_id)
-    if connection is None:
+    conn_row = await repo_store.get_connection_row(session, connection_id)
+    if conn_row is None:
         raise HTTPException(status_code=404, detail="connection not found")
-    return build_repo_detail(repo, connection, ctx.policy, ctx.remediations, ctx.rem_pr_urls)
+    connection = conn_row.to_domain()
+    # Scoped load: just this connection's policy + this repo's remediation overlay — never
+    # the whole fleet/remediation table to render one repo.
+    policy = await repo_store.get_policy(session)
+    remediations, pr_urls = await repo_store.remediation_map_and_pr_urls_for_repo(
+        session, connection_id, repo_id
+    )
+    return build_repo_detail(repo, connection, policy, remediations, pr_urls)
 
 
 class RemediateBody(BaseModel):

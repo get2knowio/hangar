@@ -105,11 +105,19 @@ async def remediation_map(session: AsyncSession) -> RemediationMap:
     return {_rem_key(r): RemediationState(r.state) for r in rows}
 
 
-async def remediation_map_and_pr_urls(
-    session: AsyncSession,
+async def remediation_map_and_pr_urls_for_repo(
+    session: AsyncSession, connection_id: str, repo_id: str
 ) -> tuple[RemediationMap, dict[tuple[str, str, str], str | None]]:
-    """State map + PR-url overlay in a single RemediationRow scan (repo-detail path)."""
-    rows = (await session.execute(select(RemediationRow))).scalars().all()
+    """State map + PR-url overlay for ONE repo (the drill-in path) — a scoped query rather
+    than scanning the whole RemediationRow table to render a single repo."""
+    rows = (
+        await session.execute(
+            select(RemediationRow).where(
+                RemediationRow.connection_id == connection_id,
+                RemediationRow.repo_id == repo_id,
+            )
+        )
+    ).scalars().all()
     state = {_rem_key(r): RemediationState(r.state) for r in rows}
     pr_urls = {_rem_key(r): r.pr_url for r in rows}
     return state, pr_urls
