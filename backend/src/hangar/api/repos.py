@@ -9,7 +9,7 @@ from starlette.responses import JSONResponse
 
 from hangar.api.deps import actor_dep, session_dep
 from hangar.domain.checks import CATALOG
-from hangar.domain.models import RemediationKind, RemediationTier
+from hangar.domain.models import RemediationKind, kind_for_tier
 from hangar.domain.remediation import NoOpenPullRequest, ReadOnlyCollapse, RemediationService
 from hangar.persistence import repositories as repo_store
 from hangar.providers.registry import provider_for
@@ -33,22 +33,14 @@ async def repo_detail(
     # Scoped load: just this connection's policy + this repo's remediation overlay — never
     # the whole fleet/remediation table to render one repo.
     policy = await repo_store.get_policy(session)
-    remediations, pr_urls = await repo_store.remediation_map_and_pr_urls_for_repo(
+    remediations, pr_urls, pr_numbers = await repo_store.remediation_map_and_pr_urls_for_repo(
         session, connection_id, repo_id
     )
-    return build_repo_detail(repo, connection, policy, remediations, pr_urls)
+    return build_repo_detail(repo, connection, policy, remediations, pr_urls, pr_numbers)
 
 
 class RemediateBody(BaseModel):
     kind: RemediationKind
-
-
-_TIER_TO_KIND = {
-    RemediationTier.patch: RemediationKind.settings_patch,
-    RemediationTier.pr: RemediationKind.config_pr,
-    RemediationTier.link: RemediationKind.deep_link,
-    RemediationTier.report: RemediationKind.report,
-}
 
 
 def _write_kind_for(check_id: str) -> RemediationKind:
@@ -57,7 +49,7 @@ def _write_kind_for(check_id: str) -> RemediationKind:
     Maps every tier (not just patch vs pr) so a link-tier check resolves to a deep-link
     rather than wrongly attempting a config PR.
     """
-    return _TIER_TO_KIND[CATALOG[check_id].tier]
+    return kind_for_tier(CATALOG[check_id].tier)
 
 
 @router.post("/repos/{connection_id}/{repo_id}/checks/{check_id}/remediate", response_model=None)

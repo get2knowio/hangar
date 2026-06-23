@@ -44,13 +44,22 @@ def build_overview(
     hyg = {r.id: hygiene(r, policy, remediations) for r in repos}
     compliance = round(sum(hyg.values()) / len(repos)) if repos else 100
 
+    # `tone` colors the value; `sub_tone` colors the sub-label — both structured so the UI
+    # never re-derives color by matching tile titles or parsing the value (Constitution VII).
     stats = [
-        {"label": "Open PRs", "value": str(open_prs), "sub": f"{dep_prs} Dependabot", "tone": Tone.neutral},
-        {"label": "Bot PRs", "value": str(dep_prs), "sub": "awaiting merge", "tone": Tone.neutral},
-        {"label": "CI failing", "value": str(ci_fail), "sub": "on default", "tone": Tone.fail if ci_fail else Tone.neutral},
-        {"label": "Sec alerts", "value": str(alerts_total), "sub": f"{crit} critical", "tone": Tone.fail if crit else Tone.neutral},
-        {"label": "Release pending", "value": str(rel_pending), "sub": "unreleased", "tone": Tone.neutral},
-        {"label": "Compliance", "value": f"{compliance}%", "sub": "fleet avg", "tone": hygiene_tone(compliance)},
+        {"label": "Open PRs", "value": str(open_prs), "sub": f"{dep_prs} Dependabot",
+         "tone": Tone.neutral, "sub_tone": Tone.warn},
+        {"label": "Bot PRs", "value": str(dep_prs), "sub": "awaiting merge",
+         "tone": Tone.neutral, "sub_tone": Tone.neutral},
+        {"label": "CI failing", "value": str(ci_fail), "sub": "on default",
+         "tone": Tone.fail if ci_fail else Tone.neutral, "sub_tone": Tone.neutral},
+        {"label": "Sec alerts", "value": str(alerts_total), "sub": f"{crit} critical",
+         "tone": Tone.fail if crit else Tone.neutral,
+         "sub_tone": Tone.fail if crit else Tone.neutral},
+        {"label": "Release pending", "value": str(rel_pending), "sub": "unreleased",
+         "tone": Tone.neutral, "sub_tone": Tone.neutral},
+        {"label": "Compliance", "value": f"{compliance}%", "sub": "fleet avg",
+         "tone": hygiene_tone(compliance), "sub_tone": Tone.neutral},
     ]
 
     repo_rows = []

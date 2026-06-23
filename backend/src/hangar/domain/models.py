@@ -57,6 +57,20 @@ class RemediationKind(StrEnum):
     config_pr = "config_pr"
 
 
+# Canonical effective-tier → remediation-kind map (single source of truth, used by the
+# remediation service, the remediate endpoint, and the repo-detail presenter).
+_TIER_TO_KIND: dict[RemediationTier, RemediationKind] = {
+    RemediationTier.patch: RemediationKind.settings_patch,
+    RemediationTier.pr: RemediationKind.config_pr,
+    RemediationTier.link: RemediationKind.deep_link,
+    RemediationTier.report: RemediationKind.report,
+}
+
+
+def kind_for_tier(tier: RemediationTier) -> RemediationKind:
+    return _TIER_TO_KIND[tier]
+
+
 class RemediationState(StrEnum):
     working = "working"
     pr_open = "pr_open"

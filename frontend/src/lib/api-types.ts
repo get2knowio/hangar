@@ -137,6 +137,7 @@ export interface paths {
                                 value?: string;
                                 sub?: string;
                                 tone?: components["schemas"]["Tone"];
+                                sub_tone?: components["schemas"]["Tone"];
                             }[];
                             repos: components["schemas"]["RepoRow"][];
                             /** @description needs-attention items sorted by urgency (critical→CI→release→alerts→bot PRs) */
@@ -764,7 +765,9 @@ export interface components {
                 title?: string;
                 /** @enum {string} */
                 kind?: "dependabot" | "human";
+                /** @description human-display status (e.g. "cooldown 4d") */
                 status?: string;
+                status_tone?: components["schemas"]["Tone"];
                 age?: string;
             }[];
             alerts?: {
@@ -777,10 +780,16 @@ export interface components {
                     id?: string;
                     label?: string;
                     status?: components["schemas"]["FindingStatus"];
+                    /**
+                     * @description structured remediation kind the client sends back (never parse the action label)
+                     * @enum {string}
+                     */
+                    kind?: "report" | "deep_link" | "settings_patch" | "config_pr";
                     tier_label?: string;
                     evidence?: string;
                     open_pr_url?: string | null;
-                    /** @description Open fix PR | Enable | Open in GitHub */
+                    open_pr_number?: number | null;
+                    /** @description display label only, e.g. Open fix PR | Enable | Open in GitHub */
                     primary_action?: string | null;
                     /** @example Mark merged */
                     secondary_action?: string | null;

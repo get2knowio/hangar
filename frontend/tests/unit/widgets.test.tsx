@@ -4,7 +4,7 @@ import { HygieneBar, StatTile, StatusGlyph } from "../../src/components/widgets"
 
 describe("widgets", () => {
   it("StatTile renders label/value/sub", () => {
-    render(<StatTile label="Compliance" value="85%" sub="fleet avg" tone="pass" />);
+    render(<StatTile label="Compliance" value="85%" sub="fleet avg" tone="pass" subTone="neutral" />);
     expect(screen.getByText("Compliance")).toBeInTheDocument();
     expect(screen.getByText("85%")).toBeInTheDocument();
     expect(screen.getByText("fleet avg")).toBeInTheDocument();

@@ -20,8 +20,8 @@ from hangar.domain.models import (
     ProviderConnection,
     RemediationKind,
     RemediationState,
-    RemediationTier,
     Repo,
+    kind_for_tier,
 )
 from hangar.persistence import repositories as repo_store
 from hangar.providers.base import CorrectionRequest, RepoProvider, provider_name
@@ -63,13 +63,7 @@ class RemediationOutcome:
 def resolve_kind(check_id: str, connection: ProviderConnection) -> RemediationKind:
     """Map a check's effective tier (given the connection) to a remediation kind."""
     check = CATALOG[check_id]
-    tier = check.tier_for(connection.granted_capabilities)
-    return {
-        RemediationTier.patch: RemediationKind.settings_patch,
-        RemediationTier.pr: RemediationKind.config_pr,
-        RemediationTier.link: RemediationKind.deep_link,
-        RemediationTier.report: RemediationKind.report,
-    }[tier]
+    return kind_for_tier(check.tier_for(connection.granted_capabilities))
 
 
 class RemediationService:

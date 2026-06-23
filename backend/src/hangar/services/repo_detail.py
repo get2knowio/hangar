@@ -1,8 +1,9 @@
 """Repo drill-down presenter (FR-005a, Story 3; prototype ``buildCtl`` + ``prList``).
 
-Produces the RepoDetail contract: header, activity strip (synthetic PR list matching the
-prototype, CI, alerts) and grouped policy checks each carrying its resolved remediation
-control (primary/secondary action labels, evidence, open-PR overlay).
+Produces the RepoDetail contract: header, activity strip (CI, alerts, and — for
+credential-less demo connections only — the prototype's illustrative PR list) and grouped
+policy checks each carrying its resolved remediation control (structured kind, action
+labels, evidence, open-PR overlay).
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from hangar.domain.models import (
     ProviderConnection,
     RemediationTier,
     Repo,
+    Tone,
+    kind_for_tier,
     tier_label,
 )
 from hangar.domain.policy import (
@@ -32,13 +35,24 @@ _HUMAN_TITLES = ["Refactor poller cadence", "Add /health endpoint",
                  "Fix webhook retry backoff", "Docs: homelab deploy guide"]
 
 
-def _pr_list(repo: Repo) -> list[dict]:
+def _pr_list(repo: Repo, *, synthesize: bool) -> list[dict]:
+    """Per-PR rows for the activity strip.
+
+    Hangar does not yet interrogate real PR titles/statuses (only counts), so for a LIVE
+    connection we return no rows rather than fabricate them (honest state) — the header
+    still shows the true open-PR count. For credential-less demo connections we keep the
+    prototype's illustrative list so the offline demo renders as designed.
+    """
+    if not synthesize:
+        return []
     prs: list[dict] = []
     for i in range(repo.dependabot_prs):
+        cooldown = i == 0
         prs.append({
             "title": f"Bump {_DEP_TITLES[i % len(_DEP_TITLES)]}",
             "kind": "dependabot",
-            "status": "cooldown 4d" if i == 0 else "ready",
+            "status": "cooldown 4d" if cooldown else "ready",
+            "status_tone": (Tone.warn if cooldown else Tone.passing).value,
             "age": f"{i + 1}d",
         })
     for i in range(max(0, repo.open_prs - repo.dependabot_prs)):
@@ -46,6 +60,7 @@ def _pr_list(repo: Repo) -> list[dict]:
             "title": _HUMAN_TITLES[i % len(_HUMAN_TITLES)],
             "kind": "human",
             "status": "in review",
+            "status_tone": Tone.neutral.value,
             "age": f"{i + 2}d",
         })
     return prs
@@ -71,6 +86,7 @@ def build_repo_detail(
     policy: Policy,
     remediations: RemediationMap,
     rem_pr_urls: dict[tuple[str, str, str], str | None],
+    rem_pr_numbers: dict[tuple[str, str, str], int | None],
 ) -> dict:
     checks = enabled_checks(policy)
     hyg = hygiene(repo, policy, remediations)
@@ -84,17 +100,19 @@ def build_repo_detail(
             status = effective_status(repo, c.id, remediations)
             tier = c.tier_for(connection.granted_capabilities)
             primary, secondary = _actions(status, tier, connection.provider_type)
-            open_pr = (
-                rem_pr_urls.get((repo.connection_id, repo.id, c.id))
-                if status is FindingStatus.pending else None
-            )
+            key = (repo.connection_id, repo.id, c.id)
+            pending = status is FindingStatus.pending
             group_checks.append({
                 "id": c.id,
                 "label": c.label,
                 "status": status.value,
+                # Structured remediation kind the client sends back — the UI must not
+                # reverse-engineer it from the action label (Constitution VII).
+                "kind": kind_for_tier(tier).value,
                 "tier_label": tier_label(tier),
                 "evidence": evidence_for(repo, c.id, status),
-                "open_pr_url": open_pr,
+                "open_pr_url": rem_pr_urls.get(key) if pending else None,
+                "open_pr_number": rem_pr_numbers.get(key) if pending else None,
                 "primary_action": primary,
                 "secondary_action": secondary,
             })
@@ -111,7 +129,7 @@ def build_repo_detail(
         "pass_count": f"{pc}/{len(checks)} checks",
         "open_prs": repo.open_prs,
         "ci": ci,
-        "pull_requests": _pr_list(repo),
+        "pull_requests": _pr_list(repo, synthesize=not connection.has_credential),
         "alerts": _alerts(repo),
         "check_groups": groups,
     }

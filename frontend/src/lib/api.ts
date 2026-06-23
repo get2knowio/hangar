@@ -60,6 +60,10 @@ export type Policy = JSONResponse<"/policy", "get">;
 export type Providers = JSONResponse<"/providers", "get">;
 export type AuditEntry = NonNullable<JSONResponse<"/providers/audit", "get">>[number];
 export type RepoDetail = JSONResponse<"/repos/{connection_id}/{repo_id}", "get">;
+// One check row from the repo-detail contract — derived, never hand-written (Constitution VII).
+export type RepoCheck = NonNullable<
+  NonNullable<RepoDetail["check_groups"]>[number]["checks"]
+>[number];
 export type Health = JSONResponse<"/health", "get">;
 export type Me = JSONResponse<"/me", "get">;
 
@@ -147,9 +151,11 @@ export function useAddConnection() {
 }
 
 function invalidateFleet(qc: ReturnType<typeof useQueryClient>, connectionId: string, repoId: string) {
+  // A remediation changes this repo, the fleet aggregates (overview/scorecard), and the
+  // audit log. It does NOT change the provider cards (repo counts / sync time), so those
+  // are not invalidated.
   qc.invalidateQueries({ queryKey: ["repo", connectionId, repoId] });
   qc.invalidateQueries({ queryKey: ["scorecard"] });
   qc.invalidateQueries({ queryKey: ["overview"] });
   qc.invalidateQueries({ queryKey: ["audit"] });
-  qc.invalidateQueries({ queryKey: ["providers"] });
 }

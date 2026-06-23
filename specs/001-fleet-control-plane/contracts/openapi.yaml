@@ -95,6 +95,7 @@ paths:
                         value: { type: string }
                         sub: { type: string }
                         tone: { $ref: "#/components/schemas/Tone" }
+                        sub_tone: { $ref: "#/components/schemas/Tone" }
                   repos:
                     type: array
                     items: { $ref: "#/components/schemas/RepoRow" }
@@ -445,7 +446,8 @@ components:
             properties:
               title: { type: string }
               kind: { type: string, enum: [dependabot, human] }
-              status: { type: string }
+              status: { type: string, description: human-display status (e.g. "cooldown 4d") }
+              status_tone: { $ref: "#/components/schemas/Tone" }
               age: { type: string }
         alerts:
           type: array
@@ -464,8 +466,10 @@ components:
                     id: { type: string }
                     label: { type: string }
                     status: { $ref: "#/components/schemas/FindingStatus" }
+                    kind: { type: string, enum: [report, deep_link, settings_patch, config_pr], description: structured remediation kind the client sends back (never parse the action label) }
                     tier_label: { type: string }
                     evidence: { type: string }
                     open_pr_url: { type: string, nullable: true }
-                    primary_action: { type: string, nullable: true, description: "Open fix PR | Enable | Open in GitHub" }
+                    open_pr_number: { type: integer, nullable: true }
+                    primary_action: { type: string, nullable: true, description: "display label only, e.g. Open fix PR | Enable | Open in GitHub" }
                     secondary_action: { type: string, nullable: true, example: "Mark merged" }

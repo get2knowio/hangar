@@ -105,3 +105,37 @@ def test_repo_detail_route_is_connection_scoped(client) -> None:
     repo resolves under its owning connection and 404s under any other."""
     assert client.get("/api/v1/repos/gh-main/hangar").status_code == 200
     assert client.get("/api/v1/repos/gitea/hangar").status_code == 404
+
+
+def test_repo_detail_checks_expose_structured_kind_and_pr_number(client) -> None:
+    """Checks carry a structured remediation `kind` + `open_pr_number` so the UI never
+    reverse-engineers them from a display label / PR URL (#4)."""
+    detail = client.get("/api/v1/repos/gh-main/hangar").json()
+    kinds = {"report", "deep_link", "settings_patch", "config_pr"}
+    seen = False
+    for grp in detail["check_groups"]:
+        for c in grp["checks"]:
+            seen = True
+            assert c["kind"] in kinds
+            assert "open_pr_number" in c
+    assert seen, "expected at least one check"
+
+
+def test_overview_tiles_expose_sub_tone(client) -> None:
+    """Each stat tile carries a structured sub_tone so the UI colors subs without matching
+    the tile label (#4)."""
+    body = client.get("/api/v1/fleet/overview").json()
+    assert body["stats"]
+    for tile in body["stats"]:
+        assert "sub_tone" in tile
+
+
+def test_pr_list_not_fabricated_for_live_connections() -> None:
+    """A live (credentialed) connection gets no fabricated PR rows; the demo-only path keeps
+    the illustrative list and tags each row with a structured status_tone (#4, #9)."""
+    from hangar.services.repo_detail import _pr_list
+
+    repo = Repo(id="r", connection_id="c", open_prs=3, dependabot_prs=1)
+    assert _pr_list(repo, synthesize=False) == []
+    synthetic = _pr_list(repo, synthesize=True)
+    assert len(synthetic) == 3 and all("status_tone" in p for p in synthetic)
