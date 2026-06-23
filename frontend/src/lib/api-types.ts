@@ -839,10 +839,12 @@ export interface components {
                 title?: string;
                 /** @enum {string} */
                 kind?: "dependabot" | "human";
-                /** @description human-display status (e.g. "cooldown 4d") */
+                /** @description human-display status (e.g. "open", "draft") */
                 status?: string;
                 status_tone?: components["schemas"]["Tone"];
                 age?: string;
+                /** @description link to the PR on the provider */
+                url?: string | null;
             }[];
             alerts?: {
                 severity?: string;

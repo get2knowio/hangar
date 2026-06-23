@@ -419,6 +419,38 @@ async def test_pull_counts_paginate_beyond_one_page(respx_mock) -> None:
 
 
 @respx.mock(base_url=API, assert_all_called=False)
+async def test_open_prs_captured_into_snapshot(respx_mock) -> None:
+    """The poller captures real open PRs (title/kind/url/draft) into the snapshot so the
+    detail read can show them without a live call (open-PR interrogation feature)."""
+    from urllib.parse import parse_qs, urlparse
+
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    def _pulls(request: httpx.Request) -> httpx.Response:
+        page = int(parse_qs(urlparse(str(request.url)).query).get("page", ["1"])[0])
+        if page == 1:
+            return httpx.Response(200, json=[
+                {"title": "Bump vite", "number": 7, "html_url": "https://github.com/acme/hangar/pull/7",
+                 "user": {"login": "dependabot[bot]"}, "created_at": "2024-01-01T00:00:00Z", "draft": False},
+                {"title": "Add health", "number": 6, "html_url": "https://github.com/acme/hangar/pull/6",
+                 "user": {"login": "alice"}, "created_at": "2024-01-02T00:00:00Z", "draft": True},
+            ])
+        return httpx.Response(200, json=[])
+
+    respx_mock.get(url__regex=r".*/repos/acme/hangar/pulls\?.*").mock(side_effect=_pulls)
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"pr1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.open_prs == 2 and repo.dependabot_prs == 1
+    assert [p.title for p in repo.pull_requests] == ["Bump vite", "Add health"]
+    assert repo.pull_requests[0].kind == "dependabot"
+    assert repo.pull_requests[0].url == "https://github.com/acme/hangar/pull/7"
+    assert repo.pull_requests[1].kind == "human" and repo.pull_requests[1].draft is True
+
+
+@respx.mock(base_url=API, assert_all_called=False)
 async def test_secret_scanning_unknown_when_field_absent(respx_mock) -> None:
     """security_and_analysis omitted (token not repo-admin) ⇒ secret_scanning is unknown,
     not a fabricated fail (code-review fix)."""

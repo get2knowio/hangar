@@ -93,7 +93,18 @@ export function RepoDetail() {
               <span style={{ fontSize: 11, width: 14, textAlign: "center", color: pr.kind === "dependabot" ? "var(--warn)" : "var(--fg-2)" }}>
                 {pr.kind === "dependabot" ? "⚙" : "↗"}
               </span>
-              <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pr.title}</span>
+              {pr.url ? (
+                <a
+                  href={pr.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--fg)", textDecoration: "none" }}
+                >
+                  {pr.title}
+                </a>
+              ) : (
+                <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pr.title}</span>
+              )}
               <span style={{ fontSize: 11, fontWeight: 600, color: toneColor((pr.status_tone as Tone) ?? "neutral") }}>
                 {pr.status}
               </span>

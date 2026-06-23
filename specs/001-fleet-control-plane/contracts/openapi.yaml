@@ -500,9 +500,10 @@ components:
             properties:
               title: { type: string }
               kind: { type: string, enum: [dependabot, human] }
-              status: { type: string, description: human-display status (e.g. "cooldown 4d") }
+              status: { type: string, description: 'human-display status (e.g. "open", "draft")' }
               status_tone: { $ref: "#/components/schemas/Tone" }
               age: { type: string }
+              url: { type: string, nullable: true, description: link to the PR on the provider }
         alerts:
           type: array
           items: { type: object, properties: { severity: { type: string }, count: { type: integer } } }

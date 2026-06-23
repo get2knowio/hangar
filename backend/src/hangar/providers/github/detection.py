@@ -15,7 +15,14 @@ import asyncio
 import re
 from typing import TYPE_CHECKING, Any
 
-from hangar.domain.models import AlertCounts, Capability, CIStatus, ProviderConnection, Repo
+from hangar.domain.models import (
+    AlertCounts,
+    Capability,
+    CIStatus,
+    ProviderConnection,
+    PullRequestSummary,
+    Repo,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -89,7 +96,7 @@ async def interrogate_repo(
     else:
         meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data)
 
-    (dyn_fails, dyn_unknowns, open_prs, dependabot_prs, ci, alerts, release_pending) = (
+    (dyn_fails, dyn_unknowns, open_prs, dependabot_prs, ci, alerts, release_pending, pulls) = (
         await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
     )
 
@@ -107,6 +114,7 @@ async def interrogate_repo(
         release_pending_days=release_pending,
         fails=sorted(set(fails)),
         unknowns=sorted(set(unknowns) - set(fails)),
+        pull_requests=[PullRequestSummary(**d) for d in pulls],
     )
 
 
@@ -155,7 +163,7 @@ async def _dynamic_checks(
     repo_ref: str,
     default_branch: str,
     granted: set[Capability],
-) -> tuple[list[str], list[str], int, int, CIStatus, AlertCounts, int | None]:
+) -> tuple[list[str], list[str], int, int, CIStatus, AlertCounts, int | None, list[dict]]:
     """All checks that can change without the primary repo resource's ETag changing.
 
     Always re-evaluated each poll (even on a 304) so security/activity drift surfaces.
@@ -175,6 +183,7 @@ async def _dynamic_checks(
 
     # Scalars produced by the activity groups below (filled via nonlocal).
     open_prs = dependabot_prs = 0
+    pull_details: list[dict] = []
     ci = CIStatus.none
     alerts = AlertCounts()
     release_pending: int | None = None
@@ -293,8 +302,8 @@ async def _dynamic_checks(
             fails.append("release_health")
 
     async def _pulls_group() -> None:
-        nonlocal open_prs, dependabot_prs
-        open_prs, dependabot_prs = await _pull_counts(cget, gh, connection.id, owner, repo_ref)
+        nonlocal open_prs, dependabot_prs, pull_details
+        open_prs, dependabot_prs, pull_details = await _pull_data(cget, gh, connection.id, owner, repo_ref)
 
     async def _ci_group() -> None:
         nonlocal ci
@@ -334,7 +343,7 @@ async def _dynamic_checks(
         _dependabot_alerts_group(),
     )
 
-    return fails, unknowns, open_prs, dependabot_prs, ci, alerts, release_pending
+    return fails, unknowns, open_prs, dependabot_prs, ci, alerts, release_pending, pull_details
 
 
 async def _workflow_action_refs(
@@ -449,13 +458,31 @@ async def _paged(cget: Any, gh: GitHub, cid: str, path: str, params: dict[str, A
     return items
 
 
-async def _pull_counts(
+_PR_DETAIL_CAP = 20  # store the most-recent N open PRs for the activity strip
+_BOT_LOGINS = ("dependabot[bot]", "dependabot-preview[bot]")
+
+
+async def _pull_data(
     cget: Any, gh: GitHub, cid: str, owner: str, repo: str
-) -> tuple[int, int]:
-    data = await _paged(cget, gh, cid, f"/repos/{owner}/{repo}/pulls", {"state": "open", "per_page": 100})
-    dependabot = sum(1 for pr in data if (pr.get("user") or {}).get("login") in
-                     ("dependabot[bot]", "dependabot-preview[bot]"))
-    return len(data), dependabot
+) -> tuple[int, int, list[dict]]:
+    """Open-PR count, Dependabot count, and the most-recent PR details (capped)."""
+    data = await _paged(
+        cget, gh, cid, f"/repos/{owner}/{repo}/pulls",
+        {"state": "open", "sort": "created", "direction": "desc", "per_page": 100},
+    )
+    dependabot = sum(1 for pr in data if (pr.get("user") or {}).get("login") in _BOT_LOGINS)
+    details: list[dict] = []
+    for pr in data[:_PR_DETAIL_CAP]:
+        login = (pr.get("user") or {}).get("login")
+        details.append({
+            "title": pr.get("title") or "",
+            "number": pr.get("number"),
+            "url": pr.get("html_url"),
+            "kind": "dependabot" if login in _BOT_LOGINS else "human",
+            "created_at": pr.get("created_at"),
+            "draft": bool(pr.get("draft")),
+        })
+    return len(data), dependabot, details
 
 
 async def _ci_status(
