@@ -20,11 +20,11 @@ from hangar.domain.models import (
     ProviderConnection,
     RemediationKind,
     RemediationState,
-    RemediationTier,
     Repo,
+    kind_for_tier,
 )
 from hangar.persistence import repositories as repo_store
-from hangar.providers.base import CorrectionRequest, RepoProvider
+from hangar.providers.base import CorrectionRequest, RepoProvider, provider_name
 from hangar.services import audit
 
 
@@ -63,13 +63,7 @@ class RemediationOutcome:
 def resolve_kind(check_id: str, connection: ProviderConnection) -> RemediationKind:
     """Map a check's effective tier (given the connection) to a remediation kind."""
     check = CATALOG[check_id]
-    tier = check.tier_for(connection.granted_capabilities)
-    return {
-        RemediationTier.patch: RemediationKind.settings_patch,
-        RemediationTier.pr: RemediationKind.config_pr,
-        RemediationTier.link: RemediationKind.deep_link,
-        RemediationTier.report: RemediationKind.report,
-    }[tier]
+    return kind_for_tier(check.tier_for(connection.granted_capabilities))
 
 
 class RemediationService:
@@ -96,7 +90,8 @@ class RemediationService:
             deep = self.provider.deep_link(connection, repo, check_id)
             await audit.record_correction(
                 session, actor=actor, connection_label=connection.label,
-                repo_id=repo.id, check_label=check.label, result=f"Opened in {connection.provider_type}",
+                repo_id=repo.id, check_label=check.label,
+                result=f"Opened in {provider_name(connection.provider_type)}",
             )
             raise ReadOnlyCollapse(deep)
 
@@ -120,7 +115,7 @@ class RemediationService:
             entry = await audit.record_correction(
                 session, actor=actor, connection_label=connection.label,
                 repo_id=repo.id, check_label=check.label,
-                result=f"Opened in {connection.provider_type}",
+                result=f"Opened in {provider_name(connection.provider_type)}",
                 pr_url=result.deep_link_url,
             )
             return RemediationOutcome(

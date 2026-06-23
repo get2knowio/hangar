@@ -10,13 +10,24 @@ service owns idempotency/audit/state, so the simulation only needs to return the
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from hangar.domain.models import Capability, ProviderConnection, RemediationKind, Repo
-from hangar.providers.base import CorrectionRequest, CorrectionResult, provider_name
+from hangar.providers.base import (
+    CorrectionRequest,
+    CorrectionResult,
+    WebhookEvent,
+    provider_name,
+)
 
 _PROVIDER_HOST = {"github": "github.com", "gitea": "gitea.local"}
 
 
 class DemoProvider:
+    # Demo connections are created by the seed path, not add_connection, so this default is
+    # unused in practice; present for RepoProvider Protocol conformance.
+    default_auth_mode = ""
+
     def __init__(self, provider_type: str) -> None:
         self.provider_type = provider_type
 
@@ -60,4 +71,11 @@ class DemoProvider:
         return CorrectionResult(applied=True, summary="PR opened")
 
     async def subscribe(self, connection: ProviderConnection) -> None:
+        return None
+
+    def verify_webhook(self, headers: Mapping[str, str], body: bytes, secret: str) -> bool:
+        # Demo connections have no real provider, so no inbound webhooks to verify.
+        return False
+
+    def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent | None:
         return None

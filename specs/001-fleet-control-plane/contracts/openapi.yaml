@@ -95,6 +95,7 @@ paths:
                         value: { type: string }
                         sub: { type: string }
                         tone: { $ref: "#/components/schemas/Tone" }
+                        sub_tone: { $ref: "#/components/schemas/Tone" }
                   repos:
                     type: array
                     items: { $ref: "#/components/schemas/RepoRow" }
@@ -107,6 +108,7 @@ paths:
                         tag: { type: string }
                         title: { type: string }
                         repo_id: { type: string }
+                        connection_id: { type: string, description: owning connection — for connection-scoped drill-in }
                         tone: { $ref: "#/components/schemas/Tone" }
 
   /fleet/scorecard:
@@ -140,6 +142,7 @@ paths:
                       type: object
                       properties:
                         repo_id: { type: string }
+                        connection_id: { type: string, description: owning connection — for connection-scoped drill-in }
                         hygiene_pct: { type: integer }
                         connection_badge: { type: string }
                         cells:
@@ -236,6 +239,8 @@ paths:
                 app_id: { type: string, nullable: true, description: GitHub App id (App connections only) }
                 installation_id: { type: integer, nullable: true, description: GitHub App installation id (App connections only) }
                 writable: { type: boolean, default: false, description: grant write tiers only if the credential can write (least-privilege, FR-026) }
+                webhook_secret: { type: string, description: "write-only; per-connection inbound-webhook HMAC secret. Encrypted at rest; falls back to the global secret when omitted (FR-033)" }
+                owner: { type: string, description: "org/user that owns the repos; defaults to the label suffix when omitted" }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectionCard" } } } }
   /providers/{connection_id}:
@@ -260,11 +265,16 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/AuditEntry" }
 
-  /repos/{repo_id}:
+  /repos/{connection_id}/{repo_id}:
     get:
       tags: [repos]
       summary: Repo drill-down — activity strip + grouped policy checks with remediation controls (Story 3).
-      parameters: [ { name: repo_id, in: path, required: true, schema: { type: string } } ]
+      description: >
+        A repo is addressed by (connection_id, repo_id); resolving by repo_id alone is
+        forbidden because same-named repos can exist under different connections (Constitution I).
+      parameters:
+        - { name: connection_id, in: path, required: true, schema: { type: string } }
+        - { name: repo_id, in: path, required: true, schema: { type: string } }
       responses:
         "200":
           description: OK
@@ -273,7 +283,7 @@ paths:
               schema: { $ref: "#/components/schemas/RepoDetail" }
         "404": { description: Not found }
 
-  /repos/{repo_id}/checks/{check_id}/remediate:
+  /repos/{connection_id}/{repo_id}/checks/{check_id}/remediate:
     post:
       tags: [remediation]
       summary: >
@@ -281,6 +291,7 @@ paths:
         change; kind=config_pr opens a PR (never push/force-push, FR-014); deep_link/report
         are recorded only. Idempotent: an existing open Hangar PR is surfaced, not duplicated (FR-015).
       parameters:
+        - { name: connection_id, in: path, required: true, schema: { type: string } }
         - { name: repo_id, in: path, required: true, schema: { type: string } }
         - { name: check_id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -310,13 +321,14 @@ paths:
             application/json:
               schema: { type: object, properties: { deep_link_url: { type: string } } }
 
-  /repos/{repo_id}/checks/{check_id}/merge:
+  /repos/{connection_id}/{repo_id}/checks/{check_id}/merge:
     post:
       tags: [remediation]
       summary: >
         Mark a Hangar-authored PR merged — the finding flips to pass and the merge is
         audited (prototype markMerged; FR-005a, FR-016).
       parameters:
+        - { name: connection_id, in: path, required: true, schema: { type: string } }
         - { name: repo_id, in: path, required: true, schema: { type: string } }
         - { name: check_id, in: path, required: true, schema: { type: string } }
       responses:
@@ -359,6 +371,7 @@ components:
       type: object
       properties:
         id: { type: string }
+        connection_id: { type: string, description: owning connection — used to address the repo connection-scoped }
         connection_badge: { type: string }
         description: { type: string }
         open_prs: { type: integer }
@@ -435,7 +448,8 @@ components:
             properties:
               title: { type: string }
               kind: { type: string, enum: [dependabot, human] }
-              status: { type: string }
+              status: { type: string, description: human-display status (e.g. "cooldown 4d") }
+              status_tone: { $ref: "#/components/schemas/Tone" }
               age: { type: string }
         alerts:
           type: array
@@ -454,8 +468,10 @@ components:
                     id: { type: string }
                     label: { type: string }
                     status: { $ref: "#/components/schemas/FindingStatus" }
+                    kind: { type: string, enum: [report, deep_link, settings_patch, config_pr], description: structured remediation kind the client sends back (never parse the action label) }
                     tier_label: { type: string }
                     evidence: { type: string }
                     open_pr_url: { type: string, nullable: true }
-                    primary_action: { type: string, nullable: true, description: "Open fix PR | Enable | Open in GitHub" }
+                    open_pr_number: { type: integer, nullable: true }
+                    primary_action: { type: string, nullable: true, description: "display label only, e.g. Open fix PR | Enable | Open in GitHub" }
                     secondary_action: { type: string, nullable: true, example: "Mark merged" }

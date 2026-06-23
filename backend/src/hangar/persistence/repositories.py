@@ -62,13 +62,11 @@ async def repo_counts_by_connection(session: AsyncSession) -> dict[str, int]:
 
 
 async def get_repo(
-    session: AsyncSession, repo_id: str, connection_id: str | None = None
+    session: AsyncSession, repo_id: str, connection_id: str
 ) -> Repo | None:
-    stmt = select(RepoRow).where(RepoRow.id == repo_id)
-    if connection_id:
-        stmt = stmt.where(RepoRow.connection_id == connection_id)
-    stmt = stmt.order_by(RepoRow.connection_id).limit(1)
-    row = (await session.execute(stmt)).scalars().first()
+    # Always resolved by the composite (id, connection_id) PK — never by id alone, which
+    # would silently pick one of several same-named repos across connections (Constitution I).
+    row = await session.get(RepoRow, (repo_id, connection_id))
     return row.to_domain() if row else None
 
 
@@ -107,14 +105,27 @@ async def remediation_map(session: AsyncSession) -> RemediationMap:
     return {_rem_key(r): RemediationState(r.state) for r in rows}
 
 
-async def remediation_map_and_pr_urls(
-    session: AsyncSession,
-) -> tuple[RemediationMap, dict[tuple[str, str, str], str | None]]:
-    """State map + PR-url overlay in a single RemediationRow scan (repo-detail path)."""
-    rows = (await session.execute(select(RemediationRow))).scalars().all()
+async def remediation_map_and_pr_urls_for_repo(
+    session: AsyncSession, connection_id: str, repo_id: str
+) -> tuple[
+    RemediationMap,
+    dict[tuple[str, str, str], str | None],
+    dict[tuple[str, str, str], int | None],
+]:
+    """State map + PR-url + PR-number overlays for ONE repo (the drill-in path) — a scoped
+    query rather than scanning the whole RemediationRow table to render a single repo."""
+    rows = (
+        await session.execute(
+            select(RemediationRow).where(
+                RemediationRow.connection_id == connection_id,
+                RemediationRow.repo_id == repo_id,
+            )
+        )
+    ).scalars().all()
     state = {_rem_key(r): RemediationState(r.state) for r in rows}
     pr_urls = {_rem_key(r): r.pr_url for r in rows}
-    return state, pr_urls
+    pr_numbers = {_rem_key(r): r.pr_number for r in rows}
+    return state, pr_urls, pr_numbers
 
 
 async def get_remediation(

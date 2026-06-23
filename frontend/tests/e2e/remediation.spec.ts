@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("Remediation spectrum", () => {
   test("open fix PR, then mark merged flips the finding to pass", async ({ page }) => {
-    await page.goto("/repos/hangar");
+    await page.goto("/repos/gh-main/hangar");
     await expect(page.getByText("Policy checks & remediation")).toBeVisible();
 
     // LICENSE present row offers "Open fix PR"
@@ -33,7 +33,7 @@ test.describe("Remediation spectrum", () => {
   });
 
   test("read-only connection offers no write actions", async ({ page }) => {
-    await page.goto("/repos/backup-scripts");
+    await page.goto("/repos/gitea/backup-scripts");
     await expect(page.getByText("read-only · deep-link only")).toBeVisible();
     await expect(page.getByText("Open fix PR")).toHaveCount(0);
   });

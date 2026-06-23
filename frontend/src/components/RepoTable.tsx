@@ -48,7 +48,7 @@ export function RepoTable({ repos }: { repos: Row[] }) {
         return (
           <div
             key={r.id}
-            onClick={() => navigate(`/repos/${r.id}`)}
+            onClick={() => navigate(`/repos/${r.connection_id}/${r.id}`)}
             style={{
               display: "grid",
               gridTemplateColumns: GRID,

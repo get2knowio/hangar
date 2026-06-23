@@ -2,9 +2,9 @@
 
 Findings are *derived* (repo snapshot × active policy × remediation overlay), so they
 are not stored. We persist connections, repo snapshots, in-flight remediations, the
-single policy, and the append-only audit log. Repo ids are unique per fleet at MVP
-(matching the prototype); the composite-key path for the same logical repo across two
-connections is noted in data-model.md and left for a follow-up.
+single policy, and the append-only audit log. The same logical repo name under two
+connections is two distinct rows keyed on the composite ``(id, connection_id)`` PK, and
+every access path resolves by that pair — never by name alone (Constitution I).
 """
 
 from __future__ import annotations
@@ -32,7 +32,12 @@ class ConnectionRow(Base):
     provider_type: Mapped[str] = mapped_column(String(32))
     scope: Mapped[str] = mapped_column(String(128))
     auth_mode: Mapped[str] = mapped_column(String(128))
+    # Org/user that owns the repos (first-class; defaults to the label suffix at creation).
+    owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     credential_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # Per-connection webhook HMAC secret (encrypted at rest). When null, the inbound
+    # webhook falls back to the global HANGAR_WEBHOOK_SECRET.
+    webhook_secret_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     granted_capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
     app_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     installation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -46,6 +51,7 @@ class ConnectionRow(Base):
             provider_type=self.provider_type,
             scope=self.scope,
             auth_mode=self.auth_mode,
+            owner=self.owner or "",  # empty → ProviderConnection derives it from the label
             granted_capabilities={Capability(c) for c in (self.granted_capabilities or [])},
             app_id=self.app_id,
             installation_id=self.installation_id,

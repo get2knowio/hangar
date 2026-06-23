@@ -11,6 +11,7 @@ returns ``403`` — yields ``unknown`` rather than a false pass/fail.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -86,7 +87,7 @@ async def interrogate_repo(
             return None  # nothing cached to carry forward
         meta_fails, meta_unknowns, description, default_branch = _metadata_from_previous(previous)
     else:
-        meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data, granted)
+        meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data)
 
     (dyn_fails, dyn_unknowns, open_prs, dependabot_prs, ci, alerts, release_pending) = (
         await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
@@ -109,15 +110,15 @@ async def interrogate_repo(
     )
 
 
-def _metadata_checks(
-    repo_data: Any, granted: set[Capability]
-) -> tuple[list[str], list[str], str, str]:
+def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str]:
     """Checks derived from the primary repo resource body (license/description/branch/secret)."""
     fails: list[str] = []
     unknowns: list[str] = []
 
     if not repo_data.get("license"):
         fails.append("license")
+    # The catalog check is "Description & topics set" — both are required; the evidence
+    # string (project_meta) reports which is missing without claiming both are empty.
     if not (repo_data.get("description") and repo_data.get("topics")):
         fails.append("description")
     default_branch = repo_data.get("default_branch") or "main"
@@ -130,9 +131,10 @@ def _metadata_checks(
         pp = (saa.get("secret_scanning_push_protection") or {}).get("status")
         if ss != "enabled" or pp != "enabled":
             fails.append("secret_scanning")
-    elif Capability.read_settings in granted:
-        fails.append("secret_scanning")  # readable but field absent → not enabled
     else:
+        # `security_and_analysis` is omitted entirely when the token is not repo-admin
+        # (and for some plans/visibilities), so an absent field means the state is
+        # unreadable — honestly `unknown`, never a fabricated `fail` (Constitution VIII).
         unknowns.append("secret_scanning")
 
     return fails, unknowns, repo_data.get("description") or "", default_branch
@@ -160,7 +162,7 @@ async def _dynamic_checks(
     A ``403`` on any resource yields ``unknown`` for the affected check(s) rather than
     propagating an exception that would abort the whole snapshot.
     """
-    from hangar.providers.github.adapter import _FORBIDDEN, _NOT_FOUND
+    from hangar.providers.github.adapter import _FORBIDDEN, _NO_CONTENT, _NOT_FOUND
 
     cget = adapter._conditional_get
     fails: list[str] = []
@@ -171,6 +173,12 @@ async def _dynamic_checks(
     can_alerts = Capability.read_alerts in granted
     can_org = Capability.read_org_policy in granted
 
+    # Scalars produced by the activity groups below (filled via nonlocal).
+    open_prs = dependabot_prs = 0
+    ci = CIStatus.none
+    alerts = AlertCounts()
+    release_pending: int | None = None
+
     async def _probe(path: str) -> object:
         return await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/contents/{path}")
 
@@ -178,50 +186,61 @@ async def _dynamic_checks(
         r = await _probe(path)
         return r is not _NOT_FOUND and r is not _FORBIDDEN
 
-    # --- file-presence checks (contents API; 404 = absent, 403 = unknown) ---
-    dependabot_unknown = False
-    for check_id, candidates in _FILE_CHECKS.items():
+    # The groups below are independent provider reads with no cross-dependency, so they run
+    # concurrently (asyncio.gather) instead of serially — the bulk of a repo's poll latency.
+    # Each appends to the shared fails/unknowns (list.append is atomic between awaits and the
+    # caller normalizes order) and writes its scalar via nonlocal. None of these reads is
+    # conditional, so the per-connection ETag store is never written here: concurrency is safe.
+
+    async def _files_group() -> None:
+        # file-presence checks (contents API; 404 = absent, 403 = unknown) + cooldown
         if not can_files:
-            unknowns.append(check_id)
-            continue
-        present = forbidden = False
-        for path in candidates:
-            r = await _probe(path)
-            if r is _FORBIDDEN:
-                forbidden = True
-                break
-            if r is not _NOT_FOUND:
-                present = True
-                break
-        if forbidden:
-            unknowns.append(check_id)
-            if check_id == "dependabot_updates":
-                dependabot_unknown = True
-        elif not present:
-            fails.append(check_id)
+            unknowns.extend(_FILE_CHECKS)
+            unknowns.append("cooldown")
+            return
 
-    # cooldown: dependabot.yml must contain a cooldown block (requires reading content)
-    if not can_files or dependabot_unknown:
-        unknowns.append("cooldown")
-    elif "dependabot_updates" in fails:
-        fails.append("cooldown")  # no dependabot.yml at all
-    else:
-        content = await _read_text(cget, gh, connection.id, owner, repo_ref, ".github/dependabot.yml")
-        if content is None or "cooldown" not in content:
-            fails.append("cooldown")
+        async def _one(check_id: str, candidates: list[str]) -> tuple[str, str]:
+            for path in candidates:
+                r = await _probe(path)
+                if r is _FORBIDDEN:
+                    return check_id, "unknown"
+                if r is not _NOT_FOUND:
+                    return check_id, "present"
+            return check_id, "absent"
 
-    # --- settings/ruleset checks (403 = unknown, 404 = not configured = fail) ---
-    if can_settings:
-        prot = await cget(
-            gh, connection.id, f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection"
+        statuses = dict(await asyncio.gather(*(_one(c, p) for c, p in _FILE_CHECKS.items())))
+        for cid, st in statuses.items():
+            if st == "unknown":
+                unknowns.append(cid)
+            elif st == "absent":
+                fails.append(cid)
+
+        # cooldown: dependabot.yml must contain a cooldown block (requires reading content).
+        if statuses.get("dependabot_updates") == "unknown":
+            unknowns.append("cooldown")
+        elif statuses.get("dependabot_updates") == "absent":
+            fails.append("cooldown")  # no dependabot.yml at all
+        else:
+            content = await _read_text(
+                cget, gh, connection.id, owner, repo_ref, ".github/dependabot.yml"
+            )
+            if content is None or "cooldown" not in content:
+                fails.append("cooldown")
+
+    async def _settings_group() -> None:
+        # settings/ruleset checks (403 = unknown, 404 = not configured = fail)
+        if not can_settings:
+            unknowns.extend(["branch_protection", "workflow_permissions", "code_scanning"])
+            return
+        prot, wf_perms, cs = await asyncio.gather(
+            cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection"),
+            cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/actions/permissions/workflow"),
+            cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/code-scanning/analyses"),
         )
         if prot is _FORBIDDEN:
             unknowns.append("branch_protection")
         elif prot is _NOT_FOUND:
             fails.append("branch_protection")
-        wf_perms = await cget(
-            gh, connection.id, f"/repos/{owner}/{repo_ref}/actions/permissions/workflow"
-        )
         if isinstance(wf_perms, dict):
             if wf_perms.get("default_workflow_permissions") != "read":
                 fails.append("workflow_permissions")
@@ -229,26 +248,27 @@ async def _dynamic_checks(
             unknowns.append("workflow_permissions")
         elif wf_perms is _NOT_FOUND:
             fails.append("workflow_permissions")
-        cs = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/code-scanning/analyses")
         if cs is _FORBIDDEN:
             unknowns.append("code_scanning")
         elif cs is _NOT_FOUND:
             fails.append("code_scanning")
-    else:
-        unknowns.extend(["branch_protection", "workflow_permissions", "code_scanning"])
 
-    # org 2FA enforcement (org policy scope)
-    if can_org:
+    async def _org_group() -> None:
+        # org 2FA enforcement (org policy scope)
+        if not can_org:
+            unknowns.append("two_fa")
+            return
         org = await cget(gh, connection.id, f"/orgs/{owner}")
         if isinstance(org, dict) and not org.get("two_factor_requirement_enabled"):
             fails.append("two_fa")
         elif org is _NOT_FOUND or org is _FORBIDDEN:
             unknowns.append("two_fa")
-    else:
-        unknowns.append("two_fa")
 
-    # dep_review / conventional / actions_pinned_sha require parsing the workflow files.
-    if can_files:
+    async def _workflows_group() -> None:
+        # dep_review / conventional / actions_pinned_sha require parsing the workflow files.
+        if not can_files:
+            unknowns.extend(["dep_review", "conventional", "actions_pinned_sha"])
+            return
         refs = await _workflow_action_refs(cget, gh, connection.id, owner, repo_ref)
         if not any("dependency-review-action" in r for r in refs):
             fails.append("dep_review")
@@ -262,24 +282,57 @@ async def _dynamic_checks(
             fails.append("conventional")
         if _has_unpinned_action(refs):
             fails.append("actions_pinned_sha")
-    else:
-        unknowns.extend(["dep_review", "conventional", "actions_pinned_sha"])
 
-    # release_health: age of unreleased commits = default-branch HEAD date − last release.
-    release_pending = await _release_pending_days(
-        cget, gh, connection.id, owner, repo_ref, default_branch
+    async def _release_group() -> None:
+        # release_health: age of unreleased commits = default-branch HEAD date − last release.
+        nonlocal release_pending
+        release_pending = await _release_pending_days(
+            cget, gh, connection.id, owner, repo_ref, default_branch
+        )
+        if release_pending is not None and release_pending >= _RELEASE_STALE_DAYS:
+            fails.append("release_health")
+
+    async def _pulls_group() -> None:
+        nonlocal open_prs, dependabot_prs
+        open_prs, dependabot_prs = await _pull_counts(cget, gh, connection.id, owner, repo_ref)
+
+    async def _ci_group() -> None:
+        nonlocal ci
+        ci = await _ci_status(cget, gh, connection.id, owner, repo_ref, default_branch)
+        if ci is CIStatus.fail:
+            fails.append("ci_workflow_green")
+        elif ci is CIStatus.none:
+            unknowns.append("ci_workflow_green")
+
+    async def _alerts_group() -> None:
+        nonlocal alerts
+        if can_alerts:
+            alerts = await _alert_counts(cget, gh, connection.id, owner, repo_ref)
+
+    async def _dependabot_alerts_group() -> None:
+        # vulnerability-alerts endpoint: 204 (enabled), 404 (disabled), 403 (unreadable).
+        # Capability-gated on read_alerts so an undeterminable state is honestly `unknown`.
+        if not can_alerts:
+            unknowns.append("dependabot_alerts")
+            return
+        va = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/vulnerability-alerts")
+        if va is _NOT_FOUND:
+            fails.append("dependabot_alerts")  # endpoint 404 → alerts disabled
+        elif va is not _NO_CONTENT:  # 403 or any unexpected body → cannot determine
+            unknowns.append("dependabot_alerts")
+        # _NO_CONTENT (204) → alerts enabled → passing (no entry)
+
+    await asyncio.gather(
+        _files_group(),
+        _settings_group(),
+        _org_group(),
+        _workflows_group(),
+        _release_group(),
+        _pulls_group(),
+        _ci_group(),
+        _alerts_group(),
+        _dependabot_alerts_group(),
     )
-    if release_pending is not None and release_pending >= _RELEASE_STALE_DAYS:
-        fails.append("release_health")
-
-    # --- activity signals ---
-    open_prs, dependabot_prs = await _pull_counts(cget, gh, connection.id, owner, repo_ref)
-    ci = await _ci_status(cget, gh, connection.id, owner, repo_ref, default_branch)
-    if ci is CIStatus.fail:
-        fails.append("ci_workflow_green")
-    elif ci is CIStatus.none:
-        unknowns.append("ci_workflow_green")
-    alerts = await _alert_counts(cget, gh, connection.id, owner, repo_ref) if can_alerts else AlertCounts()
 
     return fails, unknowns, open_prs, dependabot_prs, ci, alerts, release_pending
 
@@ -379,12 +432,27 @@ async def _read_text(
     return None
 
 
+_MAX_PAGES = 10  # bound a list resource at ~1000 items rather than silently capping at 100
+
+
+async def _paged(cget: Any, gh: GitHub, cid: str, path: str, params: dict[str, Any]) -> list:
+    """Accumulate a paginated list endpoint so a count isn't silently capped at one page."""
+    per_page = int(params.get("per_page", 100))
+    items: list = []
+    for page in range(1, _MAX_PAGES + 1):
+        data = await cget(gh, cid, path, {**params, "page": page})
+        if not isinstance(data, list) or not data:
+            break
+        items.extend(data)
+        if len(data) < per_page:
+            break
+    return items
+
+
 async def _pull_counts(
     cget: Any, gh: GitHub, cid: str, owner: str, repo: str
 ) -> tuple[int, int]:
-    data = await cget(gh, cid, f"/repos/{owner}/{repo}/pulls", {"state": "open", "per_page": 100})
-    if not isinstance(data, list):
-        return (0, 0)
+    data = await _paged(cget, gh, cid, f"/repos/{owner}/{repo}/pulls", {"state": "open", "per_page": 100})
     dependabot = sum(1 for pr in data if (pr.get("user") or {}).get("login") in
                      ("dependabot[bot]", "dependabot-preview[bot]"))
     return len(data), dependabot
@@ -412,9 +480,9 @@ async def _ci_status(
 async def _alert_counts(
     cget: Any, gh: GitHub, cid: str, owner: str, repo: str
 ) -> AlertCounts:
-    data = await cget(gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100})
-    if not isinstance(data, list):
-        return AlertCounts()
+    data = await _paged(
+        cget, gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100}
+    )
     counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
     for alert in data:
         sev = ((alert.get("security_advisory") or {}).get("severity")

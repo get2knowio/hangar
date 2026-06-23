@@ -17,6 +17,10 @@ opened pull request, **never a push/force-push** (Constitution II, FR-014).
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
+import json
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from hangar.domain.models import (
@@ -25,7 +29,7 @@ from hangar.domain.models import (
     RemediationKind,
     Repo,
 )
-from hangar.providers.base import CorrectionRequest, CorrectionResult
+from hangar.providers.base import CorrectionRequest, CorrectionResult, WebhookEvent
 
 if TYPE_CHECKING:
     from githubkit import (
@@ -51,6 +55,9 @@ class GitHubAdapter:
 
     provider_type = "github"
     base_url = "https://github.com"
+    # Default human label for a GitHub connection's auth mode (provider-owned so the
+    # provider-neutral connections service never branches on the platform name).
+    default_auth_mode = "GitHub App"
 
     def __init__(self) -> None:
         # (connection_id, resource_path) -> ETag, persisted for the process lifetime so
@@ -146,6 +153,8 @@ class GitHubAdapter:
             raise
         if resp.status_code == 304:  # githubkit passes 304 through (not an error)
             return _NOT_MODIFIED
+        if resp.status_code == 204:  # No Content (e.g. vulnerability-alerts = enabled)
+            return _NO_CONTENT
         if conditional and (new_etag := resp.headers.get("ETag")) is not None:
             self._etags[key] = new_etag
         return resp.json()
@@ -155,10 +164,21 @@ class GitHubAdapter:
         data = await self._conditional_get(
             gh, connection.id, f"/orgs/{connection.owner}/repos", params={"per_page": 100}
         )
-        if data in (_NOT_MODIFIED, _NOT_FOUND):
-            # Fall back to user repos if the owner isn't an org.
+        if not isinstance(data, list):
+            # Not an org (404), the org listing is forbidden (403), or unchanged — fall
+            # back to the user's repos (the owner may be a personal account, or the token
+            # may only see user-scoped repos).
             data = await self._conditional_get(
                 gh, connection.id, f"/users/{connection.owner}/repos", params={"per_page": 100}
+            )
+        if data is _FORBIDDEN:
+            # Forbidden on BOTH endpoints: the repo list is undeterminable, not empty.
+            # Raise so the poller degrades to "serve last good snapshots" (SC-009) instead
+            # of silently reporting zero repos that looks like an empty org.
+            raise RuntimeError(
+                f"GitHub connection '{connection.id}' cannot list repos for owner "
+                f"'{connection.owner}' (403 on both the org and user endpoints); "
+                "check the token/installation scope."
             )
         if not isinstance(data, list):
             return []
@@ -278,6 +298,45 @@ class GitHubAdapter:
     async def subscribe(self, connection: ProviderConnection) -> None:
         return None
 
+    # --------------------------------------------------------------- webhooks
+    def verify_webhook(self, headers: Mapping[str, str], body: bytes, secret: str) -> bool:
+        """Verify a GitHub ``X-Hub-Signature-256`` HMAC (constant-time)."""
+        h = {k.lower(): v for k, v in headers.items()}
+        sig = h.get("x-hub-signature-256")
+        if not sig or not sig.startswith("sha256="):
+            return False
+        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, sig.split("=", 1)[1])
+
+    def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent | None:
+        """Normalize a GitHub event (X-GitHub-Event + payload) into a WebhookEvent."""
+        h = {k.lower(): v for k, v in headers.items()}
+        event = h.get("x-github-event", "")
+        try:
+            payload = json.loads(body or b"{}")
+        except ValueError:
+            return None
+        repo_name = (payload.get("repository") or {}).get("name")
+        if not repo_name:
+            return None
+        if event in ("check_suite", "workflow_run"):
+            conclusion = (payload.get(event) or {}).get("conclusion")
+            if conclusion == "success":
+                return WebhookEvent(repo_name, ci_status="pass")
+            if conclusion == "failure":
+                return WebhookEvent(repo_name, ci_status="fail")
+            return None
+        if event == "pull_request":
+            action = payload.get("action")
+            if action in ("opened", "reopened", "closed"):
+                delta = 1 if action in ("opened", "reopened") else -1
+                login = ((payload.get("pull_request") or {}).get("user") or {}).get("login")
+                is_bot = login in ("dependabot[bot]", "dependabot-preview[bot]")
+                return WebhookEvent(repo_name, pr_delta=delta, pr_is_bot=is_bot)
+            return None
+        # vulnerability/dependabot alert events: reconcile on the next poll (nothing to apply).
+        return None
+
 
 class _Sentinel:
     def __init__(self, name: str) -> None:
@@ -290,3 +349,4 @@ class _Sentinel:
 _NOT_MODIFIED = _Sentinel("NOT_MODIFIED")
 _NOT_FOUND = _Sentinel("NOT_FOUND")
 _FORBIDDEN = _Sentinel("FORBIDDEN")
+_NO_CONTENT = _Sentinel("NO_CONTENT")

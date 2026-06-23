@@ -35,23 +35,16 @@ class FleetContext:
     connections: dict[str, ProviderConnection]
     policy: Policy
     remediations: RemediationMap
-    rem_pr_urls: dict[tuple[str, str, str], str | None]
 
 
-async def load_fleet(
-    session: AsyncSession, connection: str = "all", *, with_pr_urls: bool = False
-) -> FleetContext:
+async def load_fleet(session: AsyncSession, connection: str = "all") -> FleetContext:
+    """Fleet-wide context for the overview/scorecard endpoints. The repo-detail path does
+    NOT use this — it loads only its one connection + that repo's remediation overlay."""
     repos = await repo_store.list_repos(session, connection)
     conns = {c.id: c for c in await repo_store.list_connections(session)}
     policy = await repo_store.get_policy(session)
-    # Only the repo-detail path needs the PR-url overlay; the fleet endpoints
-    # (overview/scorecard) skip the extra RemediationRow scan.
-    if with_pr_urls:
-        remediations, pr_urls = await repo_store.remediation_map_and_pr_urls(session)
-    else:
-        remediations = await repo_store.remediation_map(session)
-        pr_urls = {}
-    return FleetContext(repos, conns, policy, remediations, pr_urls)
+    remediations = await repo_store.remediation_map(session)
+    return FleetContext(repos, conns, policy, remediations)
 
 
 SessionDep = Depends(session_dep)

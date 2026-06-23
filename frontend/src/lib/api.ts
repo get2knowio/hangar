@@ -59,12 +59,16 @@ export type Catalog = JSONResponse<"/catalog", "get">;
 export type Policy = JSONResponse<"/policy", "get">;
 export type Providers = JSONResponse<"/providers", "get">;
 export type AuditEntry = NonNullable<JSONResponse<"/providers/audit", "get">>[number];
-export type RepoDetail = JSONResponse<"/repos/{repo_id}", "get">;
+export type RepoDetail = JSONResponse<"/repos/{connection_id}/{repo_id}", "get">;
+// One check row from the repo-detail contract — derived, never hand-written (Constitution VII).
+export type RepoCheck = NonNullable<
+  NonNullable<RepoDetail["check_groups"]>[number]["checks"]
+>[number];
 export type Health = JSONResponse<"/health", "get">;
 export type Me = JSONResponse<"/me", "get">;
 
 // Derived from the generated contract — no hand-drifted types (Constitution VII).
-type RemediatePath = paths["/repos/{repo_id}/checks/{check_id}/remediate"]["post"];
+type RemediatePath = paths["/repos/{connection_id}/{repo_id}/checks/{check_id}/remediate"]["post"];
 export type RemediationKind = NonNullable<
   RemediatePath["requestBody"]
 >["content"]["application/json"]["kind"];
@@ -88,11 +92,11 @@ export const useCatalog = () => useQuery({ queryKey: ["catalog"], queryFn: () =>
 export const useProviders = () => useQuery({ queryKey: ["providers"], queryFn: () => get<Providers>("/providers") });
 export const useAudit = () =>
   useQuery({ queryKey: ["audit"], queryFn: () => get<AuditEntry[]>("/providers/audit") });
-export const useRepoDetail = (repoId: string | undefined) =>
+export const useRepoDetail = (connectionId: string | undefined, repoId: string | undefined) =>
   useQuery({
-    queryKey: ["repo", repoId],
-    queryFn: () => get<RepoDetail>(`/repos/${repoId}`),
-    enabled: !!repoId,
+    queryKey: ["repo", connectionId, repoId],
+    queryFn: () => get<RepoDetail>(`/repos/${connectionId}/${repoId}`),
+    enabled: !!connectionId && !!repoId,
   });
 
 // ---- Mutations ----
@@ -109,27 +113,27 @@ export function usePolicyPatch() {
   });
 }
 
-export function useRemediate(repoId: string) {
+export function useRemediate(connectionId: string, repoId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { checkId: string; kind: RemediationKind }) => {
       const { status, data } = await send<RemediateResult>(
         "POST",
-        `/repos/${repoId}/checks/${vars.checkId}/remediate`,
+        `/repos/${connectionId}/${repoId}/checks/${vars.checkId}/remediate`,
         { kind: vars.kind },
       );
       return { ...data, status } as RemediateResult & { status: number };
     },
-    onSuccess: () => invalidateFleet(qc, repoId),
+    onSuccess: () => invalidateFleet(qc, connectionId, repoId),
   });
 }
 
-export function useMarkMerged(repoId: string) {
+export function useMarkMerged(connectionId: string, repoId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (checkId: string) =>
-      send<RemediateResult>("POST", `/repos/${repoId}/checks/${checkId}/merge`),
-    onSuccess: () => invalidateFleet(qc, repoId),
+      send<RemediateResult>("POST", `/repos/${connectionId}/${repoId}/checks/${checkId}/merge`),
+    onSuccess: () => invalidateFleet(qc, connectionId, repoId),
   });
 }
 
@@ -146,10 +150,12 @@ export function useAddConnection() {
   });
 }
 
-function invalidateFleet(qc: ReturnType<typeof useQueryClient>, repoId: string) {
-  qc.invalidateQueries({ queryKey: ["repo", repoId] });
+function invalidateFleet(qc: ReturnType<typeof useQueryClient>, connectionId: string, repoId: string) {
+  // A remediation changes this repo, the fleet aggregates (overview/scorecard), and the
+  // audit log. It does NOT change the provider cards (repo counts / sync time), so those
+  // are not invalidated.
+  qc.invalidateQueries({ queryKey: ["repo", connectionId, repoId] });
   qc.invalidateQueries({ queryKey: ["scorecard"] });
   qc.invalidateQueries({ queryKey: ["overview"] });
   qc.invalidateQueries({ queryKey: ["audit"] });
-  qc.invalidateQueries({ queryKey: ["providers"] });
 }

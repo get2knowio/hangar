@@ -82,6 +82,7 @@ export function Overview() {
             value={s.value ?? ""}
             sub={s.sub ?? ""}
             tone={(s.tone as Tone) ?? "neutral"}
+            subTone={(s.sub_tone as Tone) ?? "neutral"}
           />
         ))}
       </div>

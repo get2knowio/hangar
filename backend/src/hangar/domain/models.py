@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --------------------------------------------------------------------------- enums
@@ -55,6 +55,20 @@ class RemediationKind(StrEnum):
     deep_link = "deep_link"
     settings_patch = "settings_patch"
     config_pr = "config_pr"
+
+
+# Canonical effective-tier → remediation-kind map (single source of truth, used by the
+# remediation service, the remediate endpoint, and the repo-detail presenter).
+_TIER_TO_KIND: dict[RemediationTier, RemediationKind] = {
+    RemediationTier.patch: RemediationKind.settings_patch,
+    RemediationTier.pr: RemediationKind.config_pr,
+    RemediationTier.link: RemediationKind.deep_link,
+    RemediationTier.report: RemediationKind.report,
+}
+
+
+def kind_for_tier(tier: RemediationTier) -> RemediationKind:
+    return _TIER_TO_KIND[tier]
 
 
 class RemediationState(StrEnum):
@@ -161,6 +175,10 @@ class ProviderConnection(BaseModel):
     granted_capabilities: set[Capability] = Field(default_factory=set)
     last_sync_at: datetime | None = None
     has_credential: bool = False  # True when a real provider credential is stored
+    # The org/user that owns this connection's repos — a first-class, persisted field used
+    # to build provider API paths. Defaults to the label suffix when not set explicitly, so
+    # a label that doesn't follow the "prefix:owner" convention can still be addressed.
+    owner: str = ""
     # GitHub App config (non-secret): the App id and the installation id this
     # connection authenticates as. None for PAT/token connections.
     app_id: str | None = None
@@ -170,10 +188,11 @@ class ProviderConnection(BaseModel):
     # Excluded from serialization and repr so it never lands in a response or a log.
     token: str | None = Field(default=None, exclude=True, repr=False)
 
-    @property
-    def owner(self) -> str:
-        """The org/user that owns this connection's repos (from the label suffix)."""
-        return self.label.split(":")[-1]
+    @model_validator(mode="after")
+    def _default_owner(self) -> ProviderConnection:
+        if not self.owner:
+            self.owner = self.label.split(":")[-1]
+        return self
 
     @property
     def writes(self) -> bool:

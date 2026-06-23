@@ -100,25 +100,37 @@ def create_app() -> FastAPI:
     async def receive_webhook(connection_id: str, request: Request) -> JSONResponse:
         # The webhook is authenticated by its HMAC signature, not the proxy identity —
         # providers POST directly (not through the forward-auth proxy). It is therefore
-        # exempted from ForwardAuthMiddleware (see _PUBLIC_PATHS) and MUST verify the
-        # signature here, failing closed when no secret is configured (FR-033).
-        secret = _webhook_secret(connection_id)
-        if not secret:
-            return JSONResponse(
-                {"accepted": False, "reason": "webhooks not configured (HANGAR_WEBHOOK_SECRET unset)"},
-                status_code=503,
-            )
-        body = await request.body()
-        signature = request.headers.get("X-Hub-Signature-256")
-        if not webhooks.verify_signature(secret, body, signature):
-            return JSONResponse({"accepted": False, "reason": "invalid signature"}, status_code=401)
+        # exempted from ForwardAuthMiddleware (see _PUBLIC_PATHS). Verification + parsing
+        # are delegated to the connection's provider adapter (the only platform seam), and
+        # the receiver fails closed when no secret is configured (FR-033).
+        from hangar.persistence import repositories as repo_store
+        from hangar.providers.registry import get_provider
+        from hangar.services.connections import webhook_secret_for
 
-        import json
-
-        event = request.headers.get("X-GitHub-Event", "")
-        payload = json.loads(body or b"{}")
         async with get_sessionmaker()() as session:
-            updated = await webhooks.apply_event(session, event, payload, connection_id)
+            conn_row = await repo_store.get_connection_row(session, connection_id)
+            if conn_row is None:
+                return JSONResponse(
+                    {"accepted": False, "reason": "unknown connection"}, status_code=404
+                )
+            secret = webhook_secret_for(conn_row)
+            if not secret:
+                return JSONResponse(
+                    {"accepted": False, "reason": "webhooks not configured (no secret set)"},
+                    status_code=503,
+                )
+            provider = get_provider(conn_row.provider_type)
+            body = await request.body()
+            if not provider.verify_webhook(request.headers, body, secret):
+                return JSONResponse(
+                    {"accepted": False, "reason": "invalid signature"}, status_code=401
+                )
+            event = provider.parse_webhook(request.headers, body)
+            updated = (
+                await webhooks.apply_event(session, event, connection_id)
+                if event is not None
+                else False
+            )
         return JSONResponse({"accepted": True, "updated": updated})
 
     _mount_spa(app, settings)
@@ -169,13 +181,6 @@ def safe_static_file(static_dir: str, full_path: str) -> str | None:
     if full_path and contained and os.path.isfile(candidate):
         return candidate
     return None
-
-
-def _webhook_secret(connection_id: str) -> str | None:
-    # The webhook HMAC secret is supplied via HANGAR_WEBHOOK_SECRET (shared across the
-    # App's webhook deliveries). When unset, inbound webhooks are refused (fail-closed)
-    # rather than accepted unsigned.
-    return get_settings().webhook_secret
 
 
 app = create_app()

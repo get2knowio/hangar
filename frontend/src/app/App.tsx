@@ -22,7 +22,7 @@ export function App() {
             <Route path="/scorecard" element={<Scorecard />} />
             <Route path="/catalog" element={<Catalog />} />
             <Route path="/providers" element={<Providers />} />
-            <Route path="/repos/:id" element={<RepoDetail />} />
+            <Route path="/repos/:connectionId/:id" element={<RepoDetail />} />
           </Routes>
         </div>
       </div>

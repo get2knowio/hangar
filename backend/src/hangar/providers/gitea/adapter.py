@@ -9,12 +9,15 @@ fleet treats it uniformly (Constitution I).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from hangar.domain.models import Capability, ProviderConnection, RemediationKind, Repo
-from hangar.providers.base import CorrectionRequest, CorrectionResult
+from hangar.providers.base import CorrectionRequest, CorrectionResult, WebhookEvent
 
 
 class GiteaAdapter:
     provider_type = "gitea"
+    default_auth_mode = "Scoped token"
 
     def declared_capabilities(self) -> set[Capability]:
         # Read + deep-link only at MVP — no write_settings / open_pull_request.
@@ -59,4 +62,11 @@ class GiteaAdapter:
         return CorrectionResult(applied=True, summary="Reported")
 
     async def subscribe(self, connection: ProviderConnection) -> None:
+        return None
+
+    def verify_webhook(self, headers: Mapping[str, str], body: bytes, secret: str) -> bool:
+        # Gitea webhook ingest is a fast-follow item; reject (fail-closed) until implemented.
+        return False
+
+    def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent | None:
         return None

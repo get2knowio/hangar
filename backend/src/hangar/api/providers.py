@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,6 +64,10 @@ class NewConnection(BaseModel):
     # GitHub App identity (omit for a PAT/token connection).
     app_id: str | None = None
     installation_id: int | None = None
+    # Optional per-connection inbound-webhook HMAC secret (else the global secret applies).
+    webhook_secret: str | None = None
+    # Optional owner (org/user) override; defaults to the label suffix.
+    owner: str | None = None
     # Least-privilege default: a connection is read-only unless the operator declares
     # the credential is writable (FR-026/FR-018).
     writable: bool = False
@@ -73,17 +77,22 @@ class NewConnection(BaseModel):
 async def add_provider(
     body: NewConnection, session: AsyncSession = Depends(session_dep)
 ) -> dict:
-    conn = await conn_service.add_connection(
-        session,
-        provider_type=body.provider_type,
-        label=body.label,
-        scope=body.scope,
-        auth_mode=body.auth_mode or "",
-        credential=body.credential,
-        writable=body.writable,
-        app_id=body.app_id,
-        installation_id=body.installation_id,
-    )
+    try:
+        conn = await conn_service.add_connection(
+            session,
+            provider_type=body.provider_type,
+            label=body.label,
+            scope=body.scope,
+            auth_mode=body.auth_mode or "",
+            credential=body.credential,
+            writable=body.writable,
+            app_id=body.app_id,
+            installation_id=body.installation_id,
+            webhook_secret=body.webhook_secret,
+            owner=body.owner,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     repos = await repo_store.list_repos(session, conn.id)
     return await _connection_card(session, conn, len(repos))
 

@@ -4,33 +4,23 @@
    (FR-011–FR-018; SC-002 — every failing finding offers ≥1 path, Report always available). */
 
 import { useToast } from "../app/state";
-import { useMarkMerged, useRemediate, type RemediationKind } from "../lib/api";
+import { useMarkMerged, useRemediate, type RemediationKind, type RepoCheck } from "../lib/api";
 
-interface Check {
-  id?: string;
-  label?: string;
-  status?: string;
-  open_pr_url?: string | null;
-  primary_action?: string | null;
-  secondary_action?: string | null;
+function prLabel(n: number | null | undefined): string {
+  return n != null ? `#${n}` : "";
 }
 
-function kindFor(primary: string): RemediationKind {
-  if (primary.startsWith("Open in")) return "deep_link";
-  if (primary === "Enable") return "settings_patch";
-  if (primary === "Open fix PR") return "config_pr";
-  return "report";
-}
-
-function prNumber(url: string | null | undefined): string {
-  if (!url) return "";
-  const m = url.match(/\/pull\/(\d+)/);
-  return m ? `#${m[1]}` : "";
-}
-
-export function RemediationControl({ repoId, check }: { repoId: string; check: Check }) {
-  const remediate = useRemediate(repoId);
-  const merge = useMarkMerged(repoId);
+export function RemediationControl({
+  connectionId,
+  repoId,
+  check,
+}: {
+  connectionId: string;
+  repoId: string;
+  check: RepoCheck;
+}) {
+  const remediate = useRemediate(connectionId, repoId);
+  const merge = useMarkMerged(connectionId, repoId);
   const { show } = useToast();
   const status = check.status ?? "fail";
 
@@ -49,10 +39,10 @@ export function RemediationControl({ repoId, check }: { repoId: string; check: C
           rel="noreferrer"
           style={{ fontSize: 12, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap", textDecoration: "none" }}
         >
-          PR {prNumber(check.open_pr_url)} open ↗
+          PR {prLabel(check.open_pr_number)} open ↗
         </a>
         <Button
-          label="Mark merged"
+          label={check.secondary_action ?? "Mark merged"}
           variant="secondary"
           onClick={() => {
             merge.mutate(check.id!, {
@@ -71,7 +61,8 @@ export function RemediationControl({ repoId, check }: { repoId: string; check: C
     return <Note text="Report only" color="var(--muted)" />;
   }
 
-  const kind = kindFor(primary);
+  // The kind comes straight from the contract — the UI never infers it from the label.
+  const kind: RemediationKind = check.kind ?? "report";
   return (
     <Button
       label={primary}

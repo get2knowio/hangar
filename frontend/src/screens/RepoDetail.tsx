@@ -1,11 +1,11 @@
-/* Repo drill-down (/repos/:id) — header, activity strip, grouped policy checks with the
+/* Repo drill-down (/repos/:connectionId/:id) — header, activity strip, grouped policy checks with the
    remediation control + remediation-pending overlay (Story 3; FR-005a, FR-011–FR-018). */
 
 import { useNavigate, useParams } from "react-router-dom";
 import { RemediationControl } from "../components/RemediationControl";
 import { TierBadge } from "../components/widgets";
 import { useRepoDetail } from "../lib/api";
-import { ciViz, hygColor, viz, type FindingStatus } from "../lib/status";
+import { ciViz, hygColor, toneColor, viz, type FindingStatus, type Tone } from "../lib/status";
 
 const ALERT_COLOR: Record<string, { color: string; bg: string }> = {
   critical: { color: "var(--fail)", bg: "var(--fail-bg)" },
@@ -15,9 +15,9 @@ const ALERT_COLOR: Record<string, { color: string; bg: string }> = {
 };
 
 export function RepoDetail() {
-  const { id } = useParams();
+  const { connectionId, id } = useParams();
   const navigate = useNavigate();
-  const { data, isLoading } = useRepoDetail(id);
+  const { data, isLoading } = useRepoDetail(connectionId, id);
 
   if (isLoading || !data) {
     return <div style={{ padding: "24px 28px", color: "var(--muted)" }}>Loading repo…</div>;
@@ -94,7 +94,7 @@ export function RepoDetail() {
                 {pr.kind === "dependabot" ? "⚙" : "↗"}
               </span>
               <span style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pr.title}</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: pr.status === "ready" ? "var(--pass)" : pr.status?.startsWith("cooldown") ? "var(--warn)" : "var(--fg-2)" }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: toneColor((pr.status_tone as Tone) ?? "neutral") }}>
                 {pr.status}
               </span>
               <span className="mono" style={{ fontSize: 10, color: "var(--muted)" }}>
@@ -102,7 +102,13 @@ export function RepoDetail() {
               </span>
             </div>
           ))}
-          {prs.length === 0 && <div style={{ padding: "14px 15px", fontSize: 12, color: "var(--muted)" }}>No open pull requests.</div>}
+          {prs.length === 0 && (
+            <div style={{ padding: "14px 15px", fontSize: 12, color: "var(--muted)" }}>
+              {(data.open_prs ?? 0) > 0
+                ? `${data.open_prs} open pull request${data.open_prs === 1 ? "" : "s"} — open the repo on the provider to review.`
+                : "No open pull requests."}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -156,7 +162,7 @@ export function RepoDetail() {
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.evidence}</div>
                   </div>
-                  <RemediationControl repoId={data.id!} check={c} />
+                  <RemediationControl connectionId={connectionId!} repoId={data.id!} check={c} />
                 </div>
               );
             })}

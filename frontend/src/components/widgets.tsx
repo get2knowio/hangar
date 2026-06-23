@@ -77,22 +77,19 @@ export function StatTile({
   value,
   sub,
   tone,
+  subTone,
 }: {
   label: string;
   value: string;
   sub: string;
   tone: Tone;
+  subTone: Tone;
 }) {
-  // Compliance/CI tiles carry status color on the number; others stay monochrome.
-  const valueColor =
-    label === "Compliance"
-      ? value.endsWith("%")
-        ? hygColor(Number(value.replace("%", "")))
-        : "var(--fg)"
-      : tone === "fail"
-        ? "var(--fail)"
-        : "var(--fg)";
-  const subColor = tone === "fail" && label === "Sec alerts" ? "var(--fail)" : label === "Open PRs" ? "var(--warn)" : "var(--muted)";
+  // Color is driven entirely by the structured tone/sub_tone the backend sends — never by
+  // matching the tile label or re-parsing the displayed value (Constitution VII).
+  const valueColor = toneColor(tone);
+  const subColor =
+    subTone === "fail" ? "var(--fail)" : subTone === "warn" ? "var(--warn)" : "var(--muted)";
   return (
     <div style={{ padding: "13px 14px", background: "var(--surface)" }}>
       <div

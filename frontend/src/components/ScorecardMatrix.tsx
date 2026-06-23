@@ -62,7 +62,7 @@ export function ScorecardMatrix({ data, failingOnly }: { data: Scorecard; failin
         {rows.map((row) => (
           <div key={row.repo_id} style={{ display: "flex", borderBottom: "1px solid var(--border-2)" }}>
             <div
-              onClick={() => navigate(`/repos/${row.repo_id}`)}
+              onClick={() => navigate(`/repos/${row.connection_id}/${row.repo_id}`)}
               style={{ ...stickyCell, padding: "9px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
             >
               <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: hygColor(row.hygiene_pct ?? 0), width: 30 }}>

@@ -42,15 +42,25 @@ def build_overview(
     rel_pending = sum(1 for r in repos if r.release_pending_days is not None)
     # Hygiene once per repo, reused for the compliance average and the per-row bar.
     hyg = {r.id: hygiene(r, policy, remediations) for r in repos}
-    compliance = round(sum(hyg.values()) / len(repos)) if repos else 100
+    # An empty fleet has nothing evaluated — report 0%, never a misleading "100% healthy".
+    compliance = round(sum(hyg.values()) / len(repos)) if repos else 0
 
+    # `tone` colors the value; `sub_tone` colors the sub-label — both structured so the UI
+    # never re-derives color by matching tile titles or parsing the value (Constitution VII).
     stats = [
-        {"label": "Open PRs", "value": str(open_prs), "sub": f"{dep_prs} Dependabot", "tone": Tone.neutral},
-        {"label": "Bot PRs", "value": str(dep_prs), "sub": "awaiting merge", "tone": Tone.neutral},
-        {"label": "CI failing", "value": str(ci_fail), "sub": "on default", "tone": Tone.fail if ci_fail else Tone.neutral},
-        {"label": "Sec alerts", "value": str(alerts_total), "sub": f"{crit} critical", "tone": Tone.fail if crit else Tone.neutral},
-        {"label": "Release pending", "value": str(rel_pending), "sub": "unreleased", "tone": Tone.neutral},
-        {"label": "Compliance", "value": f"{compliance}%", "sub": "fleet avg", "tone": hygiene_tone(compliance)},
+        {"label": "Open PRs", "value": str(open_prs), "sub": f"{dep_prs} Dependabot",
+         "tone": Tone.neutral, "sub_tone": Tone.warn},
+        {"label": "Bot PRs", "value": str(dep_prs), "sub": "awaiting merge",
+         "tone": Tone.neutral, "sub_tone": Tone.neutral},
+        {"label": "CI failing", "value": str(ci_fail), "sub": "on default",
+         "tone": Tone.fail if ci_fail else Tone.neutral, "sub_tone": Tone.neutral},
+        {"label": "Sec alerts", "value": str(alerts_total), "sub": f"{crit} critical",
+         "tone": Tone.fail if crit else Tone.neutral,
+         "sub_tone": Tone.fail if crit else Tone.neutral},
+        {"label": "Release pending", "value": str(rel_pending), "sub": "unreleased",
+         "tone": Tone.neutral, "sub_tone": Tone.neutral},
+        {"label": "Compliance", "value": f"{compliance}%", "sub": "fleet avg",
+         "tone": hygiene_tone(compliance), "sub_tone": Tone.neutral},
     ]
 
     repo_rows = []
@@ -60,6 +70,7 @@ def build_overview(
         a = r.alerts
         repo_rows.append({
             "id": r.id,
+            "connection_id": r.connection_id,
             "connection_badge": badge,
             "description": r.description,
             "open_prs": r.open_prs,
@@ -96,23 +107,28 @@ def _build_feed(repos: list[Repo]) -> list[dict]:
         if r.alerts.critical > 0:
             n = r.alerts.critical
             ranked.append((0, {"tag": "Critical", "tone": Tone.fail, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": f"{n} critical security alert{'s' if n > 1 else ''}"}))
     for r in repos:
         if r.ci_status is CIStatus.fail:
             ranked.append((1, {"tag": "CI down", "tone": Tone.fail, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": "CI failing on default branch"}))
     for r in repos:
         if r.release_pending_days is not None and r.release_pending_days >= 14:
             ranked.append((2, {"tag": "Release", "tone": Tone.warn, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": f"{r.release_pending_days}d of unreleased commits"}))
     for r in repos:
         if r.alerts.high > 0:
             n = r.alerts.high
             ranked.append((3, {"tag": "High alert", "tone": Tone.warn, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": f"{n} high-severity alert{'s' if n > 1 else ''}"}))
     for r in repos:
         if r.dependabot_prs >= 2:
             ranked.append((4, {"tag": "Bot PRs", "tone": Tone.neutral, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": f"{r.dependabot_prs} Dependabot PRs awaiting merge"}))
     ranked.sort(key=lambda t: t[0])
     return [item for _, item in ranked[:7]]

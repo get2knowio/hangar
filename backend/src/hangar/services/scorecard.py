@@ -44,7 +44,8 @@ def build_scorecard(
         passing = sum(1 for s in statuses if s is FindingStatus.passing)
         hyg[r.id] = round(passing / n_checks * 100) if n_checks else 100
 
-    compliance = round(sum(hyg.values()) / len(repos)) if repos else 100
+    # An empty fleet has nothing evaluated — report 0%, never a misleading "100% healthy".
+    compliance = round(sum(hyg.values()) / len(repos)) if repos else 0
     clear = sum(1 for v in hyg.values() if v >= 85)
 
     groups = []
@@ -56,9 +57,10 @@ def build_scorecard(
     check_meta = []
     rollup: list[dict[str, str | int]] = []
     for i, c in enumerate(checks):
-        not_pass = sum(1 for r in repos if matrix[r.id][i] is not FindingStatus.passing)
+        # fail_count is *failures only* — `unknown` (undeterminable) and pending/working
+        # (in-flight remediations) must not be conflated with a fail (honest state).
         fails = sum(1 for r in repos if matrix[r.id][i] is FindingStatus.fail)
-        check_meta.append({"id": c.id, "label": c.label, "fail_count": not_pass})
+        check_meta.append({"id": c.id, "label": c.label, "fail_count": fails})
         if fails:
             label = c.label.lower().replace(" present", "").replace(" enabled", "")
             rollup.append({"label": label, "count": fails})
@@ -70,6 +72,7 @@ def build_scorecard(
         conn = connections.get(r.connection_id)
         rows.append({
             "repo_id": r.id,
+            "connection_id": r.connection_id,
             "hygiene_pct": hyg[r.id],
             "connection_badge": _badge_before_colon(conn.label) if conn else r.connection_id,
             "cells": [s.value for s in matrix[r.id]],
