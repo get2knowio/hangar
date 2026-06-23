@@ -239,6 +239,7 @@ paths:
                 app_id: { type: string, nullable: true, description: GitHub App id (App connections only) }
                 installation_id: { type: integer, nullable: true, description: GitHub App installation id (App connections only) }
                 writable: { type: boolean, default: false, description: grant write tiers only if the credential can write (least-privilege, FR-026) }
+                webhook_secret: { type: string, description: "write-only; per-connection inbound-webhook HMAC secret. Encrypted at rest; falls back to the global secret when omitted (FR-033)" }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectionCard" } } } }
   /providers/{connection_id}:

@@ -17,6 +17,10 @@ opened pull request, **never a push/force-push** (Constitution II, FR-014).
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
+import json
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from hangar.domain.models import (
@@ -25,7 +29,7 @@ from hangar.domain.models import (
     RemediationKind,
     Repo,
 )
-from hangar.providers.base import CorrectionRequest, CorrectionResult
+from hangar.providers.base import CorrectionRequest, CorrectionResult, WebhookEvent
 
 if TYPE_CHECKING:
     from githubkit import (
@@ -292,6 +296,45 @@ class GitHubAdapter:
         )
 
     async def subscribe(self, connection: ProviderConnection) -> None:
+        return None
+
+    # --------------------------------------------------------------- webhooks
+    def verify_webhook(self, headers: Mapping[str, str], body: bytes, secret: str) -> bool:
+        """Verify a GitHub ``X-Hub-Signature-256`` HMAC (constant-time)."""
+        h = {k.lower(): v for k, v in headers.items()}
+        sig = h.get("x-hub-signature-256")
+        if not sig or not sig.startswith("sha256="):
+            return False
+        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, sig.split("=", 1)[1])
+
+    def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent | None:
+        """Normalize a GitHub event (X-GitHub-Event + payload) into a WebhookEvent."""
+        h = {k.lower(): v for k, v in headers.items()}
+        event = h.get("x-github-event", "")
+        try:
+            payload = json.loads(body or b"{}")
+        except ValueError:
+            return None
+        repo_name = (payload.get("repository") or {}).get("name")
+        if not repo_name:
+            return None
+        if event in ("check_suite", "workflow_run"):
+            conclusion = (payload.get(event) or {}).get("conclusion")
+            if conclusion == "success":
+                return WebhookEvent(repo_name, ci_status="pass")
+            if conclusion == "failure":
+                return WebhookEvent(repo_name, ci_status="fail")
+            return None
+        if event == "pull_request":
+            action = payload.get("action")
+            if action in ("opened", "reopened", "closed"):
+                delta = 1 if action in ("opened", "reopened") else -1
+                login = ((payload.get("pull_request") or {}).get("user") or {}).get("login")
+                is_bot = login in ("dependabot[bot]", "dependabot-preview[bot]")
+                return WebhookEvent(repo_name, pr_delta=delta, pr_is_bot=is_bot)
+            return None
+        # vulnerability/dependabot alert events: reconcile on the next poll (nothing to apply).
         return None
 
 

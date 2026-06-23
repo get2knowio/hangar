@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hangar.config import get_settings
 from hangar.domain.models import Capability, ProviderConnection
 from hangar.persistence import repositories as repo
 from hangar.persistence.crypto import decrypt, encrypt
@@ -32,6 +33,17 @@ def attach_credential(connection: ProviderConnection, row: ConnectionRow) -> Pro
     if row.credential_ciphertext:
         connection.token = decrypt(row.credential_ciphertext)
     return connection
+
+
+def webhook_secret_for(row: ConnectionRow) -> str | None:
+    """The HMAC secret to verify this connection's inbound webhooks.
+
+    A per-connection secret (stored encrypted) takes precedence; otherwise the global
+    ``HANGAR_WEBHOOK_SECRET`` applies. Returns None when neither is set (fail-closed:
+    the receiver then refuses the webhook rather than accepting it unsigned)."""
+    if row.webhook_secret_ciphertext:
+        return decrypt(row.webhook_secret_ciphertext)
+    return get_settings().webhook_secret
 
 
 async def list_connections(session: AsyncSession) -> list[ProviderConnection]:
@@ -67,6 +79,7 @@ async def add_connection(
     writable: bool = False,
     app_id: str | None = None,
     installation_id: int | None = None,
+    webhook_secret: str | None = None,
     connection_id: str | None = None,
 ) -> ProviderConnection:
     """Add a connection. The credential is encrypted before it ever touches the DB.
@@ -93,6 +106,7 @@ async def add_connection(
         granted |= offered & _WRITE_CAPS
 
     ciphertext = encrypt(credential) if credential else None
+    webhook_ciphertext = encrypt(webhook_secret) if webhook_secret else None
     cid = connection_id or _slugify(label, provider_type)
 
     row = ConnectionRow(
@@ -103,6 +117,7 @@ async def add_connection(
         # The default auth-mode label is provided by the adapter (no platform branch here).
         auth_mode=auth_mode or provider.default_auth_mode,
         credential_ciphertext=ciphertext,
+        webhook_secret_ciphertext=webhook_ciphertext,
         granted_capabilities=[c.value for c in granted],
         app_id=app_id,
         installation_id=installation_id,

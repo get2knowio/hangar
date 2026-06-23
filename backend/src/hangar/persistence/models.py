@@ -33,6 +33,9 @@ class ConnectionRow(Base):
     scope: Mapped[str] = mapped_column(String(128))
     auth_mode: Mapped[str] = mapped_column(String(128))
     credential_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # Per-connection webhook HMAC secret (encrypted at rest). When null, the inbound
+    # webhook falls back to the global HANGAR_WEBHOOK_SECRET.
+    webhook_secret_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     granted_capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
     app_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     installation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -16,6 +16,7 @@ reference capabilities, never platform branches.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -28,6 +29,20 @@ from hangar.domain.models import (
 
 # Canonical provider-type → display name (single source of truth).
 PROVIDER_NAMES = {"github": "GitHub", "gitea": "Gitea"}
+
+
+@dataclass(slots=True)
+class WebhookEvent:
+    """A provider webhook normalized to the only shape the webhook service applies.
+
+    The provider seam owns all platform-specific header/signature/payload parsing; the
+    core only ever sees this neutral event (Constitution I).
+    """
+
+    repo_name: str
+    ci_status: str | None = None  # "pass" | "fail" when a CI run concluded
+    pr_delta: int = 0             # +1 opened/reopened, -1 closed
+    pr_is_bot: bool = False       # the PR in pr_delta is a Dependabot PR
 
 
 def provider_name(provider_type: str) -> str:
@@ -98,4 +113,13 @@ class RepoProvider(Protocol):
 
     async def subscribe(self, connection: ProviderConnection) -> None:
         """Register for provider events where supported (no-op otherwise)."""
+        ...
+
+    def verify_webhook(self, headers: Mapping[str, str], body: bytes, secret: str) -> bool:
+        """Verify an inbound webhook's signature against ``secret`` (fail-closed)."""
+        ...
+
+    def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent | None:
+        """Parse a (already-verified) webhook into a normalized event, or None when the
+        event type isn't actionable."""
         ...

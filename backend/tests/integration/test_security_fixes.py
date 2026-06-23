@@ -38,6 +38,52 @@ def test_webhook_refused_without_secret(client) -> None:
     assert r.json()["accepted"] is False
 
 
+def test_per_connection_webhook_secret_is_used(client) -> None:
+    """A connection's own webhook secret verifies its events (global secret unset)."""
+    import hashlib
+    import hmac
+    import json
+
+    client.post("/api/v1/providers", json={
+        "provider_type": "github", "label": "gh:hooks", "scope": "org · 0 repos",
+        "credential": "ghp_x", "webhook_secret": "perconn",
+    })
+    cid = next(c["id"] for c in client.get("/api/v1/providers").json()["connections"]
+               if c["label"] == "gh:hooks")
+
+    body = json.dumps(
+        {"repository": {"name": "whatever"}, "check_suite": {"conclusion": "success"}}
+    ).encode()
+    good = "sha256=" + hmac.new(b"perconn", body, hashlib.sha256).hexdigest()
+    bad = "sha256=" + hmac.new(b"not-it", body, hashlib.sha256).hexdigest()
+
+    ok = client.post(f"/api/v1/webhooks/{cid}", content=body,
+                     headers={"X-Hub-Signature-256": good, "X-GitHub-Event": "check_suite"})
+    assert ok.status_code == 200, ok.text  # verified against the per-connection secret
+    nope = client.post(f"/api/v1/webhooks/{cid}", content=body,
+                       headers={"X-Hub-Signature-256": bad, "X-GitHub-Event": "check_suite"})
+    assert nope.status_code == 401
+
+
+def test_webhook_unknown_connection_is_404(client) -> None:
+    r = client.post("/api/v1/webhooks/does-not-exist", json={"repository": {"name": "x"}})
+    assert r.status_code == 404
+
+
+def test_gitea_webhook_rejected_by_provider_seam(client) -> None:
+    """Ingest routes through the connection's provider: Gitea webhooks aren't implemented
+    yet, so its adapter fails the verification closed (no GitHub hardwiring in core)."""
+    client.post("/api/v1/providers", json={
+        "provider_type": "gitea", "label": "gitea:hooks", "scope": "user · 0 repos",
+        "webhook_secret": "x",
+    })
+    cid = next(c["id"] for c in client.get("/api/v1/providers").json()["connections"]
+               if c["label"] == "gitea:hooks")
+    r = client.post(f"/api/v1/webhooks/{cid}", content=b"{}",
+                    headers={"X-Gitea-Signature": "whatever", "X-Gitea-Event": "push"})
+    assert r.status_code == 401
+
+
 def test_webhook_rejects_bad_signature(monkeypatch, client) -> None:
     import hashlib
     import hmac

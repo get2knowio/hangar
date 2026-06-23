@@ -406,6 +406,8 @@ export interface paths {
                          * @default false
                          */
                         writable?: boolean;
+                        /** @description write-only; per-connection inbound-webhook HMAC secret. Encrypted at rest; falls back to the global secret when omitted (FR-033) */
+                        webhook_secret?: string;
                     };
                 };
             };
