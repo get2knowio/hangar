@@ -393,6 +393,37 @@ async def test_list_repos_raises_when_forbidden_everywhere(respx_mock) -> None:
 
 
 @respx.mock(base_url=API, assert_all_called=False)
+async def test_secret_scanning_unknown_when_field_absent(respx_mock) -> None:
+    """security_and_analysis omitted (token not repo-admin) ⇒ secret_scanning is unknown,
+    not a fabricated fail (code-review fix)."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    repo_json = {k: v for k, v in _REPO_JSON.items() if k != "security_and_analysis"}
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"s1"'}, json=repo_json))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "secret_scanning" in repo.unknowns
+    assert "secret_scanning" not in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_description_fails_on_missing_topics_with_honest_evidence(respx_mock) -> None:
+    """A repo with a description but no topics fails the combined check, and the evidence
+    does not falsely claim the description is empty (code-review fix)."""
+    from hangar.domain.models import FindingStatus
+    from hangar.domain.policy import evidence_for
+
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    repo_json = {**_REPO_JSON, "topics": []}  # description present, no topics
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"t1"'}, json=repo_json))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "description" in repo.fails
+    assert evidence_for(repo, "description", FindingStatus.fail) == "Description or topics not set"
+
+
+@respx.mock(base_url=API, assert_all_called=False)
 async def test_list_repos_empty_when_owner_not_found(respx_mock) -> None:
     """404 on org then user (no such owner) → empty list, not an error."""
     adapter = GitHubAdapter()

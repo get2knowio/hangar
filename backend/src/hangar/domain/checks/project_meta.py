@@ -24,7 +24,7 @@ CHECKS: list[Check] = [
         # deep-links the operator to repo settings rather than falsely "applying" a no-op.
         id="description", label="Description & topics set", group=_G,
         tier=RemediationTier.link, required_capabilities=caps_for_tier(RemediationTier.link),
-        evidence_fail="Repo description & topics empty",
+        evidence_fail="Description or topics not set",
     ),
     Check(
         id="templates", label="Issue / PR templates", group=_G,

@@ -86,7 +86,7 @@ async def interrogate_repo(
             return None  # nothing cached to carry forward
         meta_fails, meta_unknowns, description, default_branch = _metadata_from_previous(previous)
     else:
-        meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data, granted)
+        meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data)
 
     (dyn_fails, dyn_unknowns, open_prs, dependabot_prs, ci, alerts, release_pending) = (
         await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
@@ -109,15 +109,15 @@ async def interrogate_repo(
     )
 
 
-def _metadata_checks(
-    repo_data: Any, granted: set[Capability]
-) -> tuple[list[str], list[str], str, str]:
+def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str]:
     """Checks derived from the primary repo resource body (license/description/branch/secret)."""
     fails: list[str] = []
     unknowns: list[str] = []
 
     if not repo_data.get("license"):
         fails.append("license")
+    # The catalog check is "Description & topics set" — both are required; the evidence
+    # string (project_meta) reports which is missing without claiming both are empty.
     if not (repo_data.get("description") and repo_data.get("topics")):
         fails.append("description")
     default_branch = repo_data.get("default_branch") or "main"
@@ -130,9 +130,10 @@ def _metadata_checks(
         pp = (saa.get("secret_scanning_push_protection") or {}).get("status")
         if ss != "enabled" or pp != "enabled":
             fails.append("secret_scanning")
-    elif Capability.read_settings in granted:
-        fails.append("secret_scanning")  # readable but field absent → not enabled
     else:
+        # `security_and_analysis` is omitted entirely when the token is not repo-admin
+        # (and for some plans/visibilities), so an absent field means the state is
+        # unreadable — honestly `unknown`, never a fabricated `fail` (Constitution VIII).
         unknowns.append("secret_scanning")
 
     return fails, unknowns, repo_data.get("description") or "", default_branch
