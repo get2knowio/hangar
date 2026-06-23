@@ -350,6 +350,58 @@ paths:
             application/json:
               schema: { type: object, properties: { detail: { type: string } } }
 
+  /checks/{check_id}/remediate-batch:
+    post:
+      tags: [remediation]
+      summary: >
+        Fleet-wide remediation — apply one check's correction across many repos in a single
+        operator action (PR-first, idempotent, one audit entry per repo; read-only
+        connections collapse to a deep-link). The kind is resolved server-side.
+      parameters:
+        - { name: check_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targets]
+              properties:
+                targets:
+                  type: array
+                  items:
+                    type: object
+                    required: [connection_id, repo_id]
+                    properties:
+                      connection_id: { type: string }
+                      repo_id: { type: string }
+      responses:
+        "200":
+          description: Per-target outcomes + a status roll-up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  check_id: { type: string }
+                  summary:
+                    type: object
+                    additionalProperties: { type: integer }
+                    description: count of targets per outcome status
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        connection_id: { type: string }
+                        repo_id: { type: string }
+                        status: { type: string, enum: [pr_open, fixed, deep_link, not_found, error] }
+                        pr_url: { type: string, nullable: true }
+                        deep_link_url: { type: string, nullable: true }
+                        idempotent_hit: { type: boolean }
+                        detail: { type: string, nullable: true }
+        "404": { description: Unknown check }
+
 components:
   parameters:
     Connection:

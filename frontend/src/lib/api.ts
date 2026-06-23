@@ -75,6 +75,10 @@ export type RemediationKind = NonNullable<
 type RemediateOk = RemediatePath["responses"][200]["content"]["application/json"];
 export type RemediateResult = RemediateOk & { deep_link_url?: string };
 
+type RemediateBatchPath = paths["/checks/{check_id}/remediate-batch"]["post"];
+export type RemediateBatchResult = RemediateBatchPath["responses"][200]["content"]["application/json"];
+export type BatchTarget = { connection_id: string; repo_id: string };
+
 // ---- Query hooks ----
 export const useHealth = () => useQuery({ queryKey: ["health"], queryFn: () => get<Health>("/health") });
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: () => get<Me>("/me") });
@@ -125,6 +129,23 @@ export function useRemediate(connectionId: string, repoId: string) {
       return { ...data, status } as RemediateResult & { status: number };
     },
     onSuccess: () => invalidateFleet(qc, connectionId, repoId),
+  });
+}
+
+export function useRemediateBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { checkId: string; targets: BatchTarget[] }) =>
+      (await send<RemediateBatchResult>(
+        "POST", `/checks/${vars.checkId}/remediate-batch`, { targets: vars.targets },
+      )).data,
+    onSuccess: () => {
+      // A batch touches many repos and the fleet aggregates + audit; invalidate broadly.
+      qc.invalidateQueries({ queryKey: ["repo"] });
+      qc.invalidateQueries({ queryKey: ["scorecard"] });
+      qc.invalidateQueries({ queryKey: ["overview"] });
+      qc.invalidateQueries({ queryKey: ["audit"] });
+    },
   });
 }
 
