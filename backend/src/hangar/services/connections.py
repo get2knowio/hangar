@@ -77,6 +77,15 @@ async def add_connection(
     declares the credential is writable (FR-026). We never assume a token can write just
     because the adapter *could* — a read-only PAT must register as read-only (FR-018).
     """
+    # Fail closed: a writable connection MUST carry a credential. Without one, provider_for
+    # would fall back to the demo simulator and fabricate a "PR opened" outcome + audit
+    # entry for a write that never happened (Constitution III/VIII, FR-026). Refuse it.
+    if writable and not credential:
+        raise ValueError(
+            "a writable connection requires a credential; refusing to grant write "
+            "capabilities to a connection that cannot authenticate."
+        )
+
     provider = get_provider(provider_type)
     offered = provider.declared_capabilities()
     granted = offered & _READ_CAPS
@@ -91,7 +100,8 @@ async def add_connection(
         label=label,
         provider_type=provider_type,
         scope=scope,
-        auth_mode=auth_mode or ("GitHub App" if provider_type == "github" else "Scoped token"),
+        # The default auth-mode label is provided by the adapter (no platform branch here).
+        auth_mode=auth_mode or provider.default_auth_mode,
         credential_ciphertext=ciphertext,
         granted_capabilities=[c.value for c in granted],
         app_id=app_id,

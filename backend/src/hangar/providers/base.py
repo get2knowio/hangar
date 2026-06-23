@@ -59,6 +59,9 @@ class RepoProvider(Protocol):
     """Provider adapter contract. Implemented by GitHub (MVP) and Gitea (deferred)."""
 
     provider_type: str
+    # Default human label for a new connection's auth mode, supplied by the adapter so the
+    # provider-neutral core never branches on the platform (Constitution I).
+    default_auth_mode: str
 
     def declared_capabilities(self) -> set[Capability]:
         """The full capability set this adapter *can* offer."""

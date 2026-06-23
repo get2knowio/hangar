@@ -15,6 +15,7 @@ from hangar.providers.base import CorrectionRequest, CorrectionResult
 
 class GiteaAdapter:
     provider_type = "gitea"
+    default_auth_mode = "Scoped token"
 
     def declared_capabilities(self) -> set[Capability]:
         # Read + deep-link only at MVP — no write_settings / open_pull_request.

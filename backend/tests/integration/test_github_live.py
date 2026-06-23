@@ -297,3 +297,107 @@ async def test_adapter_refuses_without_credential() -> None:
     )
     with pytest.raises(RuntimeError, match="no decrypted credential"):
         await adapter.interrogate(conn, "hangar")
+
+
+# --- dependabot_alerts is really evaluated, never a fabricated pass (code-review fix) ---
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_dependabot_alerts_enabled_passes(respx_mock) -> None:
+    """vulnerability-alerts → 204 (enabled) ⇒ dependabot_alerts neither fails nor unknown."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/vulnerability-alerts").mock(
+        return_value=httpx.Response(204)
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"d1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_alerts" not in repo.fails
+    assert "dependabot_alerts" not in repo.unknowns
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_dependabot_alerts_disabled_fails(respx_mock) -> None:
+    """vulnerability-alerts → 404 (disabled) ⇒ a real fail, not the old silent pass."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    # _routes' catch-all returns 404 for vulnerability-alerts → disabled.
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"d2"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_alerts" in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_dependabot_alerts_forbidden_is_unknown(respx_mock) -> None:
+    """vulnerability-alerts → 403 ⇒ unknown (undeterminable), never fail/pass."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/vulnerability-alerts").mock(
+        return_value=httpx.Response(403, json={"message": "Forbidden"})
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"d3"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_alerts" in repo.unknowns
+    assert "dependabot_alerts" not in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_dependabot_alerts_unknown_without_read_alerts(respx_mock) -> None:
+    """No read_alerts capability ⇒ dependabot_alerts is unknown (capability-gated)."""
+    adapter = GitHubAdapter()
+    conn = ProviderConnection(
+        id="gh-narrow", label="gh:acme", provider_type="github", scope="org",
+        auth_mode="App", app_id="123", installation_id=456,
+        granted_capabilities={Capability.read_files},  # no read_alerts
+        has_credential=True, token=_rsa_pem(),
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"d4"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_alerts" in repo.unknowns
+    assert "dependabot_alerts" not in repo.fails
+
+
+# --- list_repos degrades honestly on a forbidden listing (code-review fix) ---
+def _pat_conn() -> ProviderConnection:
+    return ProviderConnection(
+        id="gh-pat", label="gh:acme", provider_type="github", scope="org",
+        auth_mode="PAT", granted_capabilities={Capability.read_files},
+        has_credential=True, token="ghp_pat",
+    )
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_list_repos_user_fallback_on_forbidden_org(respx_mock) -> None:
+    """A 403 on the org listing falls back to the user endpoint."""
+    adapter = GitHubAdapter()
+    respx_mock.get(f"{API}/orgs/acme/repos").mock(
+        return_value=httpx.Response(403, json={"message": "Forbidden"}))
+    respx_mock.get(f"{API}/users/acme/repos").mock(
+        return_value=httpx.Response(200, json=[{"name": "alpha"}, {"name": "beta"}]))
+    assert await adapter.list_repos(_pat_conn()) == ["alpha", "beta"]
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_list_repos_raises_when_forbidden_everywhere(respx_mock) -> None:
+    """403 on BOTH endpoints raises (undeterminable) so the poller keeps last-good
+    snapshots instead of silently reporting an empty fleet."""
+    adapter = GitHubAdapter()
+    respx_mock.get(f"{API}/orgs/acme/repos").mock(
+        return_value=httpx.Response(403, json={"message": "Forbidden"}))
+    respx_mock.get(f"{API}/users/acme/repos").mock(
+        return_value=httpx.Response(403, json={"message": "Forbidden"}))
+    with pytest.raises(RuntimeError, match="cannot list repos"):
+        await adapter.list_repos(_pat_conn())
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_list_repos_empty_when_owner_not_found(respx_mock) -> None:
+    """404 on org then user (no such owner) → empty list, not an error."""
+    adapter = GitHubAdapter()
+    respx_mock.get(f"{API}/orgs/acme/repos").mock(
+        return_value=httpx.Response(404, json={"message": "Not Found"}))
+    respx_mock.get(f"{API}/users/acme/repos").mock(
+        return_value=httpx.Response(404, json={"message": "Not Found"}))
+    assert await adapter.list_repos(_pat_conn()) == []

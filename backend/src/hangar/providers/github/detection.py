@@ -160,7 +160,7 @@ async def _dynamic_checks(
     A ``403`` on any resource yields ``unknown`` for the affected check(s) rather than
     propagating an exception that would abort the whole snapshot.
     """
-    from hangar.providers.github.adapter import _FORBIDDEN, _NOT_FOUND
+    from hangar.providers.github.adapter import _FORBIDDEN, _NO_CONTENT, _NOT_FOUND
 
     cget = adapter._conditional_get
     fails: list[str] = []
@@ -280,6 +280,19 @@ async def _dynamic_checks(
     elif ci is CIStatus.none:
         unknowns.append("ci_workflow_green")
     alerts = await _alert_counts(cget, gh, connection.id, owner, repo_ref) if can_alerts else AlertCounts()
+
+    # dependabot_alerts: the vulnerability-alerts endpoint returns 204 (enabled), 404
+    # (disabled), or 403 (unreadable). Capability-gated on read_alerts so an undeterminable
+    # state is honestly `unknown` — never a fabricated pass from an unevaluated check.
+    if can_alerts:
+        va = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/vulnerability-alerts")
+        if va is _NOT_FOUND:
+            fails.append("dependabot_alerts")  # endpoint 404 → alerts disabled
+        elif va is not _NO_CONTENT:  # 403 or any unexpected body → cannot determine
+            unknowns.append("dependabot_alerts")
+        # _NO_CONTENT (204) → alerts enabled → passing (no entry)
+    else:
+        unknowns.append("dependabot_alerts")
 
     return fails, unknowns, open_prs, dependabot_prs, ci, alerts, release_pending
 

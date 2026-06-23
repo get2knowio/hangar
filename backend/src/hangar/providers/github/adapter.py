@@ -51,6 +51,9 @@ class GitHubAdapter:
 
     provider_type = "github"
     base_url = "https://github.com"
+    # Default human label for a GitHub connection's auth mode (provider-owned so the
+    # provider-neutral connections service never branches on the platform name).
+    default_auth_mode = "GitHub App"
 
     def __init__(self) -> None:
         # (connection_id, resource_path) -> ETag, persisted for the process lifetime so
@@ -146,6 +149,8 @@ class GitHubAdapter:
             raise
         if resp.status_code == 304:  # githubkit passes 304 through (not an error)
             return _NOT_MODIFIED
+        if resp.status_code == 204:  # No Content (e.g. vulnerability-alerts = enabled)
+            return _NO_CONTENT
         if conditional and (new_etag := resp.headers.get("ETag")) is not None:
             self._etags[key] = new_etag
         return resp.json()
@@ -155,10 +160,21 @@ class GitHubAdapter:
         data = await self._conditional_get(
             gh, connection.id, f"/orgs/{connection.owner}/repos", params={"per_page": 100}
         )
-        if data in (_NOT_MODIFIED, _NOT_FOUND):
-            # Fall back to user repos if the owner isn't an org.
+        if not isinstance(data, list):
+            # Not an org (404), the org listing is forbidden (403), or unchanged — fall
+            # back to the user's repos (the owner may be a personal account, or the token
+            # may only see user-scoped repos).
             data = await self._conditional_get(
                 gh, connection.id, f"/users/{connection.owner}/repos", params={"per_page": 100}
+            )
+        if data is _FORBIDDEN:
+            # Forbidden on BOTH endpoints: the repo list is undeterminable, not empty.
+            # Raise so the poller degrades to "serve last good snapshots" (SC-009) instead
+            # of silently reporting zero repos that looks like an empty org.
+            raise RuntimeError(
+                f"GitHub connection '{connection.id}' cannot list repos for owner "
+                f"'{connection.owner}' (403 on both the org and user endpoints); "
+                "check the token/installation scope."
             )
         if not isinstance(data, list):
             return []
@@ -290,3 +306,4 @@ class _Sentinel:
 _NOT_MODIFIED = _Sentinel("NOT_MODIFIED")
 _NOT_FOUND = _Sentinel("NOT_FOUND")
 _FORBIDDEN = _Sentinel("FORBIDDEN")
+_NO_CONTENT = _Sentinel("NO_CONTENT")

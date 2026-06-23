@@ -17,6 +17,10 @@ _PROVIDER_HOST = {"github": "github.com", "gitea": "gitea.local"}
 
 
 class DemoProvider:
+    # Demo connections are created by the seed path, not add_connection, so this default is
+    # unused in practice; present for RepoProvider Protocol conformance.
+    default_auth_mode = ""
+
     def __init__(self, provider_type: str) -> None:
         self.provider_type = provider_type
 

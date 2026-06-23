@@ -83,6 +83,19 @@ def test_added_connection_writable_only_when_declared(client) -> None:
     assert added["writes"] is True
 
 
+def test_writable_connection_without_credential_is_rejected(client) -> None:
+    """Fail-closed: a writable connection with no credential must be refused (400), not
+    created — otherwise remediation would fall back to the demo simulator and fabricate a
+    'PR opened' outcome + audit entry for a write that never happened."""
+    r = client.post("/api/v1/providers", json={
+        "provider_type": "github", "label": "gh:nocreds", "scope": "org · 1 repos",
+        "writable": True,  # deliberately no credential
+    })
+    assert r.status_code == 400, r.text
+    cards = client.get("/api/v1/providers").json()["connections"]
+    assert all(c["label"] != "gh:nocreds" for c in cards), "connection must not be created"
+
+
 # --- Proxy-secret trust is constant-time and fails closed ---
 def test_peer_trust_requires_configured_trust() -> None:
     from starlette.requests import Request

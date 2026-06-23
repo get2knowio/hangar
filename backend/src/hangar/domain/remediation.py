@@ -24,7 +24,7 @@ from hangar.domain.models import (
     Repo,
 )
 from hangar.persistence import repositories as repo_store
-from hangar.providers.base import CorrectionRequest, RepoProvider
+from hangar.providers.base import CorrectionRequest, RepoProvider, provider_name
 from hangar.services import audit
 
 
@@ -96,7 +96,8 @@ class RemediationService:
             deep = self.provider.deep_link(connection, repo, check_id)
             await audit.record_correction(
                 session, actor=actor, connection_label=connection.label,
-                repo_id=repo.id, check_label=check.label, result=f"Opened in {connection.provider_type}",
+                repo_id=repo.id, check_label=check.label,
+                result=f"Opened in {provider_name(connection.provider_type)}",
             )
             raise ReadOnlyCollapse(deep)
 
@@ -120,7 +121,7 @@ class RemediationService:
             entry = await audit.record_correction(
                 session, actor=actor, connection_label=connection.label,
                 repo_id=repo.id, check_label=check.label,
-                result=f"Opened in {connection.provider_type}",
+                result=f"Opened in {provider_name(connection.provider_type)}",
                 pr_url=result.deep_link_url,
             )
             return RemediationOutcome(

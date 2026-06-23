@@ -56,9 +56,10 @@ def build_scorecard(
     check_meta = []
     rollup: list[dict[str, str | int]] = []
     for i, c in enumerate(checks):
-        not_pass = sum(1 for r in repos if matrix[r.id][i] is not FindingStatus.passing)
+        # fail_count is *failures only* — `unknown` (undeterminable) and pending/working
+        # (in-flight remediations) must not be conflated with a fail (honest state).
         fails = sum(1 for r in repos if matrix[r.id][i] is FindingStatus.fail)
-        check_meta.append({"id": c.id, "label": c.label, "fail_count": not_pass})
+        check_meta.append({"id": c.id, "label": c.label, "fail_count": fails})
         if fails:
             label = c.label.lower().replace(" present", "").replace(" enabled", "")
             rollup.append({"label": label, "count": fails})
