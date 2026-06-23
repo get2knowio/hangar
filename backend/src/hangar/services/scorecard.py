@@ -71,6 +71,7 @@ def build_scorecard(
         conn = connections.get(r.connection_id)
         rows.append({
             "repo_id": r.id,
+            "connection_id": r.connection_id,
             "hygiene_pct": hyg[r.id],
             "connection_badge": _badge_before_colon(conn.label) if conn else r.connection_id,
             "cells": [s.value for s in matrix[r.id]],

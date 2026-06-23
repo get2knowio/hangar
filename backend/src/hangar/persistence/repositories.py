@@ -62,13 +62,11 @@ async def repo_counts_by_connection(session: AsyncSession) -> dict[str, int]:
 
 
 async def get_repo(
-    session: AsyncSession, repo_id: str, connection_id: str | None = None
+    session: AsyncSession, repo_id: str, connection_id: str
 ) -> Repo | None:
-    stmt = select(RepoRow).where(RepoRow.id == repo_id)
-    if connection_id:
-        stmt = stmt.where(RepoRow.connection_id == connection_id)
-    stmt = stmt.order_by(RepoRow.connection_id).limit(1)
-    row = (await session.execute(stmt)).scalars().first()
+    # Always resolved by the composite (id, connection_id) PK — never by id alone, which
+    # would silently pick one of several same-named repos across connections (Constitution I).
+    row = await session.get(RepoRow, (repo_id, connection_id))
     return row.to_domain() if row else None
 
 

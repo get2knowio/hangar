@@ -144,6 +144,8 @@ export interface paths {
                                 tag?: string;
                                 title?: string;
                                 repo_id?: string;
+                                /** @description owning connection — for connection-scoped drill-in */
+                                connection_id?: string;
                                 tone?: components["schemas"]["Tone"];
                             }[];
                         };
@@ -201,6 +203,8 @@ export interface paths {
                             }[];
                             rows: {
                                 repo_id?: string;
+                                /** @description owning connection — for connection-scoped drill-in */
+                                connection_id?: string;
                                 hygiene_pct?: number;
                                 connection_badge?: string;
                                 cells?: components["schemas"]["FindingStatus"][];
@@ -496,19 +500,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/repos/{repo_id}": {
+    "/repos/{connection_id}/{repo_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Repo drill-down — activity strip + grouped policy checks with remediation controls (Story 3). */
+        /**
+         * Repo drill-down — activity strip + grouped policy checks with remediation controls (Story 3).
+         * @description A repo is addressed by (connection_id, repo_id); resolving by repo_id alone is forbidden because same-named repos can exist under different connections (Constitution I).
+         */
         get: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
+                    connection_id: string;
                     repo_id: string;
                 };
                 cookie?: never;
@@ -541,7 +549,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/repos/{repo_id}/checks/{check_id}/remediate": {
+    "/repos/{connection_id}/{repo_id}/checks/{check_id}/remediate": {
         parameters: {
             query?: never;
             header?: never;
@@ -556,6 +564,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
+                    connection_id: string;
                     repo_id: string;
                     check_id: string;
                 };
@@ -605,7 +614,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/repos/{repo_id}/checks/{check_id}/merge": {
+    "/repos/{connection_id}/{repo_id}/checks/{check_id}/merge": {
         parameters: {
             query?: never;
             header?: never;
@@ -620,6 +629,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
+                    connection_id: string;
                     repo_id: string;
                     check_id: string;
                 };
@@ -676,6 +686,8 @@ export interface components {
         FindingStatus: "pass" | "fail" | "unknown" | "pending" | "working";
         RepoRow: {
             id?: string;
+            /** @description owning connection — used to address the repo connection-scoped */
+            connection_id?: string;
             connection_badge?: string;
             description?: string;
             open_prs?: number;

@@ -108,7 +108,7 @@ async def test_github_adapter_requires_credential() -> None:
 
 
 def test_config_pr_yields_pr_url(client) -> None:
-    r = client.post("/api/v1/repos/hangar/checks/license/remediate", json={"kind": "config_pr"})
+    r = client.post("/api/v1/repos/gh-main/hangar/checks/license/remediate", json={"kind": "config_pr"})
     assert r.status_code == 200
     body = r.json()
     assert body["pr_url"], "a config_pr correction must surface a PR url"
@@ -140,7 +140,7 @@ def test_idle_hangar_makes_no_mutations(client) -> None:
     assert results == {"Settings applied", "PR #138 merged", "Dependabot alerts"} or len(audit) == 3
 
     # and findings retain their seeded status (hangar still fails its seeded checks)
-    detail = client.get("/api/v1/repos/hangar").json()
+    detail = client.get("/api/v1/repos/gh-main/hangar").json()
     statuses = {}
     for grp in detail["check_groups"]:
         for c in grp["checks"]:

@@ -6,7 +6,7 @@ from __future__ import annotations
 def test_config_pr_on_readonly_returns_403_with_deep_link(client) -> None:
     # backup-scripts is on the read-only gitea connection.
     r = client.post(
-        "/api/v1/repos/backup-scripts/checks/license/remediate",
+        "/api/v1/repos/gitea/backup-scripts/checks/license/remediate",
         json={"kind": "config_pr"},
     )
     assert r.status_code == 403
@@ -15,7 +15,7 @@ def test_config_pr_on_readonly_returns_403_with_deep_link(client) -> None:
 
 
 def test_readonly_repo_detail_offers_only_deep_link_actions(client) -> None:
-    detail = client.get("/api/v1/repos/backup-scripts").json()
+    detail = client.get("/api/v1/repos/gitea/backup-scripts").json()
     assert detail["read_only"] is True
     primary_actions = []
     for grp in detail["check_groups"]:

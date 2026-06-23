@@ -60,6 +60,7 @@ def build_overview(
         a = r.alerts
         repo_rows.append({
             "id": r.id,
+            "connection_id": r.connection_id,
             "connection_badge": badge,
             "description": r.description,
             "open_prs": r.open_prs,
@@ -96,23 +97,28 @@ def _build_feed(repos: list[Repo]) -> list[dict]:
         if r.alerts.critical > 0:
             n = r.alerts.critical
             ranked.append((0, {"tag": "Critical", "tone": Tone.fail, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": f"{n} critical security alert{'s' if n > 1 else ''}"}))
     for r in repos:
         if r.ci_status is CIStatus.fail:
             ranked.append((1, {"tag": "CI down", "tone": Tone.fail, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": "CI failing on default branch"}))
     for r in repos:
         if r.release_pending_days is not None and r.release_pending_days >= 14:
             ranked.append((2, {"tag": "Release", "tone": Tone.warn, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": f"{r.release_pending_days}d of unreleased commits"}))
     for r in repos:
         if r.alerts.high > 0:
             n = r.alerts.high
             ranked.append((3, {"tag": "High alert", "tone": Tone.warn, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": f"{n} high-severity alert{'s' if n > 1 else ''}"}))
     for r in repos:
         if r.dependabot_prs >= 2:
             ranked.append((4, {"tag": "Bot PRs", "tone": Tone.neutral, "repo_id": r.id,
+                               "connection_id": r.connection_id,
                                "title": f"{r.dependabot_prs} Dependabot PRs awaiting merge"}))
     ranked.sort(key=lambda t: t[0])
     return [item for _, item in ranked[:7]]

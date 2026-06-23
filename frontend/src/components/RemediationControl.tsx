@@ -28,9 +28,17 @@ function prNumber(url: string | null | undefined): string {
   return m ? `#${m[1]}` : "";
 }
 
-export function RemediationControl({ repoId, check }: { repoId: string; check: Check }) {
-  const remediate = useRemediate(repoId);
-  const merge = useMarkMerged(repoId);
+export function RemediationControl({
+  connectionId,
+  repoId,
+  check,
+}: {
+  connectionId: string;
+  repoId: string;
+  check: Check;
+}) {
+  const remediate = useRemediate(connectionId, repoId);
+  const merge = useMarkMerged(connectionId, repoId);
   const { show } = useToast();
   const status = check.status ?? "fail";
 

@@ -34,15 +34,17 @@ async def test_remediation_overlay_is_connection_scoped(session) -> None:
 
 
 def test_mark_merged_without_open_pr_returns_409(client) -> None:
-    r = client.post("/api/v1/repos/hangar/checks/license/merge")
+    r = client.post("/api/v1/repos/gh-main/hangar/checks/license/merge")
     assert r.status_code == 409, r.text
 
 
 def test_mark_merged_after_open_pr_flips_to_fixed(client) -> None:
-    opened = client.post("/api/v1/repos/hangar/checks/license/remediate", json={"kind": "config_pr"})
+    opened = client.post(
+        "/api/v1/repos/gh-main/hangar/checks/license/remediate", json={"kind": "config_pr"}
+    )
     assert opened.status_code == 200 and opened.json()["state"] == "pr_open"
 
-    merged = client.post("/api/v1/repos/hangar/checks/license/merge")
+    merged = client.post("/api/v1/repos/gh-main/hangar/checks/license/merge")
     assert merged.status_code == 200, merged.text
     assert merged.json()["state"] == "fixed"
 
@@ -75,3 +77,31 @@ async def test_default_auth_mode_comes_from_adapter(session) -> None:
         session, provider_type="gitea", label="gitea:auto", scope="user", credential="tok"
     )
     assert gt.auth_mode == "Scoped token"
+
+
+async def test_get_repo_resolves_by_connection_not_id_alone(session) -> None:
+    """A same-named repo under two connections resolves independently by
+    (id, connection_id); the wrong connection never returns another's repo."""
+    from hangar.persistence.models import ConnectionRow, RepoRow
+
+    for cid in ("conn-a", "conn-b"):
+        session.add(ConnectionRow(
+            id=cid, label=f"gh:{cid}", provider_type="github", scope="org", auth_mode="App",
+        ))
+    session.add(RepoRow(id="api", connection_id="conn-a", description="A's api"))
+    session.add(RepoRow(id="api", connection_id="conn-b", description="B's api"))
+    await session.commit()
+
+    a = await repo_store.get_repo(session, "api", "conn-a")
+    b = await repo_store.get_repo(session, "api", "conn-b")
+    assert a is not None and a.connection_id == "conn-a" and a.description == "A's api"
+    assert b is not None and b.connection_id == "conn-b" and b.description == "B's api"
+    # a connection that does not own 'api' gets nothing — never a silent wrong-connection pick
+    assert await repo_store.get_repo(session, "api", "conn-c") is None
+
+
+def test_repo_detail_route_is_connection_scoped(client) -> None:
+    """The drill-in route is addressed by (connection_id, repo_id): the seeded `hangar`
+    repo resolves under its owning connection and 404s under any other."""
+    assert client.get("/api/v1/repos/gh-main/hangar").status_code == 200
+    assert client.get("/api/v1/repos/gitea/hangar").status_code == 404

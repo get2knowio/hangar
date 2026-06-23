@@ -19,11 +19,11 @@ from hangar.services.repo_detail import build_repo_detail
 router = APIRouter(tags=["repos"])
 
 
-@router.get("/repos/{repo_id}")
+@router.get("/repos/{connection_id}/{repo_id}")
 async def repo_detail(
-    repo_id: str, session: AsyncSession = Depends(session_dep)
+    connection_id: str, repo_id: str, session: AsyncSession = Depends(session_dep)
 ) -> dict:
-    repo = await repo_store.get_repo(session, repo_id)
+    repo = await repo_store.get_repo(session, repo_id, connection_id)
     if repo is None:
         raise HTTPException(status_code=404, detail="repo not found")
     ctx = await load_fleet(session, "all", with_pr_urls=True)
@@ -54,15 +54,16 @@ def _write_kind_for(check_id: str) -> RemediationKind:
     return _TIER_TO_KIND[CATALOG[check_id].tier]
 
 
-@router.post("/repos/{repo_id}/checks/{check_id}/remediate", response_model=None)
+@router.post("/repos/{connection_id}/{repo_id}/checks/{check_id}/remediate", response_model=None)
 async def remediate(
+    connection_id: str,
     repo_id: str,
     check_id: str,
     body: RemediateBody,
     session: AsyncSession = Depends(session_dep),
     actor: str = Depends(actor_dep),
 ) -> dict | JSONResponse:
-    repo = await repo_store.get_repo(session, repo_id)
+    repo = await repo_store.get_repo(session, repo_id, connection_id)
     if repo is None or check_id not in CATALOG:
         raise HTTPException(status_code=404, detail="repo or check not found")
     conn_row = await repo_store.get_connection_row(session, repo.connection_id)
@@ -108,15 +109,16 @@ async def remediate(
     }
 
 
-@router.post("/repos/{repo_id}/checks/{check_id}/merge")
+@router.post("/repos/{connection_id}/{repo_id}/checks/{check_id}/merge")
 async def mark_merged(
+    connection_id: str,
     repo_id: str,
     check_id: str,
     session: AsyncSession = Depends(session_dep),
     actor: str = Depends(actor_dep),
 ) -> dict:
     """Mark a Hangar-authored PR merged → finding flips to pass (prototype ``markMerged``)."""
-    repo = await repo_store.get_repo(session, repo_id)
+    repo = await repo_store.get_repo(session, repo_id, connection_id)
     if repo is None or check_id not in CATALOG:
         raise HTTPException(status_code=404, detail="repo or check not found")
     conn_row = await repo_store.get_connection_row(session, repo.connection_id)

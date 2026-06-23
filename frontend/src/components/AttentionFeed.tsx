@@ -29,7 +29,7 @@ export function AttentionFeed({ feed }: { feed: Item[] }) {
         return (
           <div
             key={`${f.repo_id}-${i}`}
-            onClick={() => navigate(`/repos/${f.repo_id}`)}
+            onClick={() => navigate(`/repos/${f.connection_id}/${f.repo_id}`)}
             style={{
               padding: "11px 16px",
               borderBottom: "1px solid var(--border-2)",

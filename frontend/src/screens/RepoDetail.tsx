@@ -1,4 +1,4 @@
-/* Repo drill-down (/repos/:id) — header, activity strip, grouped policy checks with the
+/* Repo drill-down (/repos/:connectionId/:id) — header, activity strip, grouped policy checks with the
    remediation control + remediation-pending overlay (Story 3; FR-005a, FR-011–FR-018). */
 
 import { useNavigate, useParams } from "react-router-dom";
@@ -15,9 +15,9 @@ const ALERT_COLOR: Record<string, { color: string; bg: string }> = {
 };
 
 export function RepoDetail() {
-  const { id } = useParams();
+  const { connectionId, id } = useParams();
   const navigate = useNavigate();
-  const { data, isLoading } = useRepoDetail(id);
+  const { data, isLoading } = useRepoDetail(connectionId, id);
 
   if (isLoading || !data) {
     return <div style={{ padding: "24px 28px", color: "var(--muted)" }}>Loading repo…</div>;
@@ -156,7 +156,7 @@ export function RepoDetail() {
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.evidence}</div>
                   </div>
-                  <RemediationControl repoId={data.id!} check={c} />
+                  <RemediationControl connectionId={connectionId!} repoId={data.id!} check={c} />
                 </div>
               );
             })}

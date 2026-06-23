@@ -2,9 +2,9 @@
 
 Findings are *derived* (repo snapshot × active policy × remediation overlay), so they
 are not stored. We persist connections, repo snapshots, in-flight remediations, the
-single policy, and the append-only audit log. Repo ids are unique per fleet at MVP
-(matching the prototype); the composite-key path for the same logical repo across two
-connections is noted in data-model.md and left for a follow-up.
+single policy, and the append-only audit log. The same logical repo name under two
+connections is two distinct rows keyed on the composite ``(id, connection_id)`` PK, and
+every access path resolves by that pair — never by name alone (Constitution I).
 """
 
 from __future__ import annotations

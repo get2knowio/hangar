@@ -9,7 +9,7 @@ def _audit_pr_entries(client) -> list[dict]:
 
 
 def test_config_pr_idempotent_same_pr_url_single_audit(client) -> None:
-    url = "/api/v1/repos/hangar/checks/license/remediate"
+    url = "/api/v1/repos/gh-main/hangar/checks/license/remediate"
 
     before = len(_audit_pr_entries(client))
 

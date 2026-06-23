@@ -107,6 +107,7 @@ paths:
                         tag: { type: string }
                         title: { type: string }
                         repo_id: { type: string }
+                        connection_id: { type: string, description: owning connection — for connection-scoped drill-in }
                         tone: { $ref: "#/components/schemas/Tone" }
 
   /fleet/scorecard:
@@ -140,6 +141,7 @@ paths:
                       type: object
                       properties:
                         repo_id: { type: string }
+                        connection_id: { type: string, description: owning connection — for connection-scoped drill-in }
                         hygiene_pct: { type: integer }
                         connection_badge: { type: string }
                         cells:
@@ -260,11 +262,16 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/AuditEntry" }
 
-  /repos/{repo_id}:
+  /repos/{connection_id}/{repo_id}:
     get:
       tags: [repos]
       summary: Repo drill-down — activity strip + grouped policy checks with remediation controls (Story 3).
-      parameters: [ { name: repo_id, in: path, required: true, schema: { type: string } } ]
+      description: >
+        A repo is addressed by (connection_id, repo_id); resolving by repo_id alone is
+        forbidden because same-named repos can exist under different connections (Constitution I).
+      parameters:
+        - { name: connection_id, in: path, required: true, schema: { type: string } }
+        - { name: repo_id, in: path, required: true, schema: { type: string } }
       responses:
         "200":
           description: OK
@@ -273,7 +280,7 @@ paths:
               schema: { $ref: "#/components/schemas/RepoDetail" }
         "404": { description: Not found }
 
-  /repos/{repo_id}/checks/{check_id}/remediate:
+  /repos/{connection_id}/{repo_id}/checks/{check_id}/remediate:
     post:
       tags: [remediation]
       summary: >
@@ -281,6 +288,7 @@ paths:
         change; kind=config_pr opens a PR (never push/force-push, FR-014); deep_link/report
         are recorded only. Idempotent: an existing open Hangar PR is surfaced, not duplicated (FR-015).
       parameters:
+        - { name: connection_id, in: path, required: true, schema: { type: string } }
         - { name: repo_id, in: path, required: true, schema: { type: string } }
         - { name: check_id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -310,13 +318,14 @@ paths:
             application/json:
               schema: { type: object, properties: { deep_link_url: { type: string } } }
 
-  /repos/{repo_id}/checks/{check_id}/merge:
+  /repos/{connection_id}/{repo_id}/checks/{check_id}/merge:
     post:
       tags: [remediation]
       summary: >
         Mark a Hangar-authored PR merged — the finding flips to pass and the merge is
         audited (prototype markMerged; FR-005a, FR-016).
       parameters:
+        - { name: connection_id, in: path, required: true, schema: { type: string } }
         - { name: repo_id, in: path, required: true, schema: { type: string } }
         - { name: check_id, in: path, required: true, schema: { type: string } }
       responses:
@@ -359,6 +368,7 @@ components:
       type: object
       properties:
         id: { type: string }
+        connection_id: { type: string, description: owning connection — used to address the repo connection-scoped }
         connection_badge: { type: string }
         description: { type: string }
         open_prs: { type: integer }
