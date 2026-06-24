@@ -8,13 +8,12 @@
 #                   static dir, and serve everything from one Uvicorn process.
 #
 # The backend exposes the API under /api/v1/* and a root /health for the
-# container healthcheck. The SPA is intended to be served as static assets by
-# the same app; today create_app() mounts the API + /health, and the
-# static-asset mount of `frontend/dist` is a documented follow-up. This image
-# is already correct for that wiring: the SPA is built and copied to
-# /app/static so the backend can mount it without an image change. If the
-# frontend has not produced a dist/ yet, stage 1 falls back to an empty dir so
-# the build never fails.
+# container healthcheck, and serves the built SPA as static assets from the same
+# Uvicorn process: create_app() -> _mount_spa() serves /app/static at / (with an
+# index.html fallback for client-side routes), driven by HANGAR_STATIC_DIR (set
+# below). The SPA is built here and copied to /app/static so that mount is live
+# with no extra wiring. If the frontend has not produced a dist/ yet, stage 1
+# falls back to an empty dir so the build never fails and the mount no-ops.
 #
 # Build context is the REPOSITORY ROOT (see docker-compose.yml `build.context`).
 # ---------------------------------------------------------------------------
