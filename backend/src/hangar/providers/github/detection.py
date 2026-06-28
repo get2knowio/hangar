@@ -91,10 +91,20 @@ async def interrogate_repo(
         return None  # repo unreadable on this connection — keep any cached snapshot
     if repo_data is _NOT_MODIFIED:
         if previous is None:
-            return None  # nothing cached to carry forward
-        meta_fails, meta_unknowns, description, default_branch = _metadata_from_previous(previous)
+            # A 304 with no cached snapshot to carry forward — e.g. a stale in-memory ETag
+            # that outlived the row after the repo was pruned from an allowlist and
+            # re-added. The 304 can't be acted on, so refetch the repo in full to rebuild
+            # rather than reporting it permanently absent until its body next changes.
+            repo_data = await cget(
+                gh, connection.id, f"/repos/{owner}/{repo_ref}", conditional=False
+            )
+            if not isinstance(repo_data, dict):
+                return None
+            meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(repo_data)
+        else:
+            meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_from_previous(previous)
     else:
-        meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data)
+        meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(repo_data)
 
     (dyn_fails, dyn_unknowns, open_prs, dependabot_prs, ci, alerts, release_pending, pulls) = (
         await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
@@ -114,11 +124,23 @@ async def interrogate_repo(
         release_pending_days=release_pending,
         fails=sorted(set(fails)),
         unknowns=sorted(set(unknowns) - set(fails)),
+        license_spdx=license_spdx,
         pull_requests=[PullRequestSummary(**d) for d in pulls],
     )
 
 
-def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str]:
+def _license_spdx(repo_data: Any) -> str | None:
+    """The SPDX id of a detected license, or None when absent/unidentifiable.
+
+    GitHub reports ``NOASSERTION`` when a LICENSE file exists but maps to no known SPDX id
+    (custom/unrecognized) — the license check still passes, but there's no id to show.
+    """
+    lic = repo_data.get("license") or {}
+    spdx = lic.get("spdx_id")
+    return spdx if spdx and spdx != "NOASSERTION" else None
+
+
+def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str, str | None]:
     """Checks derived from the primary repo resource body (license/description/branch/secret)."""
     fails: list[str] = []
     unknowns: list[str] = []
@@ -145,14 +167,14 @@ def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str]:
         # unreadable — honestly `unknown`, never a fabricated `fail` (Constitution VIII).
         unknowns.append("secret_scanning")
 
-    return fails, unknowns, repo_data.get("description") or "", default_branch
+    return fails, unknowns, repo_data.get("description") or "", default_branch, _license_spdx(repo_data)
 
 
-def _metadata_from_previous(previous: Repo) -> tuple[list[str], list[str], str, str]:
+def _metadata_from_previous(previous: Repo) -> tuple[list[str], list[str], str, str, str | None]:
     """Carry the repo-body-derived checks from a prior snapshot on a 304."""
     fails = [c for c in previous.fails if c in _METADATA_CHECKS]
     unknowns = [c for c in previous.unknowns if c in _METADATA_CHECKS]
-    return fails, unknowns, previous.description, previous.default_branch
+    return fails, unknowns, previous.description, previous.default_branch, previous.license_spdx
 
 
 async def _dynamic_checks(
@@ -316,7 +338,7 @@ async def _dynamic_checks(
     async def _alerts_group() -> None:
         nonlocal alerts
         if can_alerts:
-            alerts = await _alert_counts(cget, gh, connection.id, owner, repo_ref)
+            alerts = await _alert_counts(gh, connection.id, owner, repo_ref)
 
     async def _dependabot_alerts_group() -> None:
         # vulnerability-alerts endpoint: 204 (enabled), 404 (disabled), 403 (unreadable).
@@ -458,6 +480,51 @@ async def _paged(cget: Any, gh: GitHub, cid: str, path: str, params: dict[str, A
     return items
 
 
+_LINK_NEXT_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
+
+
+def _next_after_cursor(link_header: str | None) -> str | None:
+    """Extract the ``after`` cursor from a ``Link: …; rel="next"`` header, if present."""
+    m = _LINK_NEXT_RE.search(link_header or "")
+    if not m:
+        return None
+    from urllib.parse import parse_qs, urlparse
+
+    after = parse_qs(urlparse(m.group(1)).query).get("after")
+    return after[0] if after else None
+
+
+async def _paged_cursor(gh: GitHub, cid: str, path: str, params: dict[str, Any]) -> list:
+    """Accumulate a **cursor**-paginated list endpoint (e.g. dependabot alerts).
+
+    Some GitHub list endpoints reject ``?page=`` (400 "Pagination using the page
+    parameter is not supported") and instead page via an ``after`` cursor surfaced in the
+    ``Link: rel="next"`` header. This follows that cursor (bounded by ``_MAX_PAGES`` like
+    ``_paged``) so the count isn't silently capped at one page. A 403/404 (resource
+    unreadable/absent) degrades to the items gathered so far rather than aborting.
+    """
+    from githubkit.exception import RequestFailed
+
+    items: list = []
+    after: str | None = None
+    for _ in range(_MAX_PAGES):
+        page_params = {**params, **({"after": after} if after else {})}
+        try:
+            resp = await gh.arequest("GET", path, params=page_params)
+        except RequestFailed as exc:
+            if exc.response.status_code in (403, 404):
+                break
+            raise
+        data = resp.json()
+        if not isinstance(data, list) or not data:
+            break
+        items.extend(data)
+        after = _next_after_cursor(resp.headers.get("link"))
+        if not after:
+            break
+    return items
+
+
 _PR_DETAIL_CAP = 20  # store the most-recent N open PRs for the activity strip
 _BOT_LOGINS = ("dependabot[bot]", "dependabot-preview[bot]")
 
@@ -504,11 +571,11 @@ async def _ci_status(
     return CIStatus.none
 
 
-async def _alert_counts(
-    cget: Any, gh: GitHub, cid: str, owner: str, repo: str
-) -> AlertCounts:
-    data = await _paged(
-        cget, gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100}
+async def _alert_counts(gh: GitHub, cid: str, owner: str, repo: str) -> AlertCounts:
+    # The dependabot alerts endpoint is cursor-paginated (rejects ?page=), so it needs the
+    # Link/after cursor pager rather than the page-number _paged helper.
+    data = await _paged_cursor(
+        gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100}
     )
     counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
     for alert in data:

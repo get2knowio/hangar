@@ -42,6 +42,9 @@ class ConnectionRow(Base):
     granted_capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
     app_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     installation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Optional repo allowlist (JSON list of repo names). NULL = watch all repos the
+    # credential can see; a list scopes the connection to exactly those repos.
+    repo_allowlist: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -56,6 +59,7 @@ class ConnectionRow(Base):
             granted_capabilities={Capability(c) for c in (self.granted_capabilities or [])},
             app_id=self.app_id,
             installation_id=self.installation_id,
+            repo_allowlist=list(self.repo_allowlist) if self.repo_allowlist is not None else None,
             last_sync_at=self.last_sync_at,
             has_credential=self.credential_ciphertext is not None,
         )
@@ -80,6 +84,8 @@ class RepoRow(Base):
     release_pending_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fails: Mapped[list[str]] = mapped_column(JSON, default=list)
     unknowns: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # SPDX id of the detected license (e.g. "MIT"); NULL when absent/unidentifiable.
+    license_spdx: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Captured open PRs (title/number/url/kind/created_at/draft) for the activity strip.
     pull_requests: Mapped[list | None] = mapped_column(JSON, nullable=True)
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -103,6 +109,7 @@ class RepoRow(Base):
             release_pending_days=self.release_pending_days,
             fails=list(self.fails or []),
             unknowns=list(self.unknowns or []),
+            license_spdx=self.license_spdx,
             pull_requests=[PullRequestSummary(**p) for p in (self.pull_requests or [])],
             last_evaluated_at=self.last_evaluated_at,
         )

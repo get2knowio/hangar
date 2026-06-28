@@ -58,6 +58,12 @@ export type Scorecard = JSONResponse<"/fleet/scorecard", "get">;
 export type Catalog = JSONResponse<"/catalog", "get">;
 export type Policy = JSONResponse<"/policy", "get">;
 export type Providers = JSONResponse<"/providers", "get">;
+export type ConnectionCard = NonNullable<Providers["connections"]>[number];
+export type ConnectionRepos = JSONResponse<"/providers/{connection_id}/repos", "get">;
+// The POST /providers request body — derived from the contract, never hand-written.
+export type NewConnectionBody = NonNullable<
+  paths["/providers"]["post"]["requestBody"]
+>["content"]["application/json"];
 export type AuditEntry = NonNullable<JSONResponse<"/providers/audit", "get">>[number];
 export type RepoDetail = JSONResponse<"/repos/{connection_id}/{repo_id}", "get">;
 // One check row from the repo-detail contract — derived, never hand-written (Constitution VII).
@@ -161,12 +167,36 @@ export function useMarkMerged(connectionId: string, repoId: string) {
 export function useAddConnection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { provider_type: string; label: string; scope: string; credential?: string }) =>
-      send("POST", "/providers", body),
+    mutationFn: (body: NewConnectionBody) => send<ConnectionCard>("POST", "/providers", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["providers"] });
       qc.invalidateQueries({ queryKey: ["overview"] });
       qc.invalidateQueries({ queryKey: ["scorecard"] });
+    },
+  });
+}
+
+// Live list of repos a connection's credential can see, plus the current allowlist. Only
+// fetched when a picker is open (enabled), since it makes a real provider call.
+export const useConnectionRepos = (connectionId: string | undefined, enabled: boolean) =>
+  useQuery({
+    queryKey: ["connection-repos", connectionId],
+    queryFn: () => get<ConnectionRepos>(`/providers/${connectionId}/repos`),
+    enabled: !!connectionId && enabled,
+  });
+
+export function useSetConnectionRepos(connectionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    // null ⇒ watch all; a list scopes the connection's fleet to exactly those repos.
+    mutationFn: (repos: string[] | null) =>
+      send<ConnectionCard>("PUT", `/providers/${connectionId}/repos`, { repos }),
+    onSuccess: () => {
+      // Changes the connection's repo set → the cards, the fleet aggregates, and the picker.
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["overview"] });
+      qc.invalidateQueries({ queryKey: ["scorecard"] });
+      qc.invalidateQueries({ queryKey: ["connection-repos", connectionId] });
     },
   });
 }

@@ -397,6 +397,8 @@ export interface paths {
                         scope: string;
                         /** @description write-only; GitHub App private-key PEM or a PAT/token. Encrypted at rest (FR-032) */
                         credential?: string;
+                        /** @description reuse another same-provider connection's stored credential instead of pasting one again */
+                        copy_credential_from?: string | null;
                         /** @description GitHub App id (App connections only) */
                         app_id?: string | null;
                         /** @description GitHub App installation id (App connections only) */
@@ -410,6 +412,8 @@ export interface paths {
                         webhook_secret?: string;
                         /** @description org/user that owns the repos; defaults to the label suffix when omitted */
                         owner?: string;
+                        /** @description repo names to watch; omit/null ⇒ watch every repo the credential can see */
+                        repo_allowlist?: string[] | null;
                     };
                 };
             };
@@ -462,6 +466,107 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/{connection_id}/repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List repos the connection's credential can see, plus the current allowlist selection.
+         * @description Explicit management action (the repo picker) — unlike dashboard reads this makes a live provider call to enumerate candidates. selected=null ⇒ watching all.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    connection_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            connection_id?: string;
+                            owner?: string;
+                            available?: {
+                                name: string;
+                                /** @description repo visibility on the provider */
+                                private: boolean;
+                            }[];
+                            selected?: string[] | null;
+                            watching_all?: boolean;
+                        };
+                    };
+                };
+                /** @description Unknown connection */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Provider could not list repos */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        /** Replace the connection's repo allowlist; prunes de-selected snapshots and resyncs. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    connection_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description repo names to watch; null/empty ⇒ watch all */
+                        repos?: string[] | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConnectionCard"];
+                    };
+                };
+                /** @description Unknown connection */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -769,6 +874,8 @@ export interface components {
             dependabot_prs?: number;
             /** @enum {string} */
             ci?: "pass" | "fail" | "none";
+            /** @description SPDX id of the detected license (e.g. MIT); null when absent/unidentifiable */
+            license?: string | null;
             alerts_total?: number;
             alerts_tone?: components["schemas"]["Tone"];
             release_pending_days?: number | null;
@@ -805,6 +912,10 @@ export interface components {
             label?: string;
             /** @enum {string} */
             type?: "GitHub" | "Gitea";
+            /** @enum {string} */
+            provider_type?: "github" | "gitea";
+            /** @description whether a real credential is stored (reusable by another connection) */
+            has_credential?: boolean;
             scope?: string;
             auth_mode?: string;
             repos?: number;
@@ -814,6 +925,8 @@ export interface components {
             /** @example API + PR + deep-link */
             remediation?: string;
             synced?: string;
+            /** @description operator's repo selection; null ⇒ watching all repos */
+            repo_allowlist?: string[] | null;
         };
         AuditEntry: {
             timestamp?: string;

@@ -81,6 +81,7 @@ async def add_connection(
     installation_id: int | None = None,
     webhook_secret: str | None = None,
     owner: str | None = None,
+    repo_allowlist: list[str] | None = None,
     connection_id: str | None = None,
 ) -> ProviderConnection:
     """Add a connection. The credential is encrypted before it ever touches the DB.
@@ -125,6 +126,8 @@ async def add_connection(
         granted_capabilities=[c.value for c in granted],
         app_id=app_id,
         installation_id=installation_id,
+        # Normalize an empty list to None (= "watch all"); a non-empty list scopes the fleet.
+        repo_allowlist=repo_allowlist or None,
         last_sync_at=None,
         created_at=datetime.now(UTC),
     )
@@ -132,6 +135,52 @@ async def add_connection(
     await session.commit()
     log.info("connection.added", id=cid, provider=provider_type, writes=_writes(granted))
     return row.to_domain()
+
+
+async def set_repo_allowlist(
+    session: AsyncSession, connection_id: str, repos: list[str] | None
+) -> ProviderConnection | None:
+    """Replace a connection's repo allowlist (``None``/empty ⇒ watch all).
+
+    Returns the updated connection, or ``None`` if it does not exist. Pruning the snapshots
+    of now-excluded repos is the sync layer's job (connection-scoped), triggered by the
+    caller after this commits.
+    """
+    row = await session.get(ConnectionRow, connection_id)
+    if row is None:
+        return None
+    row.repo_allowlist = list(repos) if repos else None
+    await session.commit()
+    log.info(
+        "connection.allowlist_set",
+        id=connection_id,
+        count="all" if row.repo_allowlist is None else len(row.repo_allowlist),
+    )
+    return row.to_domain()
+
+
+async def credential_for_reuse(
+    session: AsyncSession, source_id: str, provider_type: str
+) -> str:
+    """Return the decrypted credential of an existing connection, for reuse on a new one.
+
+    Fail-closed: the source must exist, be the **same provider type** (a GitHub PAT is
+    meaningless to Gitea), and actually hold a credential. Raises ValueError otherwise so
+    the caller returns 400 rather than silently creating a credential-less connection.
+    """
+    row = await session.get(ConnectionRow, source_id)
+    if row is None:
+        raise ValueError(f"cannot reuse credential: connection '{source_id}' does not exist")
+    if row.provider_type != provider_type:
+        raise ValueError(
+            f"cannot reuse credential from '{source_id}': it is a {row.provider_type} "
+            f"connection, not {provider_type}"
+        )
+    if not row.credential_ciphertext:
+        raise ValueError(
+            f"cannot reuse credential from '{source_id}': it has no stored credential"
+        )
+    return decrypt(row.credential_ciphertext)
 
 
 async def remove_connection(session: AsyncSession, connection_id: str) -> None:

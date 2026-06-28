@@ -100,4 +100,7 @@ def evidence_for(repo: Repo, check_id: str, status: FindingStatus) -> str:
         return "Submitting correction…"
     if status is FindingStatus.pending:
         return "Correction opened as a pull request"
+    # Enrich the passing license finding with the detected SPDX id (e.g. "MIT") when known.
+    if check_id == "license" and repo.license_spdx:
+        return repo.license_spdx
     return "Detected"

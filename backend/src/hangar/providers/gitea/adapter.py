@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from hangar.domain.models import Capability, ProviderConnection, RemediationKind, Repo
-from hangar.providers.base import CorrectionRequest, CorrectionResult, WebhookEvent
+from hangar.providers.base import CorrectionRequest, CorrectionResult, RepoListing, WebhookEvent
 
 
 class GiteaAdapter:
@@ -29,6 +29,11 @@ class GiteaAdapter:
         }
 
     async def list_repos(self, connection: ProviderConnection) -> list[str]:  # pragma: no cover
+        return []
+
+    async def list_repo_listings(  # pragma: no cover
+        self, connection: ProviderConnection
+    ) -> list[RepoListing]:
         return []
 
     async def interrogate(  # pragma: no cover

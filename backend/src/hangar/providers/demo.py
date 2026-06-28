@@ -16,6 +16,7 @@ from hangar.domain.models import Capability, ProviderConnection, RemediationKind
 from hangar.providers.base import (
     CorrectionRequest,
     CorrectionResult,
+    RepoListing,
     WebhookEvent,
     provider_name,
 )
@@ -36,6 +37,10 @@ class DemoProvider:
 
     async def list_repos(self, connection: ProviderConnection) -> list[str]:
         # No discovery for demo connections — seeded snapshots stand as-is.
+        return []
+
+    async def list_repo_listings(self, connection: ProviderConnection) -> list[RepoListing]:
+        # Demo connections have no live discovery; the picker shows nothing to select.
         return []
 
     async def interrogate(

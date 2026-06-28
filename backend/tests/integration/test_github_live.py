@@ -89,6 +89,7 @@ async def test_github_app_auth_mints_installation_token_and_interrogates(respx_m
     assert repo.default_branch == "main"
     assert "default_branch" not in repo.fails  # main → ok
     assert "license" not in repo.fails  # license present in metadata
+    assert repo.license_spdx == "MIT"  # SPDX id captured for the finding evidence
     assert "secret_scanning" not in repo.fails  # enabled in security_and_analysis
     # Workflow checks are really evaluated (not blindly unknown): with no workflows dir,
     # dep_review/conventional fail and actions_pinned_sha passes vacuously (nothing to pin).
@@ -102,7 +103,9 @@ async def test_github_app_auth_mints_installation_token_and_interrogates(respx_m
 
 
 @respx.mock(base_url=API, assert_all_called=False)
-async def test_etag_304_returns_none_and_sends_if_none_match(respx_mock) -> None:
+async def test_etag_304_with_cached_snapshot_carries_forward_and_sends_if_none_match(
+    respx_mock,
+) -> None:
     pem = _rsa_pem()
     adapter = GitHubAdapter()
     conn = _app_connection(pem)
@@ -111,13 +114,20 @@ async def test_etag_304_returns_none_and_sends_if_none_match(respx_mock) -> None
 
     repo_route, _ = _routes(respx_mock, httpx.Response(304, headers={"ETag": '"v1"'}))
 
-    result = await adapter.interrogate(conn, "hangar")
+    # The realistic 304 case: an ETag exists *because* a snapshot was cached, so `previous`
+    # is supplied and its repo-body checks are carried forward (no refetch).
+    previous = Repo(
+        id="hangar", connection_id="gh-main", default_branch="main",
+        description="Fleet control plane", fails=["license"], unknowns=[],
+    )
+    result = await adapter.interrogate(conn, "hangar", previous=previous)
 
-    # 304 → snapshot unchanged; the poller keeps the cache.
-    assert result is None
+    # 304 → repo body unchanged; the cached snapshot's checks carry forward.
+    assert result is not None
+    assert "license" in result.fails
     # The conditional request really carried If-None-Match with the stored ETag.
     assert repo_route.called
-    assert repo_route.calls.last.request.headers.get("if-none-match") == '"v1"'
+    assert repo_route.calls[0].request.headers.get("if-none-match") == '"v1"'
 
 
 @respx.mock(base_url=API, assert_all_called=False)
@@ -380,6 +390,22 @@ async def test_list_repos_user_fallback_on_forbidden_org(respx_mock) -> None:
 
 
 @respx.mock(base_url=API, assert_all_called=False)
+async def test_list_repo_listings_reports_private_visibility(respx_mock) -> None:
+    """list_repo_listings surfaces each repo's name + private flag for the picker padlock."""
+    adapter = GitHubAdapter()
+    respx_mock.get(f"{API}/orgs/acme/repos").mock(
+        return_value=httpx.Response(200, json=[
+            {"name": "secret-svc", "private": True},
+            {"name": "open-docs", "private": False},
+            {"name": "no-field"},  # absent ⇒ treated as public, not a guess
+        ]))
+    listings = await adapter.list_repo_listings(_pat_conn())
+    assert {x.name: x.private for x in listings} == {
+        "secret-svc": True, "open-docs": False, "no-field": False,
+    }
+
+
+@respx.mock(base_url=API, assert_all_called=False)
 async def test_list_repos_raises_when_forbidden_everywhere(respx_mock) -> None:
     """403 on BOTH endpoints raises (undeterminable) so the poller keeps last-good
     snapshots instead of silently reporting an empty fleet."""
@@ -479,6 +505,102 @@ async def test_description_fails_on_missing_topics_with_honest_evidence(respx_mo
     assert repo is not None
     assert "description" in repo.fails
     assert evidence_for(repo, "description", FindingStatus.fail) == "Description or topics not set"
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_license_evidence_shows_detected_spdx_id(respx_mock) -> None:
+    """A passing license finding's evidence is the detected SPDX id, not a generic
+    'Detected'. An unidentifiable license (GitHub NOASSERTION) has no id to show."""
+    from hangar.domain.models import FindingStatus
+    from hangar.domain.policy import evidence_for
+
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    apache = {**_REPO_JSON, "license": {"spdx_id": "Apache-2.0"}}
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"lic1"'}, json=apache))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.license_spdx == "Apache-2.0"
+    assert evidence_for(repo, "license", FindingStatus.passing) == "Apache-2.0"
+
+    # A LICENSE file GitHub can't map to a known id passes the check but yields no id.
+    custom = {**_REPO_JSON, "license": {"spdx_id": "NOASSERTION"}}
+    adapter2 = GitHubAdapter()
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"lic2"'}, json=custom))
+    repo2 = await adapter2.interrogate(conn, "hangar")
+    assert repo2 is not None
+    assert "license" not in repo2.fails  # present → passes
+    assert repo2.license_spdx is None
+    assert evidence_for(repo2, "license", FindingStatus.passing) == "Detected"
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_dependabot_alerts_use_cursor_pagination_not_page(respx_mock) -> None:
+    """The dependabot alerts endpoint rejects ``?page=`` (400) and pages via an ``after``
+    cursor in the Link header. Detection must follow the cursor and never send ``page=``
+    (regression: a ``page=`` query 400'd and aborted the entire repo snapshot)."""
+    from urllib.parse import parse_qs, urlparse
+
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    def _alerts(request: httpx.Request) -> httpx.Response:
+        q = parse_qs(urlparse(str(request.url)).query)
+        # GitHub returns 400 here if ?page= is present; assert we never send it.
+        assert "page" not in q, "must not send page= to the cursor-paginated alerts endpoint"
+        after = q.get("after", [None])[0]
+        if after is None:  # first page → Link points at the next cursor
+            return httpx.Response(
+                200,
+                headers={"Link": f'<{API}/repos/acme/hangar/dependabot/alerts?after=CUR>; rel="next"'},
+                json=[{"security_advisory": {"severity": "critical"}}],
+            )
+        if after == "CUR":  # second (last) page → no Link
+            return httpx.Response(200, json=[{"security_advisory": {"severity": "high"}}])
+        return httpx.Response(200, json=[])
+
+    # Distinct regex from _routes' alerts pattern (respx dedupes identical patterns),
+    # registered first so first-match-wins picks the cursor mock.
+    respx_mock.get(url__regex=r".*/dependabot/alerts(\?.*)?$").mock(side_effect=_alerts)
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"a1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None  # the endpoint no longer 400s the whole snapshot
+    # Both cursor pages were aggregated (critical from page 1, high from page 2).
+    assert repo.alerts.critical == 1
+    assert repo.alerts.high == 1
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_stale_etag_without_snapshot_refetches_in_full(respx_mock) -> None:
+    """A 304 with no cached snapshot to carry forward (a stale in-memory ETag that outlived
+    the row after the repo was pruned from an allowlist and re-added) must trigger a full
+    refetch and rebuild — not leave the repo permanently absent (allowlist re-add
+    regression)."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    # A stale ETag lingers from a prior poll though the snapshot row is gone.
+    adapter._etags[("gh-main", "/repos/acme/hangar")] = '"stale"'
+
+    calls = {"n": 0}
+
+    def _repo(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if request.headers.get("if-none-match"):  # conditional probe → "unchanged"
+            return httpx.Response(304, headers={"ETag": '"stale"'})
+        return httpx.Response(200, headers={"ETag": '"fresh"'}, json=_REPO_JSON)  # full refetch
+
+    # _routes registers the repo route + sub-resources; override the repo route afterwards
+    # (same pattern → same respx Route) so it answers conditionally.
+    _routes(respx_mock, httpx.Response(200, json=_REPO_JSON))
+    respx_mock.get(f"{API}/repos/acme/hangar").mock(side_effect=_repo)
+
+    repo = await adapter.interrogate(conn, "hangar", previous=None)
+
+    assert repo is not None, "no previous snapshot must rebuild in full, not 304 to None"
+    assert calls["n"] == 2, "expected a conditional 304 followed by a full refetch"
+    assert repo.default_branch == "main"  # rebuilt from the full refetch body
 
 
 @respx.mock(base_url=API, assert_all_called=False)
