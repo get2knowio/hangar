@@ -186,6 +186,51 @@ async def set_connection_repos(
     return await _connection_card(session, conn, len(repos))
 
 
+class SyncAccepted(BaseModel):
+    status: str = "accepted"
+    # Echoed for a single-connection refresh; null for a fleet-wide refresh.
+    connection_id: str | None = None
+
+
+@router.post("/providers/sync", status_code=202)
+async def trigger_fleet_sync(
+    request: Request,
+    background: BackgroundTasks,
+) -> SyncAccepted:
+    """Manually trigger an immediate re-interrogation of every connection (FR-033).
+
+    Returns 202: the work runs in the background on the same path as the scheduled poll
+    (no synchronous provider call on the request), so a large fleet can't stall or time out
+    the request. The UI refetches the dashboard once the sync lands. A no-op when the
+    scheduler isn't running (e.g. under test).
+    """
+    sync = getattr(request.app.state, "sync", None)
+    if sync is not None:
+        background.add_task(sync.sync_all)
+    return SyncAccepted()
+
+
+@router.post("/providers/{connection_id}/sync", status_code=202)
+async def trigger_connection_sync(
+    connection_id: str,
+    request: Request,
+    background: BackgroundTasks,
+    session: AsyncSession = Depends(session_dep),
+) -> SyncAccepted:
+    """Manually trigger an immediate re-interrogation of one connection's repos (FR-033).
+
+    Same background path as the scheduled poll (so no synchronous provider call blocks the
+    request); 404 if the connection is unknown.
+    """
+    row = await repo_store.get_connection_row(session, connection_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown connection")
+    sync = getattr(request.app.state, "sync", None)
+    if sync is not None:
+        background.add_task(sync.sync_connection, connection_id)
+    return SyncAccepted(connection_id=connection_id)
+
+
 @router.delete("/providers/{connection_id}", status_code=204)
 async def remove_provider(
     connection_id: str, session: AsyncSession = Depends(session_dep)

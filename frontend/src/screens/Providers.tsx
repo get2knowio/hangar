@@ -5,11 +5,12 @@ import { useState } from "react";
 
 import { AuditLog } from "../components/AuditLog";
 import { AddConnectionModal, RepoPickerModal } from "../components/ConnectionModals";
-import { useAudit, useProviders } from "../lib/api";
+import { useAudit, useProviders, useSyncConnection } from "../lib/api";
 
 export function Providers() {
   const { data, isLoading } = useProviders();
   const audit = useAudit();
+  const syncConn = useSyncConnection();
   const [addOpen, setAddOpen] = useState(false);
   const [picker, setPicker] = useState<{ id: string; label: string } | null>(null);
 
@@ -92,6 +93,20 @@ export function Providers() {
                 {cn.write_label}
               </span>
               <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>synced {cn.synced}</span>
+              {(() => {
+                const pending = syncConn.isPending && syncConn.variables === cn.id;
+                return (
+                  <button
+                    onClick={() => syncConn.mutate(cn.id ?? "")}
+                    disabled={syncConn.isPending}
+                    title="Re-interrogate this connection now"
+                    style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 10px", cursor: syncConn.isPending ? "default" : "pointer", background: "transparent", fontFamily: "inherit", opacity: syncConn.isPending && !pending ? 0.5 : 1 }}
+                  >
+                    <span style={{ display: "inline-block", animation: pending ? "hgspin .8s linear infinite" : undefined }}>↻</span>
+                    {pending ? "Refreshing…" : "Refresh"}
+                  </button>
+                );
+              })()}
               <button
                 onClick={() => setPicker({ id: cn.id ?? "", label: cn.label ?? "" })}
                 style={{ fontSize: 11, fontWeight: 600, color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", background: "transparent", fontFamily: "inherit" }}

@@ -230,6 +230,42 @@ export function useSetConnectionRepos(connectionId: string) {
   });
 }
 
+// Manual refresh: trigger an immediate re-interrogation (the backend runs it in the
+// background, the same path as the scheduled poll). The endpoint returns 202 right away,
+// so we wait a beat before invalidating to give the snapshot a chance to land — and keep
+// the mutation `pending` during that window so the button can show a "Refreshing…" state.
+const REFRESH_SETTLE_MS = 2500;
+
+function invalidateAfterSync(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["providers"] });
+  qc.invalidateQueries({ queryKey: ["overview"] });
+  qc.invalidateQueries({ queryKey: ["scorecard"] });
+  qc.invalidateQueries({ queryKey: ["repo"] });
+  qc.invalidateQueries({ queryKey: ["audit"] });
+}
+
+export function useSyncConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (connectionId: string) => {
+      await send("POST", `/providers/${connectionId}/sync`);
+      await new Promise((r) => setTimeout(r, REFRESH_SETTLE_MS));
+    },
+    onSuccess: () => invalidateAfterSync(qc),
+  });
+}
+
+export function useSyncFleet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      await send("POST", "/providers/sync");
+      await new Promise((r) => setTimeout(r, REFRESH_SETTLE_MS));
+    },
+    onSuccess: () => invalidateAfterSync(qc),
+  });
+}
+
 function invalidateFleet(qc: ReturnType<typeof useQueryClient>, connectionId: string, repoId: string) {
   // A remediation changes this repo, the fleet aggregates (overview/scorecard), and the
   // audit log. It does NOT change the provider cards (repo counts / sync time), so those

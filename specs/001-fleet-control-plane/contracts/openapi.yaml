@@ -339,6 +339,26 @@ paths:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectionCard" } } } }
         "404": { description: Unknown connection }
 
+  /providers/sync:
+    post:
+      tags: [providers]
+      summary: Manually refresh every connection now (operator-triggered re-interrogation).
+      description: >
+        Enqueues an immediate background re-interrogation of all connections — the same path
+        as the scheduled poll, so reads stay cache-served and the request never blocks on the
+        provider. The dashboard reflects the result once the sync lands (202 Accepted).
+      responses:
+        "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/SyncAccepted" } } } }
+
+  /providers/{connection_id}/sync:
+    post:
+      tags: [providers]
+      summary: Manually refresh one connection now (operator-triggered re-interrogation).
+      parameters: [ { name: connection_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/SyncAccepted" } } } }
+        "404": { description: Unknown connection }
+
   /providers/audit:
     get:
       tags: [providers]
@@ -569,6 +589,15 @@ components:
           nullable: true
           items: { type: string }
           description: "operator's repo selection; null ⇒ watching all repos"
+    SyncAccepted:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: accepted }
+        connection_id:
+          type: string
+          nullable: true
+          description: "the refreshed connection; null for a fleet-wide refresh"
     AuditEntry:
       type: object
       properties:
