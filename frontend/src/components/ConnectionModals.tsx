@@ -173,7 +173,7 @@ export function AddConnectionModal({
             <option value="gitea">Gitea</option>
           </select>
         </Field>
-        <Field label="Label" hint="Display name for this connection (e.g. gh:my-org).">
+        <Field label="Label" hint="Display name for this connection.">
           <input style={inputStyle} placeholder="gh:my-org" value={label} onChange={(e) => setLabel(e.target.value)} />
         </Field>
       </div>
