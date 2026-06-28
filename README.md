@@ -135,7 +135,7 @@ the Traefik/`homepage`/`hola` labels in the compose file are inert until that pr
 To use Postgres instead of SQLite:
 
 ```bash
-# set HANGAR_DATABASE_URL=postgresql+asyncpg://hangar:hangar@postgres:5432/hangar in deploy/.env
+# in deploy/.env: HANGAR_POSTGRES_HOST=postgres and HANGAR_POSTGRES_PASSWORD=hangar
 docker compose -f deploy/docker-compose.yml --profile postgres up --build
 ```
 
@@ -166,7 +166,11 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 | `HANGAR_OPERATOR` | no | `local-operator` | Audit actor used in `disabled` mode. |
 | `HANGAR_SECRET_KEY` | **yes** (real providers) | — | Fernet key; encrypts provider credentials at rest (FR-032). |
 | `HANGAR_HOST` / `HANGAR_PORT` | no | `127.0.0.1` / `8000` | Bind host/port for startup safety checks. |
-| `HANGAR_DATABASE_URL` | no | `sqlite+aiosqlite:///./hangar.db` | DB URL. Postgres: `postgresql+asyncpg://hangar:hangar@postgres:5432/hangar`. |
+| `HANGAR_POSTGRES_HOST` | no | unset | Set to switch to Postgres (takes precedence over `HANGAR_DATABASE_URL`). |
+| `HANGAR_POSTGRES_PASSWORD` | with `_HOST` | — | Postgres password; required when `HANGAR_POSTGRES_HOST` is set (fail-closed). |
+| `HANGAR_POSTGRES_PORT` / `_DB` / `_USER` | no | `5432` / `hangar` / `hangar` | Remaining Postgres connection parts. |
+| `HANGAR_POSTGRES_SSLMODE` | no | unset | libpq sslmode (`require`/`verify-full`/…), forwarded to asyncpg's `ssl` arg. |
+| `HANGAR_DATABASE_URL` | no | `sqlite+aiosqlite:///./hangar.db` | Full SQLAlchemy URL escape hatch (used only when no `HANGAR_POSTGRES_HOST`). |
 | `HANGAR_POLL_INTERVAL_SECONDS` | no | `300` | Per-connection poll ceiling (ETag/webhook-driven). |
 | `HANGAR_WEBHOOK_SECRET` | no | — | HMAC secret for inbound provider webhooks; webhooks are refused (fail-closed) when unset. |
 | `HANGAR_SEED_DEMO_DATA` | no | `false` | Load sample fixtures on first boot (offline demo). Production runs against real connections. |
@@ -282,9 +286,14 @@ create the shared network once with `docker network create proxy`.
 - **SQLite** is the zero-ops default. In Docker the DB lives on the `hangar-data` named
   volume at `/data/hangar.db`.
 - **Postgres** is a documented, non-default upgrade path. Run the optional `postgres`
-  compose profile and point `HANGAR_DATABASE_URL` at
-  `postgresql+asyncpg://hangar:hangar@postgres:5432/hangar`. The same SQLAlchemy models and
-  Alembic migrations target both engines.
+  compose profile and set the discrete vars in `deploy/.env`: `HANGAR_POSTGRES_HOST=postgres`
+  plus `HANGAR_POSTGRES_PASSWORD` (the `_PORT`/`_DB`/`_USER` parts default to the bundled
+  service). Setting `HANGAR_POSTGRES_HOST` switches Hangar to Postgres and **takes precedence
+  over** `HANGAR_DATABASE_URL` (which is why the image's SQLite default doesn't get in the
+  way). `HANGAR_DATABASE_URL` remains a full-URL escape hatch for non-standard setups. The
+  `asyncpg` driver ships in the image, so no rebuild is needed; the same SQLAlchemy models and
+  Alembic migrations target both engines. (For local Postgres testing outside Docker, install
+  the driver with `pip install -e '.[dev,postgres]'`.)
 
 ---
 

@@ -29,15 +29,14 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    url = os.environ.get("HANGAR_DATABASE_URL")
-    if url:
-        return url
+    # Resolve via Settings so migrations honor the same selection as the app: discrete
+    # HANGAR_POSTGRES_* vars, else HANGAR_DATABASE_URL / the SQLite default.
     try:
         from hangar.config import get_settings
 
-        return get_settings().database_url
+        return get_settings().effective_database_url
     except Exception:  # pragma: no cover - settings unavailable
-        return config.get_main_option("sqlalchemy.url")
+        return os.environ.get("HANGAR_DATABASE_URL") or config.get_main_option("sqlalchemy.url")
 
 
 def run_migrations_offline() -> None:
