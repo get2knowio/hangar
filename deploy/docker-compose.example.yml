@@ -1,0 +1,105 @@
+# =============================================================================
+# Hangar — self-contained example for ADOPTERS (pulls the published image).
+#
+#   1. cp deploy/.env.example deploy/.env     # then edit deploy/.env
+#   2. docker compose -f deploy/docker-compose.example.yml up -d
+#   3. open http://127.0.0.1:8000
+#
+# This differs from the production `docker-compose.yml` in the same folder:
+#   - it PULLS ghcr.io/get2knowio/hangar instead of building from source, and
+#   - it has NO Traefik / external `proxy` network, so it runs out of the box.
+#
+# It boots in `disabled` access mode on the LOOPBACK interface only, which is
+# fine for kicking the tyres on your own machine. Before exposing Hangar to a
+# network, switch HANGAR_ACCESS_MODE to `forward-auth` or `oidc` (see the
+# commented vars below and deploy/.env.example) — `disabled` means NO auth.
+#
+# All HANGAR_* values below read from deploy/.env (compose auto-loads it) and
+# fall back to the defaults shown here. The full, commented variable reference
+# is deploy/.env.example and the table in README.md.
+# =============================================================================
+
+services:
+  hangar:
+    # Pin to a release tag (e.g. :0.1.0) for reproducible deploys; :latest tracks
+    # the newest published release. Override with HANGAR_IMAGE in deploy/.env.
+    image: ${HANGAR_IMAGE:-ghcr.io/get2knowio/hangar:latest}
+    container_name: hangar
+    restart: unless-stopped
+    # Loopback-only publish: reachable from this host, not the LAN. To expose it,
+    # put a TLS reverse proxy in front and use forward-auth/oidc — do NOT just
+    # widen this to 0.0.0.0 while in `disabled` mode.
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # --- access mode (pick ONE; see deploy/.env.example for the full story) ---
+      # disabled  -> no auth gate; loopback / trusted-network only (loud warning).
+      # forward-auth -> trust an identity header from a reverse proxy.
+      # oidc      -> app-native OpenID Connect login.
+      HANGAR_ACCESS_MODE: ${HANGAR_ACCESS_MODE:-disabled}
+      # Fernet key that encrypts stored provider credentials at rest. Not needed
+      # to browse an empty/demo fleet, but REQUIRED before you add a real GitHub
+      # connection. Generate one:
+      #   python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+      HANGAR_SECRET_KEY: ${HANGAR_SECRET_KEY:-}
+      # Set true to explore the UI with offline sample data (default: false).
+      HANGAR_SEED_DEMO_DATA: ${HANGAR_SEED_DEMO_DATA:-false}
+      # HMAC secret for inbound provider webhooks (refused until set).
+      HANGAR_WEBHOOK_SECRET: ${HANGAR_WEBHOOK_SECRET:-}
+
+      # --- forward-auth mode (HANGAR_ACCESS_MODE=forward-auth) ---
+      # Trust the proxy's identity header only from its network (anti-spoofing).
+      # 172.16.0.0/12 covers the default Docker bridge ranges; tighten if you can.
+      HANGAR_TRUSTED_PROXY_CIDR: ${HANGAR_TRUSTED_PROXY_CIDR:-172.16.0.0/12}
+      HANGAR_FORWARD_AUTH_USER_HEADER: ${HANGAR_FORWARD_AUTH_USER_HEADER:-Remote-User}
+
+      # --- oidc mode (HANGAR_ACCESS_MODE=oidc) — fill these in deploy/.env ---
+      HANGAR_OIDC_ISSUER: ${HANGAR_OIDC_ISSUER:-}
+      HANGAR_OIDC_CLIENT_ID: ${HANGAR_OIDC_CLIENT_ID:-}
+      HANGAR_OIDC_CLIENT_SECRET: ${HANGAR_OIDC_CLIENT_SECRET:-}
+      HANGAR_OIDC_REDIRECT_URL: ${HANGAR_OIDC_REDIRECT_URL:-}
+      HANGAR_SESSION_SECRET: ${HANGAR_SESSION_SECRET:-}
+      # Set false ONLY for local http:// testing (cookie won't send over plain http otherwise).
+      HANGAR_SESSION_COOKIE_SECURE: ${HANGAR_SESSION_COOKIE_SECURE:-true}
+
+      # --- persistence: SQLite by default; uncomment HANGAR_POSTGRES_* in .env
+      #     (and the `postgres` service below) to switch. HOST + PASSWORD is the
+      #     minimal Postgres config; it overrides the image's SQLite default. ---
+      HANGAR_POSTGRES_HOST: ${HANGAR_POSTGRES_HOST:-}
+      HANGAR_POSTGRES_PASSWORD: ${HANGAR_POSTGRES_PASSWORD:-}
+    volumes:
+      # SQLite db + app state on a named volume (image default: /data/hangar.db).
+      - hangar-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # OPTIONAL Postgres. Enable with the `postgres` profile AND set, in deploy/.env:
+  #   HANGAR_POSTGRES_HOST=postgres
+  #   HANGAR_POSTGRES_PASSWORD=<same as POSTGRES_PASSWORD below>
+  # Then:  docker compose -f deploy/docker-compose.example.yml --profile postgres up -d
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: hangar-postgres
+    restart: unless-stopped
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hangar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hangar}
+      POSTGRES_DB: ${POSTGRES_DB:-hangar}
+    volumes:
+      - hangar-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hangar} -d ${POSTGRES_DB:-hangar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  hangar-data:
+  hangar-postgres:
