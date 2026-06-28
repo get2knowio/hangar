@@ -61,7 +61,7 @@ function Lock() {
     <svg
       width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-      style={{ marginLeft: "auto", color: "var(--muted)", flex: "none" }}
+      style={{ color: "var(--muted)", flex: "none" }}
       role="img" aria-label="Private repository"
     >
       <title>Private</title>
