@@ -69,8 +69,9 @@ RUN useradd --create-home --uid 10001 hangar \
     && chown -R hangar:hangar /app /data
 USER hangar
 
-# Default DB location lives on the mounted volume. Can be overridden by
-# HANGAR_DATABASE_URL (e.g. Postgres) from the env_file.
+# Default DB location lives on the mounted volume (SQLite). To use Postgres, set
+# the discrete HANGAR_POSTGRES_* vars in the env_file — HANGAR_POSTGRES_HOST takes
+# precedence over this default. A full HANGAR_DATABASE_URL also overrides it.
 ENV HANGAR_DATABASE_URL="sqlite+aiosqlite:////data/hangar.db" \
     HANGAR_STATIC_DIR="/app/static"
 

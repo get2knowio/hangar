@@ -1,8 +1,9 @@
-"""Async SQLAlchemy engine/session (SQLite default, Postgres via DATABASE_URL).
+"""Async SQLAlchemy engine/session (SQLite default; Postgres via HANGAR_POSTGRES_* or URL).
 
 The same ORM models target both engines (Constitution V — SQLite default, Postgres
-documented upgrade). Schema is owned by Alembic in production; :func:`create_all` is
-a convenience for dev/test bootstrap.
+documented upgrade). The URL is resolved by ``Settings.effective_database_url`` (discrete
+HANGAR_POSTGRES_* vars, else HANGAR_DATABASE_URL / the SQLite default). Schema is owned by
+Alembic in production; :func:`create_all` is a convenience for dev/test bootstrap.
 """
 
 from __future__ import annotations
@@ -31,10 +32,14 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
-        url = get_settings().database_url
-        # SQLite needs check_same_thread off for the async driver pool.
-        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-        _engine = create_async_engine(url, future=True, connect_args=connect_args)
+        url = get_settings().effective_database_url
+        is_sqlite = url.startswith("sqlite")
+        # SQLite needs check_same_thread off for the async driver pool. Postgres benefits
+        # from pre-ping so a long-running poller survives dropped idle connections.
+        connect_args = {"check_same_thread": False} if is_sqlite else {}
+        _engine = create_async_engine(
+            url, future=True, connect_args=connect_args, pool_pre_ping=not is_sqlite
+        )
     return _engine
 
 

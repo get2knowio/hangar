@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ipaddress
 from enum import StrEnum
+from urllib.parse import quote
 
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -85,7 +86,24 @@ class Settings(BaseSettings):
     )
 
     # --- persistence ---
+    # SQLite is the default. The full URL escape hatch is HANGAR_DATABASE_URL; the
+    # discrete HANGAR_POSTGRES_* vars below are the ergonomic way to point Hangar at a
+    # Postgres instance (and take precedence — see effective_database_url).
     database_url: str = Field(default="sqlite+aiosqlite:///./hangar.db")
+
+    # --- postgres (discrete; optional) ---
+    # Setting HANGAR_POSTGRES_HOST switches Hangar to Postgres; the URL is assembled from
+    # these. Password has no default (it is a secret); the rest default for the bundled
+    # compose `postgres` service so a minimal config is just HOST + PASSWORD.
+    postgres_host: str | None = Field(default=None, description="set to enable Postgres")
+    postgres_port: int = Field(default=5432)
+    postgres_db: str = Field(default="hangar")
+    postgres_user: str = Field(default="hangar")
+    postgres_password: str | None = Field(default=None, description="required when host is set")
+    postgres_sslmode: str | None = Field(
+        default=None,
+        description="libpq sslmode (require/verify-full/…); forwarded to asyncpg's ssl arg",
+    )
 
     # --- networking / runtime ---
     host: str = Field(default="127.0.0.1")
@@ -159,6 +177,37 @@ class Settings(BaseSettings):
     def effective_session_secret(self) -> str | None:
         """Cookie-signing key for OIDC sessions — a dedicated secret or the Fernet key."""
         return self.session_secret or self.secret_key
+
+    @property
+    def use_postgres(self) -> bool:
+        """True when discrete Postgres vars select Postgres over the SQLite/URL default."""
+        return bool(self.postgres_host)
+
+    @property
+    def effective_database_url(self) -> str:
+        """The DB URL the app and Alembic actually use.
+
+        Discrete HANGAR_POSTGRES_* vars win (they are how a Docker deployment opts into
+        Postgres, overriding the image's SQLite HANGAR_DATABASE_URL default); otherwise the
+        ``database_url`` field (explicit override, else the SQLite default) is returned.
+        """
+        if not self.use_postgres:
+            return self.database_url
+        # quote(safe="") so a password/user with @ : / # is URL-safe in the netloc.
+        user = quote(self.postgres_user, safe="")
+        password = quote(self.postgres_password or "", safe="")
+        url = (
+            f"postgresql+asyncpg://{user}:{password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+        # asyncpg's `ssl` arg accepts the libpq sslmode names directly
+        # (disable/allow/prefer/require/verify-ca/verify-full); forward the mode
+        # verbatim so 'verify-full' actually verifies instead of degrading to bare
+        # encryption. SQLAlchemy passes ?ssl=<v> straight through to asyncpg, which
+        # rejects an unknown value (a hardcoded 'true' would fail at connect time).
+        if self.postgres_sslmode:
+            url += f"?ssl={quote(self.postgres_sslmode.strip().lower(), safe='')}"
+        return url
 
     @property
     def discovery_url(self) -> str | None:
@@ -246,6 +295,20 @@ def validate_startup(settings: Settings) -> list[str]:
             "⚠ access mode is 'disabled' — access control is OFF (network-trust). "
             f"All requests are admitted and audited as operator '{settings.operator}'. "
             "Run this only on a trusted internal network."
+        )
+
+    # Persistence: discrete Postgres selection is fail-closed on a missing secret.
+    if settings.use_postgres:
+        if not settings.postgres_password:
+            raise StartupError(
+                "HANGAR_POSTGRES_HOST is set but HANGAR_POSTGRES_PASSWORD is missing. "
+                "Provide the password (or unset HANGAR_POSTGRES_HOST to use SQLite). "
+                "Hangar refuses to start otherwise (fail-closed)."
+            )
+        warnings.append(
+            f"Persistence: Postgres selected via HANGAR_POSTGRES_* "
+            f"({settings.postgres_user}@{settings.postgres_host}:{settings.postgres_port}/"
+            f"{settings.postgres_db})."
         )
 
     # The ONLY authorized override is HANGAR_ALLOW_PUBLIC_BIND (FR-030, Constitution III).

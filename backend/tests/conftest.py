@@ -49,6 +49,11 @@ def _env(monkeypatch, tmp_path) -> Iterator[None]:
     monkeypatch.delenv("HANGAR_TRUSTED_PROXY_CIDR", raising=False)
     monkeypatch.delenv("HANGAR_TRUSTED_PROXY_SECRET", raising=False)
     monkeypatch.delenv("HANGAR_FORWARD_AUTH_ALLOWED_USER", raising=False)
+    # Clear any inherited Postgres selection so the per-test SQLite URL above wins —
+    # get_engine() resolves via effective_database_url, which HANGAR_POSTGRES_HOST
+    # would otherwise override (pointing the suite at a real/absent Postgres).
+    for _pg in ("HOST", "PORT", "DB", "USER", "PASSWORD", "SSLMODE"):
+        monkeypatch.delenv(f"HANGAR_POSTGRES_{_pg}", raising=False)
 
     set_settings(Settings())
     _run_sync(reset_engine())

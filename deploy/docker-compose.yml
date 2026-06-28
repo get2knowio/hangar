@@ -93,7 +93,11 @@ services:
   # ---------------------------------------------------------------------------
   # OPTIONAL Postgres (Constitution V: SQLite is the default; Postgres is an
   # upgrade path). Enable with:  docker compose --profile postgres up
-  # and set HANGAR_DATABASE_URL=postgresql+asyncpg://hangar:hangar@postgres:5432/hangar
+  # and point Hangar at this service by setting the discrete vars in deploy/.env:
+  #   HANGAR_POSTGRES_HOST=postgres
+  #   HANGAR_POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-hangar}
+  # (HANGAR_POSTGRES_HOST switches Hangar to Postgres and overrides the image's
+  # SQLite HANGAR_DATABASE_URL default; _PORT/_DB/_USER default to this service.)
   # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
