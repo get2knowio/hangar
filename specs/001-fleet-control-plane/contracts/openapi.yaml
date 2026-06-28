@@ -236,6 +236,7 @@ paths:
                 label: { type: string }
                 scope: { type: string }
                 credential: { type: string, description: "write-only; GitHub App private-key PEM or a PAT/token. Encrypted at rest (FR-032)" }
+                copy_credential_from: { type: string, nullable: true, description: "reuse another same-provider connection's stored credential instead of pasting one again" }
                 app_id: { type: string, nullable: true, description: GitHub App id (App connections only) }
                 installation_id: { type: integer, nullable: true, description: GitHub App installation id (App connections only) }
                 writable: { type: boolean, default: false, description: grant write tiers only if the credential can write (least-privilege, FR-026) }
@@ -520,6 +521,8 @@ components:
         id: { type: string }
         label: { type: string }
         type: { type: string, enum: [GitHub, Gitea] }
+        provider_type: { type: string, enum: [github, gitea] }
+        has_credential: { type: boolean, description: "whether a real credential is stored (reusable by another connection)" }
         scope: { type: string }
         auth_mode: { type: string }
         repos: { type: integer }

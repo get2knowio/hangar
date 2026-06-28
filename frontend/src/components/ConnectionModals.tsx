@@ -9,6 +9,7 @@ import { useToast } from "../app/state";
 import {
   useAddConnection,
   useConnectionRepos,
+  useProviders,
   useSetConnectionRepos,
   type ConnectionCard,
   type NewConnectionBody,
@@ -90,19 +91,40 @@ export function AddConnectionModal({
 }) {
   const add = useAddConnection();
   const { show } = useToast();
+  const providers = useProviders();
   const [providerType, setProviderType] = useState<"github" | "gitea">("github");
   const [label, setLabel] = useState("");
   const [owner, setOwner] = useState("");
   const [scope, setScope] = useState("");
+  const [authMethod, setAuthMethod] = useState<"pat" | "reuse" | "app">("pat");
   const [credential, setCredential] = useState("");
+  const [copyFrom, setCopyFrom] = useState("");
   const [appId, setAppId] = useState("");
   const [installationId, setInstallationId] = useState("");
   const [writable, setWritable] = useState(false);
 
+  // Existing same-provider connections whose stored credential we can reuse (so a PAT
+  // spanning several orgs isn't pasted again).
+  const reusable = (providers.data?.connections ?? []).filter(
+    (c) => c.provider_type === providerType && c.has_credential,
+  );
+
+  // Keep the auth method valid as the provider changes (no reuse target, App is GitHub-only).
+  useEffect(() => {
+    if (authMethod === "reuse" && reusable.length === 0) setAuthMethod("pat");
+    if (authMethod === "app" && providerType !== "github") setAuthMethod("pat");
+  }, [authMethod, reusable.length, providerType]);
+
   // Owner defaults to the label suffix (gh:my-org → my-org), mirroring the backend.
   const derivedOwner = owner.trim() || (label.includes(":") ? label.split(":").pop()! : label).trim();
-  const writableNeedsCred = writable && !credential.trim();
-  const canSubmit = label.trim().length > 0 && !writableNeedsCred && !add.isPending;
+
+  // Whether this submission carries a credential by its chosen method.
+  const hasCredential =
+    authMethod === "reuse" ? copyFrom.length > 0 : credential.trim().length > 0;
+  const writableNeedsCred = writable && !hasCredential;
+  const reuseNeedsSource = authMethod === "reuse" && !copyFrom;
+  const canSubmit =
+    label.trim().length > 0 && !writableNeedsCred && !reuseNeedsSource && !add.isPending;
 
   function submit() {
     if (!canSubmit) return;
@@ -111,9 +133,11 @@ export function AddConnectionModal({
       label: label.trim(),
       scope: scope.trim() || `${providerType === "gitea" ? "user" : "org"} · ${derivedOwner}`,
       owner: derivedOwner || undefined,
-      credential: credential.trim() || undefined,
-      app_id: appId.trim() || undefined,
-      installation_id: installationId.trim() ? Number(installationId.trim()) : undefined,
+      credential: authMethod === "reuse" ? undefined : credential.trim() || undefined,
+      copy_credential_from: authMethod === "reuse" ? copyFrom : undefined,
+      app_id: authMethod === "app" ? appId.trim() || undefined : undefined,
+      installation_id:
+        authMethod === "app" && installationId.trim() ? Number(installationId.trim()) : undefined,
       writable,
     };
     add.mutate(body, {
@@ -129,8 +153,8 @@ export function AddConnectionModal({
     <Backdrop onClose={onClose}>
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Add connection</div>
       <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 16px" }}>
-        A Personal Access Token is the simplest path; leave App fields blank. For a GitHub App,
-        paste the private-key PEM as the credential and fill in the App + installation ids.
+        Most setups use a Personal Access Token. Reuse an existing connection’s credential to
+        watch another org with the same token, or pick GitHub App if you have one configured.
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -154,27 +178,69 @@ export function AddConnectionModal({
         </Field>
       </div>
 
-      <Field label="Credential — PAT, or App private-key PEM">
-        <textarea
-          style={{ ...inputStyle, minHeight: 64, resize: "vertical" }}
-          placeholder="ghp_… or -----BEGIN PRIVATE KEY-----"
-          value={credential}
-          onChange={(e) => setCredential(e.target.value)}
-        />
+      <Field label="Authentication">
+        <select style={inputStyle} value={authMethod} onChange={(e) => setAuthMethod(e.target.value as "pat" | "reuse" | "app")}>
+          <option value="pat">Personal access token</option>
+          {reusable.length > 0 && <option value="reuse">Reuse another connection’s credential</option>}
+          {providerType === "github" && <option value="app">GitHub App</option>}
+        </select>
       </Field>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="App id (App only)">
-          <input style={inputStyle} placeholder="optional" value={appId} onChange={(e) => setAppId(e.target.value)} />
+      {authMethod === "pat" && (
+        <Field label={providerType === "gitea" ? "Access token" : "Personal access token (PAT)"}>
+          <textarea
+            style={{ ...inputStyle, minHeight: 56, resize: "vertical" }}
+            placeholder="ghp_…"
+            value={credential}
+            onChange={(e) => setCredential(e.target.value)}
+          />
         </Field>
-        <Field label="Installation id (App only)">
-          <input style={inputStyle} placeholder="optional" inputMode="numeric" value={installationId} onChange={(e) => setInstallationId(e.target.value)} />
-        </Field>
-      </div>
+      )}
 
-      <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, margin: "4px 0 6px", cursor: "pointer" }}>
-        <input type="checkbox" checked={writable} onChange={(e) => setWritable(e.target.checked)} />
-        Writable — allow Hangar to open fix PRs (least-privilege: off by default)
+      {authMethod === "reuse" && (
+        <Field label="Reuse credential from">
+          <select style={inputStyle} value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
+            <option value="">Select a connection…</option>
+            {reusable.map((c) => (
+              <option key={c.id} value={c.id}>{c.label}</option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      {authMethod === "app" && (
+        <>
+          <Field label="App private-key PEM">
+            <textarea
+              style={{ ...inputStyle, minHeight: 56, resize: "vertical" }}
+              placeholder="-----BEGIN PRIVATE KEY-----"
+              value={credential}
+              onChange={(e) => setCredential(e.target.value)}
+            />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="App ID">
+              <input style={inputStyle} placeholder="123456" value={appId} onChange={(e) => setAppId(e.target.value)} />
+            </Field>
+            <Field label="Installation ID">
+              <input style={inputStyle} placeholder="7654321" inputMode="numeric" value={installationId} onChange={(e) => setInstallationId(e.target.value)} />
+            </Field>
+          </div>
+          <p style={{ fontSize: 11, color: "var(--muted)", margin: "-4px 0 12px" }}>
+            From the GitHub App you created: the <strong>App ID</strong> is on the App’s
+            settings page; the <strong>Installation ID</strong> is the number in the URL after
+            you install it (<span className="mono">…/installations/&lt;id&gt;</span>).
+          </p>
+        </>
+      )}
+
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 9, fontSize: 13, margin: "4px 0 6px", cursor: "pointer" }}>
+        <input type="checkbox" checked={writable} onChange={(e) => setWritable(e.target.checked)} style={{ marginTop: 2 }} />
+        <span>
+          Writable — allow Hangar to open fix PRs
+          <br />
+          <span style={{ color: "var(--muted)" }}>(least-privilege: off by default)</span>
+        </span>
       </label>
       {writableNeedsCred && (
         <div style={{ fontSize: 11, color: "var(--warn)", marginBottom: 8 }}>

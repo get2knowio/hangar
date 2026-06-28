@@ -397,6 +397,8 @@ export interface paths {
                         scope: string;
                         /** @description write-only; GitHub App private-key PEM or a PAT/token. Encrypted at rest (FR-032) */
                         credential?: string;
+                        /** @description reuse another same-provider connection's stored credential instead of pasting one again */
+                        copy_credential_from?: string | null;
                         /** @description GitHub App id (App connections only) */
                         app_id?: string | null;
                         /** @description GitHub App installation id (App connections only) */
@@ -908,6 +910,10 @@ export interface components {
             label?: string;
             /** @enum {string} */
             type?: "GitHub" | "Gitea";
+            /** @enum {string} */
+            provider_type?: "github" | "gitea";
+            /** @description whether a real credential is stored (reusable by another connection) */
+            has_credential?: boolean;
             scope?: string;
             auth_mode?: string;
             repos?: number;

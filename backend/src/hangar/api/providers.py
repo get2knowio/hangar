@@ -25,6 +25,10 @@ async def _connection_card(
         "id": conn.id,
         "label": conn.label,
         "type": provider_name(conn.provider_type),
+        # Raw provider type + credential presence let the add-connection form offer to
+        # reuse an existing same-provider credential (so a PAT isn't re-pasted per org).
+        "provider_type": conn.provider_type,
+        "has_credential": conn.has_credential,
         "scope": conn.scope,
         "auth_mode": conn.auth_mode,
         "repos": repo_count,
@@ -64,6 +68,10 @@ class NewConnection(BaseModel):
     auth_mode: str | None = None
     # For a GitHub App connection: the App private-key PEM. For PAT/Gitea: the token.
     credential: str | None = None
+    # Reuse another connection's stored credential instead of pasting one again (e.g. one
+    # PAT across several orgs). Must reference an existing same-provider connection that
+    # holds a credential; ignored when `credential` is provided directly.
+    copy_credential_from: str | None = None
     # GitHub App identity (omit for a PAT/token connection).
     app_id: str | None = None
     installation_id: int | None = None
@@ -83,6 +91,16 @@ class NewConnection(BaseModel):
 async def add_provider(
     body: NewConnection, session: AsyncSession = Depends(session_dep)
 ) -> dict:
+    # Resolve a credential reused from another connection (so a PAT isn't re-pasted per
+    # org). An explicitly-provided credential always wins.
+    credential = body.credential
+    if not credential and body.copy_credential_from:
+        try:
+            credential = await conn_service.credential_for_reuse(
+                session, body.copy_credential_from, body.provider_type
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         conn = await conn_service.add_connection(
             session,
@@ -90,7 +108,7 @@ async def add_provider(
             label=body.label,
             scope=body.scope,
             auth_mode=body.auth_mode or "",
-            credential=body.credential,
+            credential=credential,
             writable=body.writable,
             app_id=body.app_id,
             installation_id=body.installation_id,

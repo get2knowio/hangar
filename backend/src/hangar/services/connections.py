@@ -159,6 +159,30 @@ async def set_repo_allowlist(
     return row.to_domain()
 
 
+async def credential_for_reuse(
+    session: AsyncSession, source_id: str, provider_type: str
+) -> str:
+    """Return the decrypted credential of an existing connection, for reuse on a new one.
+
+    Fail-closed: the source must exist, be the **same provider type** (a GitHub PAT is
+    meaningless to Gitea), and actually hold a credential. Raises ValueError otherwise so
+    the caller returns 400 rather than silently creating a credential-less connection.
+    """
+    row = await session.get(ConnectionRow, source_id)
+    if row is None:
+        raise ValueError(f"cannot reuse credential: connection '{source_id}' does not exist")
+    if row.provider_type != provider_type:
+        raise ValueError(
+            f"cannot reuse credential from '{source_id}': it is a {row.provider_type} "
+            f"connection, not {provider_type}"
+        )
+    if not row.credential_ciphertext:
+        raise ValueError(
+            f"cannot reuse credential from '{source_id}': it has no stored credential"
+        )
+    return decrypt(row.credential_ciphertext)
+
+
 async def remove_connection(session: AsyncSession, connection_id: str) -> None:
     """Drop the connection + repos/snapshots; audit entries are retained (clarification)."""
     await repo.delete_connection(session, connection_id)
