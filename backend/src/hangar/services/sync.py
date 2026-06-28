@@ -105,6 +105,17 @@ class SyncService:
                 )
                 return 0
 
+            # Connection-scoped repo allowlist: restrict the fleet to the operator's
+            # selection (None = watch all). Filtering here means de-selected repos are
+            # never interrogated (bounds API/quota), and pruning drops snapshots of repos
+            # removed from the allowlist so they leave the dashboard.
+            if connection.repo_allowlist is not None:
+                allow = set(connection.repo_allowlist)
+                refs = [r for r in refs if r in allow]
+                await repo.prune_repos_outside_allowlist(
+                    session, connection_id, connection.repo_allowlist
+                )
+
             # Per-repo isolation: a single repo's failure must not discard the snapshots
             # of repos already synced this cycle (SC-009). Each success is committed
             # immediately so a later failure can only roll back its own partial work.

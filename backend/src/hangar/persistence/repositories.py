@@ -51,6 +51,27 @@ async def list_repos(session: AsyncSession, connection_id: str | None = None) ->
     return [r.to_domain() for r in rows]
 
 
+async def prune_repos_outside_allowlist(
+    session: AsyncSession, connection_id: str, keep: list[str] | None
+) -> int:
+    """Delete this connection's repo snapshots whose name is not in ``keep``.
+
+    ``None`` means "no allowlist" (watch all) — nothing is pruned. Returns the row count
+    removed. Scoped to ``connection_id`` so a same-named repo on another connection is
+    never touched (Constitution I)."""
+    if keep is None:
+        return 0
+    result = await session.execute(
+        delete(RepoRow).where(
+            RepoRow.connection_id == connection_id,
+            RepoRow.id.notin_(keep),
+        )
+    )
+    await session.commit()
+    # rowcount lives on the CursorResult; Result's static type doesn't expose it.
+    return getattr(result, "rowcount", 0) or 0
+
+
 async def repo_counts_by_connection(session: AsyncSession) -> dict[str, int]:
     """Repo count per connection in a single grouped query (avoids N+1 on /providers)."""
     from sqlalchemy import func

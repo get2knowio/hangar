@@ -29,7 +29,7 @@ from hangar.domain.models import (
     RemediationKind,
     Repo,
 )
-from hangar.providers.base import CorrectionRequest, CorrectionResult, WebhookEvent
+from hangar.providers.base import CorrectionRequest, CorrectionResult, RepoListing, WebhookEvent
 
 if TYPE_CHECKING:
     from githubkit import (
@@ -159,7 +159,12 @@ class GitHubAdapter:
             self._etags[key] = new_etag
         return resp.json()
 
-    async def list_repos(self, connection: ProviderConnection) -> list[str]:
+    async def _list_repo_objects(self, connection: ProviderConnection) -> list[dict]:
+        """The raw repo objects in scope (org listing, falling back to the user's).
+
+        Shared by ``list_repos`` (names for the poller) and ``list_repo_listings``
+        (names + visibility for the picker) so both see the same discovery + 403 handling.
+        """
         gh = self._client(connection)
         data = await self._conditional_get(
             gh, connection.id, f"/orgs/{connection.owner}/repos", params={"per_page": 100}
@@ -180,9 +185,16 @@ class GitHubAdapter:
                 f"'{connection.owner}' (403 on both the org and user endpoints); "
                 "check the token/installation scope."
             )
-        if not isinstance(data, list):
-            return []
-        return [r["name"] for r in data]
+        return data if isinstance(data, list) else []
+
+    async def list_repos(self, connection: ProviderConnection) -> list[str]:
+        return [r["name"] for r in await self._list_repo_objects(connection)]
+
+    async def list_repo_listings(self, connection: ProviderConnection) -> list[RepoListing]:
+        return [
+            RepoListing(name=r["name"], private=bool(r.get("private")))
+            for r in await self._list_repo_objects(connection)
+        ]
 
     async def interrogate(
         self, connection: ProviderConnection, repo_ref: str, *, previous: Repo | None = None

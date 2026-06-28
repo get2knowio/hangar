@@ -50,6 +50,18 @@ def provider_name(provider_type: str) -> str:
 
 
 @dataclass(slots=True)
+class RepoListing:
+    """A repo candidate for selection UIs (the repo picker): its ref plus neutral metadata.
+
+    ``private`` reflects platform visibility; a provider that cannot determine it reports
+    ``False`` (public) rather than guessing (honest-state, Constitution VIII).
+    """
+
+    name: str
+    private: bool = False
+
+
+@dataclass(slots=True)
 class CorrectionResult:
     """Outcome of a ``correct`` call."""
 
@@ -95,6 +107,16 @@ class RepoProvider(Protocol):
 
     async def list_repos(self, connection: ProviderConnection) -> list[str]:
         """List repository refs in the connection's scope (auto-discovery, FR-034)."""
+        ...
+
+    async def list_repo_listings(
+        self, connection: ProviderConnection
+    ) -> list[RepoListing]:
+        """List repos in scope with neutral metadata (name + visibility) for selection UIs.
+
+        Distinct from ``list_repos`` (which yields bare refs for the poller) so the repo
+        picker can show per-repo visibility without the core learning any platform field.
+        """
         ...
 
     async def correct(

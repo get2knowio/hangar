@@ -183,6 +183,11 @@ class ProviderConnection(BaseModel):
     # connection authenticates as. None for PAT/token connections.
     app_id: str | None = None
     installation_id: int | None = None
+    # Optional per-connection repo allowlist. ``None`` means "watch every repo the
+    # credential can see" (the default); a list restricts the fleet to exactly those repo
+    # names. Sync only interrogates allowlisted repos and prunes any that fall outside it,
+    # so this both scopes the dashboard and bounds GitHub API/quota spend.
+    repo_allowlist: list[str] | None = None
     # Decrypted secret material, attached in-memory only for live provider calls:
     # the App private-key PEM for App connections, or the access token for PAT/Gitea.
     # Excluded from serialization and repr so it never lands in a response or a log.

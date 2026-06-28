@@ -91,8 +91,18 @@ async def interrogate_repo(
         return None  # repo unreadable on this connection — keep any cached snapshot
     if repo_data is _NOT_MODIFIED:
         if previous is None:
-            return None  # nothing cached to carry forward
-        meta_fails, meta_unknowns, description, default_branch = _metadata_from_previous(previous)
+            # A 304 with no cached snapshot to carry forward — e.g. a stale in-memory ETag
+            # that outlived the row after the repo was pruned from an allowlist and
+            # re-added. The 304 can't be acted on, so refetch the repo in full to rebuild
+            # rather than reporting it permanently absent until its body next changes.
+            repo_data = await cget(
+                gh, connection.id, f"/repos/{owner}/{repo_ref}", conditional=False
+            )
+            if not isinstance(repo_data, dict):
+                return None
+            meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data)
+        else:
+            meta_fails, meta_unknowns, description, default_branch = _metadata_from_previous(previous)
     else:
         meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data)
 
@@ -316,7 +326,7 @@ async def _dynamic_checks(
     async def _alerts_group() -> None:
         nonlocal alerts
         if can_alerts:
-            alerts = await _alert_counts(cget, gh, connection.id, owner, repo_ref)
+            alerts = await _alert_counts(gh, connection.id, owner, repo_ref)
 
     async def _dependabot_alerts_group() -> None:
         # vulnerability-alerts endpoint: 204 (enabled), 404 (disabled), 403 (unreadable).
@@ -458,6 +468,51 @@ async def _paged(cget: Any, gh: GitHub, cid: str, path: str, params: dict[str, A
     return items
 
 
+_LINK_NEXT_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
+
+
+def _next_after_cursor(link_header: str | None) -> str | None:
+    """Extract the ``after`` cursor from a ``Link: …; rel="next"`` header, if present."""
+    m = _LINK_NEXT_RE.search(link_header or "")
+    if not m:
+        return None
+    from urllib.parse import parse_qs, urlparse
+
+    after = parse_qs(urlparse(m.group(1)).query).get("after")
+    return after[0] if after else None
+
+
+async def _paged_cursor(gh: GitHub, cid: str, path: str, params: dict[str, Any]) -> list:
+    """Accumulate a **cursor**-paginated list endpoint (e.g. dependabot alerts).
+
+    Some GitHub list endpoints reject ``?page=`` (400 "Pagination using the page
+    parameter is not supported") and instead page via an ``after`` cursor surfaced in the
+    ``Link: rel="next"`` header. This follows that cursor (bounded by ``_MAX_PAGES`` like
+    ``_paged``) so the count isn't silently capped at one page. A 403/404 (resource
+    unreadable/absent) degrades to the items gathered so far rather than aborting.
+    """
+    from githubkit.exception import RequestFailed
+
+    items: list = []
+    after: str | None = None
+    for _ in range(_MAX_PAGES):
+        page_params = {**params, **({"after": after} if after else {})}
+        try:
+            resp = await gh.arequest("GET", path, params=page_params)
+        except RequestFailed as exc:
+            if exc.response.status_code in (403, 404):
+                break
+            raise
+        data = resp.json()
+        if not isinstance(data, list) or not data:
+            break
+        items.extend(data)
+        after = _next_after_cursor(resp.headers.get("link"))
+        if not after:
+            break
+    return items
+
+
 _PR_DETAIL_CAP = 20  # store the most-recent N open PRs for the activity strip
 _BOT_LOGINS = ("dependabot[bot]", "dependabot-preview[bot]")
 
@@ -504,11 +559,11 @@ async def _ci_status(
     return CIStatus.none
 
 
-async def _alert_counts(
-    cget: Any, gh: GitHub, cid: str, owner: str, repo: str
-) -> AlertCounts:
-    data = await _paged(
-        cget, gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100}
+async def _alert_counts(gh: GitHub, cid: str, owner: str, repo: str) -> AlertCounts:
+    # The dependabot alerts endpoint is cursor-paginated (rejects ?page=), so it needs the
+    # Link/after cursor pager rather than the page-number _paged helper.
+    data = await _paged_cursor(
+        gh, cid, f"/repos/{owner}/{repo}/dependabot/alerts", {"state": "open", "per_page": 100}
     )
     counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
     for alert in data:

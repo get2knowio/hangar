@@ -1,14 +1,17 @@
 /* Providers & access (/providers) — access banner, connection cards, audit log
    (FR-021–FR-032). Access state is wired from /providers + /me (T074). */
 
+import { useState } from "react";
+
 import { AuditLog } from "../components/AuditLog";
-import { useToast } from "../app/state";
+import { AddConnectionModal, RepoPickerModal } from "../components/ConnectionModals";
 import { useAudit, useProviders } from "../lib/api";
 
 export function Providers() {
   const { data, isLoading } = useProviders();
   const audit = useAudit();
-  const { show } = useToast();
+  const [addOpen, setAddOpen] = useState(false);
+  const [picker, setPicker] = useState<{ id: string; label: string } | null>(null);
 
   if (isLoading || !data) {
     return <div style={{ padding: "24px 28px", color: "var(--muted)" }}>Loading providers…</div>;
@@ -57,12 +60,12 @@ export function Providers() {
         <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)" }}>
           Provider connections
         </div>
-        <div
-          onClick={() => show("Connection wizard — GitHub App or Gitea token")}
-          style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}
+        <button
+          onClick={() => setAddOpen(true)}
+          style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 12px", cursor: "pointer", background: "transparent", fontFamily: "inherit" }}
         >
           + Add connection
-        </div>
+        </button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
@@ -89,11 +92,21 @@ export function Providers() {
                 {cn.write_label}
               </span>
               <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>synced {cn.synced}</span>
+              <button
+                onClick={() => setPicker({ id: cn.id ?? "", label: cn.label ?? "" })}
+                style={{ fontSize: 11, fontWeight: 600, color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", background: "transparent", fontFamily: "inherit" }}
+              >
+                Manage repos
+              </button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginTop: 14 }}>
               <Field label="Scope" value={cn.scope ?? ""} />
               <Field label="Auth" value={cn.auth_mode ?? ""} />
-              <Field label="Repos" value={String(cn.repos)} mono />
+              <Field
+                label="Repos"
+                value={`${cn.repos} · ${cn.repo_allowlist ? "selected" : "all"}`}
+                mono
+              />
               <Field label="Remediation" value={cn.remediation ?? ""} />
             </div>
           </div>
@@ -104,6 +117,24 @@ export function Providers() {
         Audit log — every correction
       </div>
       <AuditLog rows={(audit.data ?? []).slice(0, 6)} />
+
+      {addOpen && (
+        <AddConnectionModal
+          onClose={() => setAddOpen(false)}
+          onAdded={(card) => {
+            // Jump straight into picking repos for the freshly-added connection.
+            setAddOpen(false);
+            setPicker({ id: card.id ?? "", label: card.label ?? "" });
+          }}
+        />
+      )}
+      {picker && (
+        <RepoPickerModal
+          connectionId={picker.id}
+          connectionLabel={picker.label}
+          onClose={() => setPicker(null)}
+        />
+      )}
     </div>
   );
 }

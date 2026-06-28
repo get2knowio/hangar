@@ -241,6 +241,11 @@ paths:
                 writable: { type: boolean, default: false, description: grant write tiers only if the credential can write (least-privilege, FR-026) }
                 webhook_secret: { type: string, description: "write-only; per-connection inbound-webhook HMAC secret. Encrypted at rest; falls back to the global secret when omitted (FR-033)" }
                 owner: { type: string, description: "org/user that owns the repos; defaults to the label suffix when omitted" }
+                repo_allowlist:
+                  type: array
+                  nullable: true
+                  items: { type: string }
+                  description: "repo names to watch; omit/null ⇒ watch every repo the credential can see"
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectionCard" } } } }
   /providers/{connection_id}:
@@ -249,6 +254,56 @@ paths:
       summary: Remove a connection — drops its repos/findings/snapshots; audit entries retained (clarification).
       parameters: [ { name: connection_id, in: path, required: true, schema: { type: string } } ]
       responses: { "204": { description: Removed } }
+
+  /providers/{connection_id}/repos:
+    get:
+      tags: [providers]
+      summary: List repos the connection's credential can see, plus the current allowlist selection.
+      description: >
+        Explicit management action (the repo picker) — unlike dashboard reads this makes a
+        live provider call to enumerate candidates. selected=null ⇒ watching all.
+      parameters: [ { name: connection_id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id: { type: string }
+                  owner: { type: string }
+                  available:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, private]
+                      properties:
+                        name: { type: string }
+                        private: { type: boolean, description: "repo visibility on the provider" }
+                  selected: { type: array, nullable: true, items: { type: string } }
+                  watching_all: { type: boolean }
+        "404": { description: Unknown connection }
+        "502": { description: Provider could not list repos }
+    put:
+      tags: [providers]
+      summary: Replace the connection's repo allowlist; prunes de-selected snapshots and resyncs.
+      parameters: [ { name: connection_id, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                repos:
+                  type: array
+                  nullable: true
+                  items: { type: string }
+                  description: "repo names to watch; null/empty ⇒ watch all"
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectionCard" } } } }
+        "404": { description: Unknown connection }
 
   /providers/audit:
     get:
@@ -472,6 +527,11 @@ components:
         write_label: { type: string, example: "Read + write" }
         remediation: { type: string, example: "API + PR + deep-link" }
         synced: { type: string }
+        repo_allowlist:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: "operator's repo selection; null ⇒ watching all repos"
     AuditEntry:
       type: object
       properties:
