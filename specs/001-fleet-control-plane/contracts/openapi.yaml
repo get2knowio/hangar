@@ -485,6 +485,7 @@ components:
         open_prs: { type: integer }
         dependabot_prs: { type: integer }
         ci: { type: string, enum: [pass, fail, none] }
+        license: { type: string, nullable: true, description: "SPDX id of the detected license (e.g. MIT); null when absent/unidentifiable" }
         alerts_total: { type: integer }
         alerts_tone: { $ref: "#/components/schemas/Tone" }
         release_pending_days: { type: integer, nullable: true }

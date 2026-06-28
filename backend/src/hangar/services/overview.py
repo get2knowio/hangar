@@ -76,6 +76,7 @@ def build_overview(
             "open_prs": r.open_prs,
             "dependabot_prs": r.dependabot_prs,
             "ci": r.ci_status.value,
+            "license": r.license_spdx,
             "alerts_total": a.total,
             "alerts_tone": Tone.fail if a.critical else (Tone.warn if a.high else Tone.neutral),
             "release_pending_days": r.release_pending_days,

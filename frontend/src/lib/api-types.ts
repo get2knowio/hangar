@@ -874,6 +874,8 @@ export interface components {
             dependabot_prs?: number;
             /** @enum {string} */
             ci?: "pass" | "fail" | "none";
+            /** @description SPDX id of the detected license (e.g. MIT); null when absent/unidentifiable */
+            license?: string | null;
             alerts_total?: number;
             alerts_tone?: components["schemas"]["Tone"];
             release_pending_days?: number | null;
