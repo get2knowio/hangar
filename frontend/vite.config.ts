@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// SPA dev server proxies /api → the FastAPI backend on :8000 (quickstart.md).
+// SPA dev server proxies /api and /auth → the FastAPI backend on :8000 (quickstart.md).
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -9,6 +9,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": "http://127.0.0.1:8000",
+      // OIDC login/callback/logout + the pre-login probe live under /auth (not /api/v1).
+      "/auth": "http://127.0.0.1:8000",
     },
   },
   test: {

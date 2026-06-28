@@ -55,3 +55,41 @@ def test_forward_auth_without_trust_warns_not_raises() -> None:
     settings = Settings(forward_auth="enabled", host="127.0.0.1")
     warnings = validate_startup(settings)
     assert any("trusted" in w.lower() or "rejected" in w.lower() for w in warnings)
+
+
+# --- OIDC mode (access-mode amendment) ---
+
+
+def test_oidc_mode_missing_config_raises() -> None:
+    # access_mode_select wins over the conftest legacy default; issuer/client are missing.
+    settings = Settings(access_mode_select="oidc", oidc_issuer=None, oidc_client_id=None,
+                        oidc_client_secret=None, host="127.0.0.1")
+    assert settings.access_mode is AccessMode.oidc
+    with pytest.raises(StartupError, match="OIDC"):
+        validate_startup(settings)
+
+
+def test_oidc_mode_fully_configured_warns_not_raises() -> None:
+    settings = Settings(
+        access_mode_select="oidc", oidc_issuer="https://idp.example.com",
+        oidc_client_id="hangar", oidc_client_secret="shh", session_secret="sign-me",
+        oidc_redirect_url="https://hangar.example.com/auth/callback", host="127.0.0.1",
+    )
+    assert settings.access_mode is AccessMode.oidc
+    assert isinstance(validate_startup(settings), list)  # no raise
+
+
+def test_access_mode_select_overrides_legacy_forward_auth() -> None:
+    # HANGAR_ACCESS_MODE is canonical: it wins even when the legacy var says otherwise.
+    settings = Settings(access_mode_select="disabled", forward_auth="enabled", host="127.0.0.1")
+    assert settings.access_mode is AccessMode.disabled
+
+
+def test_legacy_forward_auth_still_resolves_when_access_mode_unset() -> None:
+    settings = Settings(access_mode_select=None, forward_auth="enabled", host="127.0.0.1")
+    assert settings.access_mode is AccessMode.forward_auth
+
+
+def test_invalid_access_mode_value_rejected() -> None:
+    with pytest.raises(ValueError, match="HANGAR_ACCESS_MODE"):
+        Settings(access_mode_select="nope")

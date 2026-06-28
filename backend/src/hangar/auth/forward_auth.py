@@ -1,21 +1,24 @@
-"""Forward-auth middleware (Constitution III — NON-NEGOTIABLE; FR-027/FR-028/FR-030).
+"""Access-control middleware (Constitution III — NON-NEGOTIABLE; FR-027/FR-028/FR-030).
 
-Hangar performs **no app-native login**. In ``forward-auth`` mode the operator identity
-arrives in a configurable header (``HANGAR_FORWARD_AUTH_USER_HEADER``, default
-``Remote-User``) injected by the reverse proxy. That header is trusted **only** when the
-request's immediate peer is inside ``HANGAR_TRUSTED_PROXY_CIDR`` and/or carries the
-shared ``HANGAR_TRUSTED_PROXY_SECRET`` — a forged header on a direct request is
-rejected (SC-007). An optional ``HANGAR_FORWARD_AUTH_ALLOWED_USER`` pins a single
-identity. In ``disabled`` mode every request is admitted and audited as
-``HANGAR_OPERATOR``.
+Dispatches on the configured access mode and stashes the resolved identity on
+``request.state.actor`` for the audit log:
 
-The resolved identity is stashed on ``request.state.actor`` for the audit log.
+- ``forward-auth``: the operator identity arrives in a configurable header
+  (``HANGAR_FORWARD_AUTH_USER_HEADER``, default ``Remote-User``) injected by the reverse
+  proxy. That header is trusted **only** when the request's immediate peer is inside
+  ``HANGAR_TRUSTED_PROXY_CIDR`` and/or carries the shared ``HANGAR_TRUSTED_PROXY_SECRET`` — a
+  forged header on a direct request is rejected (SC-007). An optional
+  ``HANGAR_FORWARD_AUTH_ALLOWED_USER`` pins a single identity.
+- ``oidc``: app-native login. The identity lives in a signed session cookie established by
+  the ``/auth/callback`` after a validated OIDC sign-in; no valid session yields 401.
+- ``disabled``: every request is admitted and audited as ``HANGAR_OPERATOR``.
 """
 
 from __future__ import annotations
 
 import hmac
 import ipaddress
+import time
 
 import structlog
 from starlette.middleware.base import (
@@ -35,7 +38,9 @@ log = structlog.get_logger(__name__)
 #  - inbound provider webhooks: authenticated by their HMAC signature, not the proxy
 #    identity, since providers POST directly rather than through the forward-auth proxy.
 _PUBLIC_PATHS = {"/health", "/api/v1/health", "/docs", "/openapi.json", "/redoc"}
-_PUBLIC_PREFIXES = ("/api/v1/webhooks/",)
+#  - /auth/*: the OIDC browser-redirect + pre-login probe endpoints, reachable before a
+#    session exists (the flow that establishes the session). They guard themselves.
+_PUBLIC_PREFIXES = ("/api/v1/webhooks/", "/auth/")
 
 
 def _peer_trusted(request: Request, settings: Settings) -> bool:
@@ -80,6 +85,19 @@ class ForwardAuthMiddleware(BaseHTTPMiddleware):
         if mode is AccessMode.disabled:
             request.state.actor = self.settings.operator
             request.state.access_mode = AccessMode.disabled.value
+            return await call_next(request)
+
+        if mode is AccessMode.oidc:
+            # App-native login: the identity lives in the signed session cookie (set by the
+            # /auth/callback after a validated OIDC login). No valid session ⇒ 401, and the
+            # SPA renders its login screen. request.session is provided by SessionMiddleware.
+            session = request.session
+            actor = session.get("actor")
+            exp = session.get("exp")
+            if not actor or (exp is not None and time.time() > float(exp)):
+                return JSONResponse({"detail": "authentication required"}, status_code=401)
+            request.state.actor = actor
+            request.state.access_mode = AccessMode.oidc.value
             return await call_next(request)
 
         # forward-auth: trust the identity header only from the proxy.

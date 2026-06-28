@@ -42,4 +42,7 @@ async def me(request: Request, settings: Settings = Depends(settings_dep)) -> di
         "actor": actor,
         "access_mode": settings.access_mode.value if settings.access_mode else "disabled",
         "user_header": settings.forward_auth_user_header,
+        # The SPA uses these in oidc mode to render the logout control / sign-in link.
+        "login_url": "/auth/login",
+        "logout_url": "/auth/logout",
     }

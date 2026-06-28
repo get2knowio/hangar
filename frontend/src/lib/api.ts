@@ -25,8 +25,15 @@ async function get<T>(path: string, params?: Record<string, string | boolean | u
         .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
         .join("&")
     : "";
-  const res = await fetch(`${BASE}${path}${qs}`, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
+  const res = await fetch(`${BASE}${path}${qs}`, {
+    headers: { Accept: "application/json" },
+    credentials: "include", // send the session cookie (OIDC mode) cross-proxy in dev
+  });
+  if (!res.ok) {
+    const err = new Error(`GET ${path} → ${res.status}`) as Error & { status: number };
+    err.status = res.status;
+    throw err;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -35,6 +42,7 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<{ 
     method,
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
+    credentials: "include", // send the session cookie (OIDC mode)
   });
   const data = res.status === 204 ? (undefined as T) : ((await res.json().catch(() => undefined)) as T);
   // Surface server failures: a non-2xx must reject the mutation so onError (not
@@ -84,6 +92,27 @@ export type RemediateResult = RemediateOk & { deep_link_url?: string };
 type RemediateBatchPath = paths["/checks/{check_id}/remediate-batch"]["post"];
 export type RemediateBatchResult = RemediateBatchPath["responses"][200]["content"]["application/json"];
 export type BatchTarget = { connection_id: string; repo_id: string };
+
+// ---- Auth (pre-login probe lives at /auth/info, NOT under /api/v1) ----
+// Derived from the generated contract — /auth/info is documented in openapi.yaml.
+export type AuthInfo = paths["/auth/info"]["get"]["responses"][200]["content"]["application/json"];
+
+async function authInfo(): Promise<AuthInfo> {
+  const res = await fetch("/auth/info", {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`GET /auth/info → ${res.status}`);
+  return res.json() as Promise<AuthInfo>;
+}
+
+export const useAuthInfo = () =>
+  useQuery({ queryKey: ["auth-info"], queryFn: authInfo, staleTime: 0 });
+
+export async function logout(): Promise<void> {
+  await fetch("/auth/logout", { method: "POST", credentials: "include" }).catch(() => undefined);
+  window.location.href = "/";
+}
 
 // ---- Query hooks ----
 export const useHealth = () => useQuery({ queryKey: ["health"], queryFn: () => get<Health>("/health") });

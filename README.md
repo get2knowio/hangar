@@ -148,11 +148,20 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `HANGAR_FORWARD_AUTH` | **yes** | — | `enabled` or `disabled`. Unset ⇒ app refuses to start (fail-closed, FR-029). |
+| `HANGAR_ACCESS_MODE` | **yes**¹ | — | `forward-auth` \| `oidc` \| `disabled`. The canonical access-mode selector. |
+| `HANGAR_FORWARD_AUTH` | **yes**¹ | — | Legacy selector: `enabled` (=forward-auth) or `disabled`. Honored when `HANGAR_ACCESS_MODE` is unset. |
 | `HANGAR_FORWARD_AUTH_USER_HEADER` | no | `Remote-User` | Identity header the proxy injects. Authentik: `X-authentik-username`. |
 | `HANGAR_FORWARD_AUTH_ALLOWED_USER` | no | — | Optional single-identity pin: admit only this user. |
 | `HANGAR_TRUSTED_PROXY_CIDR` | recommended | — | Identity header trusted only from this CIDR, e.g. `172.16.0.0/12` (FR-030). |
 | `HANGAR_TRUSTED_PROXY_SECRET` | no | — | Optional shared secret; proxy sends it as `X-Hangar-Proxy-Secret`. |
+| `HANGAR_OIDC_ISSUER` | oidc | — | OIDC issuer base URL (discovery `…/.well-known/openid-configuration`). |
+| `HANGAR_OIDC_CLIENT_ID` / `HANGAR_OIDC_CLIENT_SECRET` | oidc | — | Confidential-client credentials registered at your IdP. |
+| `HANGAR_OIDC_REDIRECT_URL` | recommended (oidc) | derived | e.g. `https://hangar.<domain>/auth/callback`. Set it (or run uvicorn `--proxy-headers`) behind TLS. |
+| `HANGAR_OIDC_SCOPES` | no | `openid email profile` | Scopes requested at login. |
+| `HANGAR_OIDC_USERNAME_CLAIM` | no | `email` | ID-token claim used as the audit actor. |
+| `HANGAR_OIDC_ALLOWED_USERS` / `HANGAR_OIDC_ALLOWED_GROUPS` | no | — | Optional allowlist (email/sub, or group via `HANGAR_OIDC_GROUPS_CLAIM`). Empty ⇒ admit any authenticated user. |
+| `HANGAR_SESSION_SECRET` | oidc² | — | Signs the session cookie; falls back to `HANGAR_SECRET_KEY`. |
+| `HANGAR_SESSION_MAX_AGE_SECONDS` / `HANGAR_SESSION_COOKIE_SECURE` | no | `28800` / `true` | Session lifetime; set `_SECURE=false` only for local http dev. |
 | `HANGAR_ALLOW_PUBLIC_BIND` | no | unset | Must be set to bind a non-private/public interface; otherwise refused. |
 | `HANGAR_OPERATOR` | no | `local-operator` | Audit actor used in `disabled` mode. |
 | `HANGAR_SECRET_KEY` | **yes** (real providers) | — | Fernet key; encrypts provider credentials at rest (FR-032). |
@@ -162,6 +171,11 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 | `HANGAR_WEBHOOK_SECRET` | no | — | HMAC secret for inbound provider webhooks; webhooks are refused (fail-closed) when unset. |
 | `HANGAR_SEED_DEMO_DATA` | no | `false` | Load sample fixtures on first boot (offline demo). Production runs against real connections. |
 | `HANGAR_DOMAIN` | compose | `example.com` | Base domain for the Traefik router rule (`hangar.${HANGAR_DOMAIN}`). |
+
+¹ Exactly one access mode must be chosen — set `HANGAR_ACCESS_MODE` **or** the legacy
+`HANGAR_FORWARD_AUTH`. If neither is set, Hangar refuses to start (fail-closed, FR-029).
+² `oidc` mode also requires a session-signing secret — a dedicated `HANGAR_SESSION_SECRET`,
+or it reuses `HANGAR_SECRET_KEY`.
 
 ### Generate the credential-encryption key
 
@@ -215,12 +229,38 @@ never pushes or force-pushes.
 
 ---
 
-## Forward-auth / Traefik notes
+## Choosing an access mode
+
+Hangar gates access one of three ways — pick with `HANGAR_ACCESS_MODE`
+(`forward-auth` | `oidc` | `disabled`); the legacy `HANGAR_FORWARD_AUTH` (`enabled`/`disabled`)
+still works when `HANGAR_ACCESS_MODE` is unset. Either way, **identity is decoupled from your
+provider credentials** — Hangar never uses GitHub/Gitea as the login.
+
+### OIDC login
+
+Use `HANGAR_ACCESS_MODE=oidc` when you want Hangar to handle login itself (no forward-auth
+proxy). Hangar is a confidential OpenID Connect client (Authorization Code + PKCE) against
+your own IdP — Authentik, Keycloak, etc. — and keeps the session in a signed, httpOnly cookie.
+
+1. At your IdP, register Hangar as a **confidential** application; redirect URI
+   `https://hangar.<domain>/auth/callback`. Note the issuer URL, client id, and client secret.
+2. Set `HANGAR_ACCESS_MODE=oidc`, `HANGAR_OIDC_ISSUER`, `HANGAR_OIDC_CLIENT_ID`,
+   `HANGAR_OIDC_CLIENT_SECRET`, a `HANGAR_SESSION_SECRET` (or reuse `HANGAR_SECRET_KEY`), and —
+   behind a TLS proxy — `HANGAR_OIDC_REDIRECT_URL` (or run uvicorn with `--proxy-headers`).
+3. Optionally restrict who may sign in with `HANGAR_OIDC_ALLOWED_USERS` /
+   `HANGAR_OIDC_ALLOWED_GROUPS` (empty ⇒ any user your IdP authenticates).
+
+OIDC still wants **TLS at the proxy**, but does **not** need a Traefik `ForwardAuth`
+middleware — Hangar is the auth gate. The SPA shows a sign-in screen until you authenticate;
+the sidebar gets a **Sign out** control. For local http dev set `HANGAR_SESSION_COOKIE_SECURE=false`.
+
+### Forward-auth / Traefik notes
 
 Hangar is meant to run behind a reverse proxy that authenticates the user and injects an
 identity header. The reference is **Traefik + Authentik**:
 
-- Set `HANGAR_FORWARD_AUTH=enabled` and attach Traefik's forward-auth middleware to the
+- Set `HANGAR_ACCESS_MODE=forward-auth` (or legacy `HANGAR_FORWARD_AUTH=enabled`) and attach
+  Traefik's forward-auth middleware to the
   Hangar router (see the commented label block in
   [`deploy/docker-compose.yml`](deploy/docker-compose.yml)).
 - Hangar reads the username from `HANGAR_FORWARD_AUTH_USER_HEADER` (Authentik:
