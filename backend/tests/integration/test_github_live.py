@@ -89,6 +89,7 @@ async def test_github_app_auth_mints_installation_token_and_interrogates(respx_m
     assert repo.default_branch == "main"
     assert "default_branch" not in repo.fails  # main → ok
     assert "license" not in repo.fails  # license present in metadata
+    assert repo.license_spdx == "MIT"  # SPDX id captured for the finding evidence
     assert "secret_scanning" not in repo.fails  # enabled in security_and_analysis
     # Workflow checks are really evaluated (not blindly unknown): with no workflows dir,
     # dep_review/conventional fail and actions_pinned_sha passes vacuously (nothing to pin).
@@ -504,6 +505,34 @@ async def test_description_fails_on_missing_topics_with_honest_evidence(respx_mo
     assert repo is not None
     assert "description" in repo.fails
     assert evidence_for(repo, "description", FindingStatus.fail) == "Description or topics not set"
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_license_evidence_shows_detected_spdx_id(respx_mock) -> None:
+    """A passing license finding's evidence is the detected SPDX id, not a generic
+    'Detected'. An unidentifiable license (GitHub NOASSERTION) has no id to show."""
+    from hangar.domain.models import FindingStatus
+    from hangar.domain.policy import evidence_for
+
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    apache = {**_REPO_JSON, "license": {"spdx_id": "Apache-2.0"}}
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"lic1"'}, json=apache))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.license_spdx == "Apache-2.0"
+    assert evidence_for(repo, "license", FindingStatus.passing) == "Apache-2.0"
+
+    # A LICENSE file GitHub can't map to a known id passes the check but yields no id.
+    custom = {**_REPO_JSON, "license": {"spdx_id": "NOASSERTION"}}
+    adapter2 = GitHubAdapter()
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"lic2"'}, json=custom))
+    repo2 = await adapter2.interrogate(conn, "hangar")
+    assert repo2 is not None
+    assert "license" not in repo2.fails  # present → passes
+    assert repo2.license_spdx is None
+    assert evidence_for(repo2, "license", FindingStatus.passing) == "Detected"
 
 
 @respx.mock(base_url=API, assert_all_called=False)

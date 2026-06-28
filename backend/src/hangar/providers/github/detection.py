@@ -100,11 +100,11 @@ async def interrogate_repo(
             )
             if not isinstance(repo_data, dict):
                 return None
-            meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data)
+            meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(repo_data)
         else:
-            meta_fails, meta_unknowns, description, default_branch = _metadata_from_previous(previous)
+            meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_from_previous(previous)
     else:
-        meta_fails, meta_unknowns, description, default_branch = _metadata_checks(repo_data)
+        meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(repo_data)
 
     (dyn_fails, dyn_unknowns, open_prs, dependabot_prs, ci, alerts, release_pending, pulls) = (
         await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
@@ -124,11 +124,23 @@ async def interrogate_repo(
         release_pending_days=release_pending,
         fails=sorted(set(fails)),
         unknowns=sorted(set(unknowns) - set(fails)),
+        license_spdx=license_spdx,
         pull_requests=[PullRequestSummary(**d) for d in pulls],
     )
 
 
-def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str]:
+def _license_spdx(repo_data: Any) -> str | None:
+    """The SPDX id of a detected license, or None when absent/unidentifiable.
+
+    GitHub reports ``NOASSERTION`` when a LICENSE file exists but maps to no known SPDX id
+    (custom/unrecognized) — the license check still passes, but there's no id to show.
+    """
+    lic = repo_data.get("license") or {}
+    spdx = lic.get("spdx_id")
+    return spdx if spdx and spdx != "NOASSERTION" else None
+
+
+def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str, str | None]:
     """Checks derived from the primary repo resource body (license/description/branch/secret)."""
     fails: list[str] = []
     unknowns: list[str] = []
@@ -155,14 +167,14 @@ def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str]:
         # unreadable — honestly `unknown`, never a fabricated `fail` (Constitution VIII).
         unknowns.append("secret_scanning")
 
-    return fails, unknowns, repo_data.get("description") or "", default_branch
+    return fails, unknowns, repo_data.get("description") or "", default_branch, _license_spdx(repo_data)
 
 
-def _metadata_from_previous(previous: Repo) -> tuple[list[str], list[str], str, str]:
+def _metadata_from_previous(previous: Repo) -> tuple[list[str], list[str], str, str, str | None]:
     """Carry the repo-body-derived checks from a prior snapshot on a 304."""
     fails = [c for c in previous.fails if c in _METADATA_CHECKS]
     unknowns = [c for c in previous.unknowns if c in _METADATA_CHECKS]
-    return fails, unknowns, previous.description, previous.default_branch
+    return fails, unknowns, previous.description, previous.default_branch, previous.license_spdx
 
 
 async def _dynamic_checks(

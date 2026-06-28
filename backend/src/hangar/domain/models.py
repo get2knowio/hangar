@@ -245,6 +245,10 @@ class Repo(BaseModel):
     release_pending_days: int | None = None
     fails: list[str] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
+    # SPDX id of the detected license (e.g. "MIT", "Apache-2.0") when the license check
+    # passes; None when absent or unidentifiable (GitHub "NOASSERTION"). Used to enrich the
+    # license finding's evidence ("MIT" rather than a generic "Detected").
+    license_spdx: str | None = None
     # The most-recent open PRs (capped), captured by the poller for the activity strip.
     pull_requests: list[PullRequestSummary] = Field(default_factory=list)
     last_evaluated_at: datetime | None = None

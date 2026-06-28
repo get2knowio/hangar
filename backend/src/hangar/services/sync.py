@@ -162,6 +162,7 @@ class SyncService:
         row.release_pending_days = snapshot.release_pending_days
         row.fails = snapshot.fails
         row.unknowns = snapshot.unknowns
+        row.license_spdx = snapshot.license_spdx
         row.pull_requests = [p.model_dump() for p in snapshot.pull_requests]
         row.last_evaluated_at = datetime.now(UTC)
 

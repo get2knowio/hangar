@@ -84,6 +84,8 @@ class RepoRow(Base):
     release_pending_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fails: Mapped[list[str]] = mapped_column(JSON, default=list)
     unknowns: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # SPDX id of the detected license (e.g. "MIT"); NULL when absent/unidentifiable.
+    license_spdx: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Captured open PRs (title/number/url/kind/created_at/draft) for the activity strip.
     pull_requests: Mapped[list | None] = mapped_column(JSON, nullable=True)
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -107,6 +109,7 @@ class RepoRow(Base):
             release_pending_days=self.release_pending_days,
             fails=list(self.fails or []),
             unknowns=list(self.unknowns or []),
+            license_spdx=self.license_spdx,
             pull_requests=[PullRequestSummary(**p) for p in (self.pull_requests or [])],
             last_evaluated_at=self.last_evaluated_at,
         )
