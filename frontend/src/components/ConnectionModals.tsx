@@ -72,11 +72,20 @@ function Lock() {
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
     <div style={{ marginBottom: 13 }}>
       <label style={labelStyle}>{label}</label>
       {children}
+      {hint && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>{hint}</div>}
     </div>
   );
 }
@@ -95,7 +104,6 @@ export function AddConnectionModal({
   const [providerType, setProviderType] = useState<"github" | "gitea">("github");
   const [label, setLabel] = useState("");
   const [owner, setOwner] = useState("");
-  const [scope, setScope] = useState("");
   const [authMethod, setAuthMethod] = useState<"pat" | "reuse" | "app">("pat");
   const [credential, setCredential] = useState("");
   const [copyFrom, setCopyFrom] = useState("");
@@ -131,7 +139,8 @@ export function AddConnectionModal({
     const body: NewConnectionBody = {
       provider_type: providerType,
       label: label.trim(),
-      scope: scope.trim() || `${providerType === "gitea" ? "user" : "org"} · ${derivedOwner}`,
+      // Scope is a cosmetic card label, derived from owner (no separate field).
+      scope: `${providerType === "gitea" ? "user" : "org"} · ${derivedOwner}`,
       owner: derivedOwner || undefined,
       credential: authMethod === "reuse" ? undefined : credential.trim() || undefined,
       copy_credential_from: authMethod === "reuse" ? copyFrom : undefined,
@@ -164,19 +173,17 @@ export function AddConnectionModal({
             <option value="gitea">Gitea</option>
           </select>
         </Field>
-        <Field label="Label">
+        <Field label="Label" hint="Display name for this connection (e.g. gh:my-org).">
           <input style={inputStyle} placeholder="gh:my-org" value={label} onChange={(e) => setLabel(e.target.value)} />
         </Field>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Owner (org / user)">
-          <input style={inputStyle} placeholder={derivedOwner || "my-org"} value={owner} onChange={(e) => setOwner(e.target.value)} />
-        </Field>
-        <Field label="Scope (display)">
-          <input style={inputStyle} placeholder="org · my-org" value={scope} onChange={(e) => setScope(e.target.value)} />
-        </Field>
-      </div>
+      <Field
+        label="Owner (org / user)"
+        hint="The GitHub org or user whose repos to watch. Defaults to the part after “:” in the label."
+      >
+        <input style={inputStyle} placeholder={derivedOwner || "my-org"} value={owner} onChange={(e) => setOwner(e.target.value)} />
+      </Field>
 
       <Field label="Authentication">
         <select style={inputStyle} value={authMethod} onChange={(e) => setAuthMethod(e.target.value as "pat" | "reuse" | "app")}>
