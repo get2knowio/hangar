@@ -2,8 +2,11 @@
 
 All operational configuration is supplied via ``HANGAR_*`` environment variables
 or secret mounts — there is no in-app configuration UI (Constitution V). The access
-mode is *fail-closed*: ``HANGAR_FORWARD_AUTH`` MUST be explicitly set to ``enabled``
-or ``disabled`` or the app refuses to start (FR-029, enforced in :func:`validate_startup`).
+mode is *fail-closed*: an access mode MUST be chosen explicitly or the app refuses to
+start (FR-029, enforced in :func:`validate_startup`). The canonical selector is
+``HANGAR_ACCESS_MODE`` (``forward-auth`` | ``oidc`` | ``disabled``); when unset, the
+legacy ``HANGAR_FORWARD_AUTH`` (``enabled`` | ``disabled``) is honored for backward
+compatibility.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class AccessMode(StrEnum):
     forward_auth = "forward-auth"
+    oidc = "oidc"
     disabled = "disabled"
 
 
@@ -32,17 +36,45 @@ class Settings(BaseSettings):
     the failure is a single, explicit, well-messaged gate (Constitution III).
     """
 
-    model_config = SettingsConfigDict(env_prefix="HANGAR_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="HANGAR_", env_file=".env", extra="ignore", populate_by_name=True
+    )
 
-    # --- access / forward-auth (FR-027–FR-031) ---
+    # --- access mode (FR-027–FR-031) ---
+    # Canonical selector: forward-auth | oidc | disabled. Optional at parse time;
+    # required-and-validated at startup (fail-closed). When unset, the legacy
+    # HANGAR_FORWARD_AUTH var below is consulted for backward compatibility.
+    access_mode_select: str | None = Field(default=None, alias="HANGAR_ACCESS_MODE")
+
+    # --- forward-auth (legacy gate; still fully supported) ---
     # Optional at parse time; required-and-validated at startup (fail-closed).
-    forward_auth: str | None = Field(default=None, description="enabled|disabled — required")
+    forward_auth: str | None = Field(default=None, description="enabled|disabled — legacy selector")
     forward_auth_user_header: str = Field(default="Remote-User")
     forward_auth_allowed_user: str | None = Field(default=None)
     trusted_proxy_cidr: str | None = Field(default=None)
     trusted_proxy_secret: str | None = Field(default=None)
     allow_public_bind: bool = Field(default=False)
     operator: str = Field(default="local-operator", description="audit actor in disabled mode")
+
+    # --- OIDC (app-native login; HANGAR_OIDC_*) ---
+    oidc_issuer: str | None = Field(default=None, description="OIDC issuer base URL (discovery)")
+    oidc_client_id: str | None = Field(default=None)
+    oidc_client_secret: str | None = Field(default=None)
+    # Explicit redirect URI (recommended behind a proxy); else derived from the request.
+    oidc_redirect_url: str | None = Field(default=None)
+    oidc_scopes: str = Field(default="openid email profile")
+    oidc_username_claim: str = Field(default="email", description="claim used as the audit actor")
+    # Optional allowlist — admit any authenticated user when both are empty.
+    oidc_allowed_users: str | None = Field(default=None, description="CSV of allowed emails/subs")
+    oidc_allowed_groups: str | None = Field(default=None, description="CSV of allowed groups")
+    oidc_groups_claim: str = Field(default="groups")
+    oidc_post_logout_redirect_url: str | None = Field(default=None)
+
+    # --- session cookie (OIDC mode) ---
+    session_secret: str | None = Field(default=None, description="signing key; else reuses secret_key")
+    session_cookie_name: str = Field(default="hangar_session")
+    session_max_age_seconds: int = Field(default=28800)  # 8h
+    session_cookie_secure: bool = Field(default=True, description="set false only for local http dev")
 
     # --- crypto (FR-032) ---
     secret_key: str | None = Field(default=None, description="Fernet key for credential encryption")
@@ -79,6 +111,18 @@ class Settings(BaseSettings):
             return "enabled"
         return v
 
+    @field_validator("access_mode_select")
+    @classmethod
+    def _normalize_access_mode(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().lower().replace("_", "-")
+        if v not in {m.value for m in AccessMode}:
+            raise ValueError(
+                f"HANGAR_ACCESS_MODE must be one of {[m.value for m in AccessMode]}, got '{v}'"
+            )
+        return v
+
     @field_validator("trusted_proxy_cidr")
     @classmethod
     def _validate_cidr(cls, v: str | None, info: ValidationInfo) -> str | None:
@@ -89,11 +133,38 @@ class Settings(BaseSettings):
 
     @property
     def access_mode(self) -> AccessMode | None:
+        # Precedence: the canonical HANGAR_ACCESS_MODE wins; else fall back to the legacy
+        # HANGAR_FORWARD_AUTH (enabled|disabled) so existing deployments are unchanged.
+        if self.access_mode_select:
+            return AccessMode(self.access_mode_select)
         if self.forward_auth == "enabled":
             return AccessMode.forward_auth
         if self.forward_auth == "disabled":
             return AccessMode.disabled
-        return None
+        return None  # fail-closed: nothing chosen
+
+    @property
+    def oidc_allowed_users_list(self) -> list[str]:
+        if not self.oidc_allowed_users:
+            return []
+        return [u.strip().lower() for u in self.oidc_allowed_users.split(",") if u.strip()]
+
+    @property
+    def oidc_allowed_groups_list(self) -> list[str]:
+        if not self.oidc_allowed_groups:
+            return []
+        return [g.strip().lower() for g in self.oidc_allowed_groups.split(",") if g.strip()]
+
+    @property
+    def effective_session_secret(self) -> str | None:
+        """Cookie-signing key for OIDC sessions — a dedicated secret or the Fernet key."""
+        return self.session_secret or self.secret_key
+
+    @property
+    def discovery_url(self) -> str | None:
+        if not self.oidc_issuer:
+            return None
+        return f"{self.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
 
     @property
     def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
@@ -142,9 +213,37 @@ def validate_startup(settings: Settings) -> list[str]:
             "trusted from any source and every request will be rejected."
         )
 
+    if settings.access_mode is AccessMode.oidc:
+        missing = [
+            name
+            for name, value in (
+                ("HANGAR_OIDC_ISSUER", settings.oidc_issuer),
+                ("HANGAR_OIDC_CLIENT_ID", settings.oidc_client_id),
+                ("HANGAR_OIDC_CLIENT_SECRET", settings.oidc_client_secret),
+                ("HANGAR_SESSION_SECRET/HANGAR_SECRET_KEY", settings.effective_session_secret),
+            )
+            if not value
+        ]
+        if missing:
+            raise StartupError(
+                "OIDC access mode requires " + ", ".join(missing) + ". Hangar refuses to "
+                "start without them (fail-closed)."
+            )
+        if not settings.session_cookie_secure:
+            warnings.append(
+                "HANGAR_SESSION_COOKIE_SECURE=false — the session cookie will be sent over "
+                "plain HTTP. Use this only for local http:// development."
+            )
+        if not settings.oidc_redirect_url:
+            warnings.append(
+                "HANGAR_OIDC_REDIRECT_URL is unset — the redirect_uri will be derived from "
+                "request headers. Set it explicitly (or run uvicorn with --proxy-headers) "
+                "when Hangar sits behind a TLS-terminating proxy."
+            )
+
     if settings.access_mode is AccessMode.disabled:
         warnings.append(
-            "⚠ HANGAR_FORWARD_AUTH=disabled — access control is OFF (network-trust). "
+            "⚠ access mode is 'disabled' — access control is OFF (network-trust). "
             f"All requests are admitted and audited as operator '{settings.operator}'. "
             "Run this only on a trusted internal network."
         )

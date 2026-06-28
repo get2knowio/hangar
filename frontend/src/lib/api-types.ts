@@ -31,7 +31,7 @@ export interface paths {
                             /** @enum {string} */
                             status: "ok" | "degraded";
                             /** @enum {string} */
-                            access_mode?: "forward-auth" | "disabled";
+                            access_mode?: "forward-auth" | "oidc" | "disabled";
                             connections: {
                                 id?: string;
                                 /** Format: date-time */
@@ -58,7 +58,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Resolved operator identity + access mode (drives sidebar access badge). */
+        /** Resolved operator identity + access mode (drives sidebar access badge). Gated. */
         get: {
             parameters: {
                 query?: never;
@@ -75,12 +75,71 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            /** @description proxy identity */
+                            /** @description proxy/OIDC identity */
                             actor: string;
                             /** @enum {string} */
-                            access_mode: "forward-auth" | "disabled";
+                            access_mode: "forward-auth" | "oidc" | "disabled";
                             /** @example Remote-User */
                             user_header?: string;
+                            /** @example /auth/login */
+                            login_url?: string;
+                            /** @example /auth/logout */
+                            logout_url?: string;
+                        };
+                    };
+                };
+                /** @description No session (oidc mode */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public pre-login probe — lets the SPA decide whether to show the login screen.
+         * @description Unauthenticated and exempt from the access-control middleware. In oidc mode reports whether a valid session exists; in forward-auth/disabled mode always authenticated.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            mode: "forward-auth" | "oidc" | "disabled";
+                            authenticated: boolean;
+                            actor?: string | null;
+                            /** @example /auth/login */
+                            login_url: string;
+                            /** @example /auth/logout */
+                            logout_url: string;
                         };
                     };
                 };
@@ -88,6 +147,51 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear the OIDC session (best-effort RP-initiated IdP logout when configured). */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Logged out */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok?: boolean;
+                        };
+                    };
+                };
+                /** @description Redirect to the IdP end-session endpoint */
+                303: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

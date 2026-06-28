@@ -9,6 +9,7 @@ healthcheck.
 from __future__ import annotations
 
 import logging
+import secrets
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,9 +18,11 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 
 from hangar.api import api_router
 from hangar.auth.forward_auth import ForwardAuthMiddleware
+from hangar.auth.oidc_routes import router as oidc_router
 from hangar.config import Settings, get_settings, validate_startup
 from hangar.persistence.db import create_all, get_sessionmaker
 from hangar.services import webhooks
@@ -81,16 +84,34 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Forward-auth is the outermost security boundary (Constitution III).
+    # Middleware are applied inner→outer in this add order; the access-control check is the
+    # innermost security boundary (Constitution III). SessionMiddleware must wrap it so
+    # request.session exists for the oidc branch; CORS is outermost so even a 401 carries
+    # CORS headers for the dev SPA.
     app.add_middleware(ForwardAuthMiddleware, settings=settings)
+    app.add_middleware(
+        SessionMiddleware,
+        # A real secret is required only in oidc mode (enforced by validate_startup); the
+        # ephemeral fallback keeps non-oidc modes (which never write a session) working.
+        secret_key=settings.effective_session_secret or secrets.token_urlsafe(32),
+        session_cookie=settings.session_cookie_name,
+        max_age=settings.session_max_age_seconds,
+        same_site="lax",
+        https_only=settings.session_cookie_secure,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
         allow_methods=["*"],
         allow_headers=["*"],
+        # Cookie-based OIDC sessions require credentialed CORS (origins stay an explicit list).
+        allow_credentials=True,
     )
 
     app.include_router(api_router)
+    # The /auth/* OIDC routes MUST be registered before _mount_spa's greedy catch-all, or the
+    # SPA fallback would swallow them and serve index.html instead of running the flow.
+    app.include_router(oidc_router)
 
     @app.get("/health", tags=["system"])
     async def root_health() -> dict:

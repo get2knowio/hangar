@@ -54,7 +54,12 @@ services:
       - "traefik.http.services.hangar.loadbalancer.server.port=8000"
       # Attach the shared forward-auth middleware (Authentik outpost). This is
       # what enforces SSO; Hangar trusts the resulting identity header only from
-      # the proxy CIDR (HANGAR_TRUSTED_PROXY_CIDR). Set HANGAR_FORWARD_AUTH=enabled.
+      # the proxy CIDR (HANGAR_TRUSTED_PROXY_CIDR). Set HANGAR_ACCESS_MODE=forward-auth.
+      #
+      # For OIDC mode instead (HANGAR_ACCESS_MODE=oidc): keep the TLS router labels
+      # above but OMIT this forwardauth middleware — Hangar handles login itself. Run
+      # uvicorn with --proxy-headers (or set HANGAR_OIDC_REDIRECT_URL) so the derived
+      # redirect_uri uses the external https host.
       - "traefik.http.routers.hangar.middlewares=authentik@docker"
       # Reference definition of an Authentik forward-auth middleware (usually
       # declared on the Authentik proxy outpost container, shown here for clarity):

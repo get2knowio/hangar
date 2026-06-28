@@ -1,45 +1,33 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0
-Bump rationale: MINOR. Additive amendment distilled from two post-implementation
-code-review rounds (commits 1e0d0ab, 00ba858, e594a5e, 0492f70, 495ace2, 69e904e)
-that surfaced ~25 recurring defects. Expands four existing principles, adds one
-new principle (VIII. Honest State), and adds a learned Code Review Checklist. No
-principle removed or redefined, so MINOR rather than MAJOR.
+Version change: 1.1.0 → 1.2.0
+Bump rationale: MINOR. Principle III is broadened to permit OIDC (app-native
+OpenID Connect login) as an explicit, operator-selected alternative to forward-auth.
+This is a material expansion of existing guidance — forward-auth remains a
+first-class reference mode and using a *provider* (GitHub/Gitea) as the identity
+gate stays forbidden — so no prior compliant work is invalidated (MINOR, not MAJOR).
 
-Modified principles (expanded, not renamed):
-  - I. Provider-Agnostic Core — added connection-scoped persistence/isolation and
-    no-hardcoded-platform-host/URL rules (cross-connection clobber + github.com
-    URL leak findings).
-  - III. Secure by Default — added fail-closed credential paths, untrusted-input
-    containment (path traversal, webhook HMAC), constant-time compares, narrow
-    auth exemptions, no undocumented security-gate overrides.
-  - VI. Observability & Resilience — added per-unit failure isolation, sub-error
-    degradation to unknown, sound conditional-request (ETag/304) handling, cache
-    cadence coherence, and no N+1 / redundant recomputation.
-  - VII. Typed Contracts & Test Discipline — added no-hand-drifted-types, no
-    display-string parsing for logic, and single-canonical-definition (DRY).
-Added principles:
-  - VIII. Honest State — No Fakes, Stubs, or Fabricated Results (NON-NEGOTIABLE)
-Added sections:
-  - "Code Review Checklist (learned from review rounds)" under Development
-    Workflow & Quality Gates.
+Modified principles:
+  - III. Secure by Default, Fail Closed at the Edge — the absolute "MUST NOT
+    implement its own login" is replaced by "MUST support one of: forward-auth |
+    OIDC | disabled, chosen explicitly". OIDC is added with its own fail-closed
+    requirements (confidential client, PKCE, full ID-token validation, signed
+    session cookie, optional allowlist). The reverse-proxy IdP and the OIDC IdP are
+    the same class of homelab SSO; the ban on *provider*-as-identity is unchanged.
+
+Prior amendment (1.0.0 → 1.1.0) history retained below in the principle bodies
+(connection-scoped isolation, fail-closed credential paths, Honest State, etc.).
 
 Removed sections: none
 
 Templates requiring updates:
-  ✅ .specify/templates/plan-template.md — Constitution Check gate is generic
-     ("Gates determined based on constitution file"); resolves against these
-     principles at plan time. No edit required.
-  ✅ .specify/templates/spec-template.md — aligned; no constitution-mandated
-     section added/removed.
-  ✅ .specify/templates/tasks-template.md — aligned; new rules map to existing
-     security/observability/test task categories.
-  ✅ README.md — now exists; deployment/auth env vars documented per Principle V.
+  ✅ .specify/templates/plan-template.md — Constitution Check gate is generic; no edit.
+  ✅ README.md — OIDC login section + HANGAR_ACCESS_MODE / HANGAR_OIDC_* documented.
+  ✅ deploy/.env.example — OIDC + session vars added.
 
 Follow-up TODOs: none. RATIFICATION_DATE unchanged (2026-06-21);
-LAST_AMENDED_DATE set to 2026-06-22.
+LAST_AMENDED_DATE set to 2026-06-28.
 -->
 
 # Hangar Constitution
@@ -96,14 +84,26 @@ reversibility, and a complete audit trail are non-negotiable properties of every
 ### III. Secure by Default, Fail Closed at the Edge (NON-NEGOTIABLE)
 
 Access to Hangar is a homelab construct, decoupled from provider credentials. Hangar MUST
-NOT implement its own login or use any provider as its identity gate. It MUST support
-forward-auth behind a reverse proxy (Traefik `ForwardAuth` delegating to Authentik or
-equivalent), reading a configurable identity header (`HANGAR_FORWARD_AUTH_USER_HEADER`,
-default `Remote-User`; Authentik uses `X-authentik-username`).
+NOT use any provider (e.g., GitHub or Gitea) as its identity gate. It MUST support an
+operator-selected access mode — one of **`forward-auth`**, **`oidc`**, or **`disabled`**:
+- `forward-auth` (reference): behind a reverse proxy (Traefik `ForwardAuth` delegating to
+  Authentik or equivalent), reading a configurable identity header
+  (`HANGAR_FORWARD_AUTH_USER_HEADER`, default `Remote-User`; Authentik uses
+  `X-authentik-username`).
+- `oidc`: app-native OpenID Connect login against the operator's own identity provider
+  (Authentik, Keycloak, …) — the same class of homelab SSO a forward-auth proxy would
+  delegate to. When enabled it MUST be a confidential Authorization-Code-with-PKCE client,
+  MUST fully validate the ID token (signature via JWKS, `iss`/`aud`/`exp`/`nonce`) using a
+  vetted library rather than hand-rolled crypto, MUST keep identity in a signed, httpOnly
+  session cookie, and MAY restrict admission to an allowlist (by email/sub/group claim,
+  analogous to `HANGAR_FORWARD_AUTH_ALLOWED_USER`).
 
 The following are mandatory and testable:
-- `HANGAR_FORWARD_AUTH` MUST be explicitly set (`enabled` or `disabled`); if unset, Hangar
-  MUST refuse to start and tell the operator to choose. No silent default.
+- An access mode MUST be chosen explicitly (`HANGAR_ACCESS_MODE` = `forward-auth|oidc|disabled`,
+  or the legacy `HANGAR_FORWARD_AUTH` = `enabled|disabled`); if none is set, Hangar MUST
+  refuse to start and tell the operator to choose. No silent default. `oidc` mode MUST
+  additionally fail closed when its required settings (issuer, client id/secret, session
+  signing secret) are missing.
 - Identity headers MUST be trusted only from the proxy. Hangar MUST bind to the proxy's
   internal network by default and MUST refuse to bind to a non-private/public interface
   unless `HANGAR_ALLOW_PUBLIC_BIND` is explicitly set. Anti-spoofing (trusted-proxy
@@ -322,4 +322,4 @@ point; PR review is the secondary one. Dependent templates (`plan-template.md`,
 the amending PR. Unjustified complexity MUST be rejected; justified exceptions (other than
 the non-waivable gates above) MUST be recorded in the relevant plan's Complexity Tracking.
 
-**Version**: 1.1.0 | **Ratified**: 2026-06-21 | **Last Amended**: 2026-06-22
+**Version**: 1.2.0 | **Ratified**: 2026-06-21 | **Last Amended**: 2026-06-28

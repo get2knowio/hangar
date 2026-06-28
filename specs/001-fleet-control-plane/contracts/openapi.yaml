@@ -35,7 +35,7 @@ paths:
                 required: [status, connections]
                 properties:
                   status: { type: string, enum: [ok, degraded] }
-                  access_mode: { type: string, enum: [forward-auth, disabled] }
+                  access_mode: { type: string, enum: [forward-auth, oidc, disabled] }
                   connections:
                     type: array
                     items:
@@ -48,7 +48,7 @@ paths:
   /me:
     get:
       tags: [system]
-      summary: Resolved operator identity + access mode (drives sidebar access badge).
+      summary: Resolved operator identity + access mode (drives sidebar access badge). Gated.
       responses:
         "200":
           description: OK
@@ -58,9 +58,42 @@ paths:
                 type: object
                 required: [actor, access_mode]
                 properties:
-                  actor: { type: string, description: proxy identity, or HANGAR_OPERATOR in disabled mode }
-                  access_mode: { type: string, enum: [forward-auth, disabled] }
+                  actor: { type: string, description: proxy/OIDC identity, or HANGAR_OPERATOR in disabled mode }
+                  access_mode: { type: string, enum: [forward-auth, oidc, disabled] }
                   user_header: { type: string, example: Remote-User }
+                  login_url: { type: string, example: /auth/login }
+                  logout_url: { type: string, example: /auth/logout }
+        "401": { description: No session (oidc mode, signed out) }
+
+  /auth/info:
+    get:
+      tags: [auth]
+      summary: Public pre-login probe — lets the SPA decide whether to show the login screen.
+      description: >
+        Unauthenticated and exempt from the access-control middleware. In oidc mode reports
+        whether a valid session exists; in forward-auth/disabled mode always authenticated.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mode, authenticated, login_url, logout_url]
+                properties:
+                  mode: { type: string, enum: [forward-auth, oidc, disabled] }
+                  authenticated: { type: boolean }
+                  actor: { type: string, nullable: true }
+                  login_url: { type: string, example: /auth/login }
+                  logout_url: { type: string, example: /auth/logout }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Clear the OIDC session (best-effort RP-initiated IdP logout when configured).
+      responses:
+        "200": { description: Logged out, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } }
+        "303": { description: Redirect to the IdP end-session endpoint }
 
   /fleet/overview:
     get:

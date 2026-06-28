@@ -4,7 +4,7 @@
 
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConnection } from "./state";
-import { useMe, useOverview, useScorecard } from "../lib/api";
+import { logout, useMe, useOverview, useScorecard } from "../lib/api";
 
 export function Sidebar() {
   const { pathname } = useLocation();
@@ -31,6 +31,7 @@ export function Sidebar() {
     path === "/" ? pathname === "/" || pathname.startsWith("/repos/") : pathname === path;
 
   const accessMode = me.data?.access_mode ?? "forward-auth";
+  const isOidc = accessMode === "oidc";
 
   return (
     <div
@@ -110,11 +111,37 @@ export function Sidebar() {
           />
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-2)" }}>Access: {accessMode}</span>
         </div>
-        <div className="mono" style={{ fontSize: 9.5, color: "var(--muted)", lineHeight: 1.5 }}>
-          {me.data?.user_header ?? "Remote-User"} · fail-closed
-          <br />
-          behind Traefik
-        </div>
+        {isOidc ? (
+          <>
+            <div className="mono" style={{ fontSize: 9.5, color: "var(--muted)", lineHeight: 1.5 }}>
+              {me.data?.actor ?? "signed in"} · OIDC
+            </div>
+            <button
+              onClick={() => logout()}
+              style={{
+                marginTop: 8,
+                fontSize: 11,
+                fontWeight: 600,
+                width: "100%",
+                padding: "5px 10px",
+                borderRadius: 6,
+                border: "1px solid var(--border)",
+                background: "transparent",
+                color: "var(--fg-2)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Sign out
+            </button>
+          </>
+        ) : (
+          <div className="mono" style={{ fontSize: 9.5, color: "var(--muted)", lineHeight: 1.5 }}>
+            {me.data?.user_header ?? "Remote-User"} · fail-closed
+            <br />
+            behind Traefik
+          </div>
+        )}
       </div>
     </div>
   );
