@@ -158,3 +158,25 @@ class PolicyRow(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default="default")
     name: Mapped[str] = mapped_column(String(128), default="Fleet baseline")
     entries: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class GitHubAppRegistration(Base):
+    """A GitHub App provisioned via the manifest flow — **one per browser host**.
+
+    Keyed on ``base_url`` so a single Hangar can hold a distinct App for github.com, a GHEC
+    data-residency tenant, and a GHES instance. Each installation-connection references it by
+    host + ``app_id`` and stores only its own ``installation_id``; this lets a later "Connect"
+    on another org reuse the same App instead of creating a new one. All secret material (the
+    private-key PEM, webhook + client secrets) is Fernet-encrypted at rest (FR-032).
+    """
+
+    __tablename__ = "github_app_registrations"
+
+    base_url: Mapped[str] = mapped_column(String(255), primary_key=True)
+    app_id: Mapped[str] = mapped_column(String(32))
+    slug: Mapped[str] = mapped_column(String(128))
+    client_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    private_key_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    webhook_secret_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    client_secret_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

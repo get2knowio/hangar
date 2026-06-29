@@ -360,6 +360,51 @@ paths:
         "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/SyncAccepted" } } } }
         "404": { description: Unknown connection }
 
+  /providers/github/app/new:
+    get:
+      tags: [providers]
+      summary: Start the one-click "Connect with GitHub" App manifest flow (#25).
+      description: >
+        Browser-navigated (not fetch). Stashes a CSRF state in the session, then either returns
+        an auto-submitting HTML form that POSTs a generated App **manifest** to the chosen host's
+        `/settings/apps/new`, or — if an App already exists for that host — 303-redirects straight
+        to the install page. Behind the access-control middleware (the operator is logged in).
+      parameters:
+        - { name: base_url, in: query, schema: { type: string, default: "https://github.com" }, description: "target GitHub host (github.com, a GHEC tenant, or a GHES instance)" }
+        - { name: writable, in: query, schema: { type: boolean, default: true }, description: "request contents/pull_requests write so Hangar can open fix PRs" }
+      responses:
+        "200": { description: Auto-submitting manifest form (HTML) }
+        "303": { description: Redirect to GitHub's App install page (App already provisioned for this host) }
+  /providers/github/app/created:
+    get:
+      tags: [providers]
+      summary: Manifest redirect_url — exchange the code for App credentials, then go install.
+      description: >
+        Browser-navigated. Validates the CSRF state, exchanges the one-time manifest `code` for
+        the App credentials (id/slug/pem/secrets), stores the per-host registration (secrets
+        Fernet-encrypted), and 303-redirects to GitHub's install page. State mismatch → 400.
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        "303": { description: Redirect to GitHub's App install page }
+        "400": { description: CSRF state mismatch }
+  /providers/github/app/installed:
+    get:
+      tags: [providers]
+      summary: App setup_url — create the connection from the real installation, return to SPA.
+      description: >
+        Browser-navigated. Validates the CSRF state, resolves the installation's owner and
+        repo selection (selected repos ⇒ allowlist; all ⇒ watch everything), creates the
+        connection, and 303-redirects to the SPA `/providers?connected=<id>`. State mismatch → 400.
+      parameters:
+        - { name: installation_id, in: query, required: true, schema: { type: integer } }
+        - { name: setup_action, in: query, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        "303": { description: Redirect to the SPA providers screen with the new connection id }
+        "400": { description: CSRF state mismatch }
+
   /providers/audit:
     get:
       tags: [providers]
