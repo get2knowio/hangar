@@ -100,8 +100,9 @@ export function Topbar() {
           </span>
           {syncFleet.isPending ? "Refreshing…" : "Refresh"}
         </button>
-        <div
+        <button
           onClick={toggle}
+          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           style={{
             display: "flex",
             alignItems: "center",
@@ -113,10 +114,12 @@ export function Topbar() {
             fontSize: 11,
             fontWeight: 600,
             color: "var(--fg-2)",
+            background: "transparent",
+            fontFamily: "inherit",
           }}
         >
           {theme === "dark" ? "☀ Light" : "☾ Dark"}
-        </div>
+        </button>
       </div>
     </div>
   );

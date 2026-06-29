@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from hangar.services import connections as conn_service
 from hangar.services.sync import format_relative
 
 router = APIRouter(tags=["providers"])
+log = structlog.get_logger(__name__)
 
 
 async def _connection_card(
@@ -144,8 +146,15 @@ async def list_connection_repos(
     try:
         listings = await provider.list_repo_listings(connection)
     except Exception as exc:  # noqa: BLE001 — surface provider failure to the operator
+        # Log the raw cause server-side; the response must NOT echo the exception text, which
+        # can carry credential fragments, internal URLs, or token scopes (fail-closed on info).
+        log.warning("providers.list_repos_failed", connection=connection_id, error=str(exc))
         raise HTTPException(
-            status_code=502, detail=f"could not list repos from the provider: {exc}"
+            status_code=502,
+            detail=(
+                "Couldn't list repositories from the provider. Check the connection's "
+                "credential and scope, then try again."
+            ),
         ) from exc
     selected = connection.repo_allowlist
     return {

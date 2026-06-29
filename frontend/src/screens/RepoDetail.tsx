@@ -33,12 +33,12 @@ export function RepoDetail() {
 
   return (
     <div style={{ padding: "24px 28px", maxWidth: 1000 }}>
-      <div
+      <button
         onClick={() => navigate(-1)}
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer", marginBottom: 14 }}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer", marginBottom: 14, background: "transparent", border: "none", padding: 0, fontFamily: "inherit" }}
       >
         ← Back
-      </div>
+      </button>
 
       <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 22 }}>
         <div style={{ flex: 1 }}>

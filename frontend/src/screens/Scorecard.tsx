@@ -62,8 +62,9 @@ export function Scorecard() {
             {ro.label}
           </span>
         ))}
-        <div
+        <button
           onClick={() => setFailingOnly((f) => !f)}
+          aria-pressed={failingOnly}
           style={{
             marginLeft: "auto",
             display: "flex",
@@ -77,11 +78,12 @@ export function Scorecard() {
             borderRadius: 6,
             padding: "5px 11px",
             background: failingOnly ? "var(--hover)" : "var(--surface)",
+            fontFamily: "inherit",
           }}
         >
           <span style={{ width: 8, height: 8, borderRadius: 2, background: failingOnly ? "var(--fail)" : "var(--border)" }} />
           {failingOnly ? "Failing only" : "All cells"}
-        </div>
+        </button>
       </div>
 
       <ScorecardMatrix data={data} failingOnly={failingOnly} />
