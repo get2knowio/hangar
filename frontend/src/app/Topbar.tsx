@@ -3,7 +3,7 @@
 import { useLocation } from "react-router-dom";
 import { ConnSwitcher } from "../components/ConnSwitcher";
 import { useOverview, useSyncFleet } from "../lib/api";
-import { useConnection, useTheme } from "./state";
+import { useConnection, useTheme, useToast } from "./state";
 
 const TITLES: Record<string, string> = {
   "/": "Fleet overview",
@@ -21,6 +21,7 @@ export function Topbar() {
   const { pathname } = useLocation();
   const { theme, toggle } = useTheme();
   const { active } = useConnection();
+  const { show } = useToast();
   const syncFleet = useSyncFleet();
 
   // Honest, single-sourced staleness: /fleet/overview computes summary.synced as the most
@@ -65,7 +66,12 @@ export function Topbar() {
         <ConnSwitcher />
         <span style={{ fontSize: 11, color: "var(--muted)" }}>synced {synced}</span>
         <button
-          onClick={() => syncFleet.mutate()}
+          onClick={() =>
+            syncFleet.mutate(undefined, {
+              onSuccess: () => show("Fleet refreshed"),
+              onError: () => show("Fleet refresh failed", "error"),
+            })
+          }
           disabled={syncFleet.isPending}
           title="Re-interrogate every connection now"
           style={{

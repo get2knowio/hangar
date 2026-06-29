@@ -15,6 +15,7 @@ vi.mock("../../src/lib/api", () => ({
 vi.mock("../../src/app/state", () => ({
   useConnection: () => ({ active: "all" }),
   useTheme: () => ({ theme: "dark", toggle: vi.fn() }),
+  useToast: () => ({ show: vi.fn() }),
 }));
 vi.mock("../../src/components/ConnSwitcher", () => ({ ConnSwitcher: () => null }));
 

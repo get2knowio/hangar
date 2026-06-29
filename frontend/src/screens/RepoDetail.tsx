@@ -2,6 +2,7 @@
    remediation control + remediation-pending overlay (Story 3; FR-005a, FR-011–FR-018). */
 
 import { useNavigate, useParams } from "react-router-dom";
+import { ErrorState } from "../components/ErrorState";
 import { RemediationControl } from "../components/RemediationControl";
 import { TierBadge } from "../components/widgets";
 import { useRepoDetail } from "../lib/api";
@@ -17,8 +18,11 @@ const ALERT_COLOR: Record<string, { color: string; bg: string }> = {
 export function RepoDetail() {
   const { connectionId, id } = useParams();
   const navigate = useNavigate();
-  const { data, isLoading } = useRepoDetail(connectionId, id);
+  const { data, isLoading, isError, error, refetch } = useRepoDetail(connectionId, id);
 
+  if (isError) {
+    return <ErrorState title="Couldn't load this repository" error={error} onRetry={refetch} />;
+  }
   if (isLoading || !data) {
     return <div style={{ padding: "24px 28px", color: "var(--muted)" }}>Loading repo…</div>;
   }

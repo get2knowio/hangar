@@ -56,20 +56,28 @@ export const useConnection = () => {
 };
 
 // ---- Toast ----
+// A toast carries a tone so a failure doesn't render with the same green dot as a success
+// (an error that looks like a success is worse than no toast). Errors linger longer because
+// they need to be read, and announce assertively for screen readers.
+export type ToastTone = "success" | "error";
+interface ToastState {
+  message: string;
+  tone: ToastTone;
+}
 interface ToastCtx {
-  message: string | null;
-  show: (m: string) => void;
+  toast: ToastState | null;
+  show: (message: string, tone?: ToastTone) => void;
 }
 const ToastContext = createContext<ToastCtx | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [message, setMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const show = useCallback((m: string) => {
-    setMessage(m);
+  const show = useCallback((message: string, tone: ToastTone = "success") => {
+    setToast({ message, tone });
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setMessage(null), 2600);
+    timer.current = setTimeout(() => setToast(null), tone === "error" ? 4500 : 2600);
   }, []);
-  const value = useMemo(() => ({ message, show }), [message, show]);
+  const value = useMemo(() => ({ toast, show }), [toast, show]);
   return <ToastContext.Provider value={value}>{children}</ToastContext.Provider>;
 }
 export const useToast = () => {
@@ -79,10 +87,13 @@ export const useToast = () => {
 };
 
 export function ToastHost() {
-  const { message } = useToast();
-  if (!message) return null;
+  const { toast } = useToast();
+  if (!toast) return null;
+  const isError = toast.tone === "error";
   return (
     <div
+      role="status"
+      aria-live={isError ? "assertive" : "polite"}
       style={{
         position: "fixed",
         bottom: 22,
@@ -95,6 +106,9 @@ export function ToastHost() {
         padding: "10px 18px",
         borderRadius: 8,
         boxShadow: "0 8px 28px rgba(0,0,0,.22)",
+        // A hairline accent in the tone's color reinforces the dot for anyone who reads the
+        // shape before the color (kept subtle so success stays quiet).
+        borderLeft: `3px solid ${isError ? "var(--fail)" : "var(--pass)"}`,
         zIndex: 100,
         animation: "hgfade .15s ease",
         display: "flex",
@@ -102,8 +116,8 @@ export function ToastHost() {
         gap: 9,
       }}
     >
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--pass)" }} />
-      {message}
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: isError ? "var(--fail)" : "var(--pass)" }} />
+      {toast.message}
     </div>
   );
 }

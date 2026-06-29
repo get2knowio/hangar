@@ -154,7 +154,7 @@ export function AddConnectionModal({
         show(`Connected ${data.label}`);
         onAdded(data);
       },
-      onError: (e: unknown) => show(e instanceof Error ? e.message : "Could not add connection"),
+      onError: (e: unknown) => show(e instanceof Error ? e.message : "Could not add connection", "error"),
     });
   }
 
@@ -310,7 +310,7 @@ export function RepoPickerModal({
     save.mutate(repos, {
       onSuccess: () =>
         show(repos === null ? "Watching all repos" : `Watching ${repos.length} repo${repos.length === 1 ? "" : "s"}`),
-      onError: (e: unknown) => show(e instanceof Error ? e.message : "Could not update selection"),
+      onError: (e: unknown) => show(e instanceof Error ? e.message : "Could not update selection", "error"),
     });
     onClose();
   }

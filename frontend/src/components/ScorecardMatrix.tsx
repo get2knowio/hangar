@@ -46,7 +46,7 @@ export function ScorecardMatrix({ data, failingOnly }: { data: Scorecard; failin
           ].filter(Boolean);
           show(`${prompt.label}: ${parts.join(" · ") || "no changes"}`);
         },
-        onError: () => show(`Bulk remediation failed · ${prompt.label}`),
+        onError: () => show(`Bulk remediation failed · ${prompt.label}`, "error"),
         onSettled: () => setPrompt(null),
       },
     );

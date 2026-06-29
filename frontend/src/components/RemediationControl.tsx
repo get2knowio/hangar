@@ -47,7 +47,7 @@ export function RemediationControl({
           onClick={() => {
             merge.mutate(check.id!, {
             onSuccess: () => show(`Merged · ${check.label}`),
-            onError: () => show(`Couldn't mark merged · ${check.label}`),
+            onError: () => show(`Couldn't mark merged · ${check.label}`, "error"),
           });
           }}
         />
@@ -83,7 +83,7 @@ export function RemediationControl({
                 show(`Reported · ${check.label}`);
               }
             },
-            onError: () => show(`Remediation failed · ${check.label}`),
+            onError: () => show(`Remediation failed · ${check.label}`, "error"),
           },
         );
       }}

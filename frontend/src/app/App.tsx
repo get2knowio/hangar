@@ -13,6 +13,7 @@ import { Login } from "./Login";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { ToastHost } from "./state";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { useAuthInfo } from "../lib/api";
 
 export function App() {
@@ -31,13 +32,15 @@ export function App() {
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <Sidebar />
         <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
-          <Routes>
-            <Route path="/" element={<Overview />} />
-            <Route path="/scorecard" element={<Scorecard />} />
-            <Route path="/catalog" element={<Catalog />} />
-            <Route path="/providers" element={<Providers />} />
-            <Route path="/repos/:connectionId/:id" element={<RepoDetail />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Overview />} />
+              <Route path="/scorecard" element={<Scorecard />} />
+              <Route path="/catalog" element={<Catalog />} />
+              <Route path="/providers" element={<Providers />} />
+              <Route path="/repos/:connectionId/:id" element={<RepoDetail />} />
+            </Routes>
+          </ErrorBoundary>
         </div>
       </div>
       <ToastHost />
