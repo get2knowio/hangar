@@ -15,15 +15,16 @@ CHECKS: list[Check] = [
         evidence_fail="Alerts disabled",
     ),
     Check(
+        # Passes when Dependabot OR Renovate version updates are configured (id kept stable).
         id="dependabot_updates", label="Version updates configured", group=_G,
         tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
-        evidence_fail="dependabot.yml has no updates block",
+        evidence_fail="No Dependabot or Renovate update config",
     ),
     Check(
         id="cooldown", label="Update cooldown ≥ target", group=_G,
         tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
         has_target=True, default_target=7,
-        evidence_fail="No cooldown block in dependabot.yml",
+        evidence_fail="No update cooldown configured (Dependabot cooldown / Renovate minimumReleaseAge)",
     ),
     Check(
         id="lockfile", label="Lockfile present", group=_G,

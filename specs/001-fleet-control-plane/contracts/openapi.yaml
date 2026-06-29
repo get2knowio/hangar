@@ -582,7 +582,7 @@ components:
         connection_badge: { type: string }
         description: { type: string }
         open_prs: { type: integer }
-        dependabot_prs: { type: integer }
+        bot_prs: { type: integer, description: "open PRs from a dependency-update bot (Dependabot or Renovate)" }
         ci: { type: string, enum: [pass, fail, none] }
         license: { type: string, nullable: true, description: "SPDX id of the detected license (e.g. MIT); null when absent/unidentifiable" }
         alerts_total: { type: integer }
@@ -677,7 +677,7 @@ components:
             type: object
             properties:
               title: { type: string }
-              kind: { type: string, enum: [dependabot, human] }
+              kind: { type: string, enum: [dependabot, renovate, human], description: "the PR's author: a dependency bot or a human" }
               status: { type: string, description: 'human-display status (e.g. "open", "draft")' }
               status_tone: { $ref: "#/components/schemas/Tone" }
               age: { type: string }

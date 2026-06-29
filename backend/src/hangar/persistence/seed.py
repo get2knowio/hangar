@@ -141,7 +141,7 @@ async def seed_if_empty(session: AsyncSession) -> bool:
         session.add(
             RepoRow(
                 id=r["id"], connection_id=r["conn"], description=r["desc"],
-                default_branch="main", open_prs=r["openPRs"], dependabot_prs=r["depPRs"],
+                default_branch="main", open_prs=r["openPRs"], bot_prs=r["depPRs"],
                 ci_status=r["ci"],
                 alerts={"critical": a["c"], "high": a["h"], "moderate": a["m"], "low": a["l"]},
                 release_pending_days=r["rel"], fails=r["fails"], unknowns=r["unknowns"],

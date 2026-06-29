@@ -469,7 +469,7 @@ async def test_open_prs_captured_into_snapshot(respx_mock) -> None:
 
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
-    assert repo.open_prs == 2 and repo.dependabot_prs == 1
+    assert repo.open_prs == 2 and repo.bot_prs == 1
     assert [p.title for p in repo.pull_requests] == ["Bump vite", "Add health"]
     assert repo.pull_requests[0].kind == "dependabot"
     assert repo.pull_requests[0].url == "https://github.com/acme/hangar/pull/7"
@@ -612,3 +612,67 @@ async def test_list_repos_empty_when_owner_not_found(respx_mock) -> None:
     respx_mock.get(f"{API}/users/acme/repos").mock(
         return_value=httpx.Response(404, json={"message": "Not Found"}))
     assert await adapter.list_repos(_pat_conn()) == []
+
+
+def _b64(text: str) -> dict:
+    """A GitHub contents-API base64 payload (what _read_text decodes)."""
+    import base64
+
+    return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_renovate_pr_counts_as_bot_and_is_labeled_renovate(respx_mock) -> None:
+    """A renovate[bot] PR is a dependency-bot PR (counted) and labelled 'renovate', not lumped
+    under Dependabot (honest-state)."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    # Distinct regex from _routes' pulls pattern so respx keeps both (it dedupes by identical
+    # pattern, and the later registration would otherwise win); added first → first-match wins.
+    respx_mock.get(url__regex=r".*/repos/acme/hangar/pulls(\?.*)?$").mock(
+        return_value=httpx.Response(200, json=[
+            {"title": "Update vite", "number": 9, "html_url": "https://github.com/acme/hangar/pull/9",
+             "user": {"login": "renovate[bot]"}, "created_at": "2026-06-01T00:00:00Z", "draft": False},
+            {"title": "Bump black", "number": 8, "html_url": "https://github.com/acme/hangar/pull/8",
+             "user": {"login": "dependabot[bot]"}, "created_at": "2026-06-02T00:00:00Z", "draft": False},
+            {"title": "Refactor", "number": 7, "html_url": "https://github.com/acme/hangar/pull/7",
+             "user": {"login": "octocat"}, "created_at": "2026-06-03T00:00:00Z", "draft": False},
+        ]))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"rn0"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.open_prs == 3 and repo.bot_prs == 2  # renovate + dependabot, not the human
+    kinds = {pr.title: pr.kind for pr in repo.pull_requests}
+    assert kinds == {"Update vite": "renovate", "Bump black": "dependabot", "Refactor": "human"}
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_renovate_config_satisfies_version_updates_and_cooldown(respx_mock) -> None:
+    """A Renovate-only repo (no dependabot.yml) passes 'Version updates configured', and its
+    minimumReleaseAge satisfies the cooldown check — no false failures for Renovate users."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/renovate.json").mock(
+        return_value=httpx.Response(200, json=_b64('{"minimumReleaseAge": "7 days"}')))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"rn1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_updates" not in repo.fails  # Renovate config counts as version updates
+    assert "cooldown" not in repo.fails  # minimumReleaseAge present
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_renovate_config_without_cooldown_fails_cooldown_only(respx_mock) -> None:
+    """Renovate configured but with no minimumReleaseAge → version updates pass, cooldown fails."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/renovate.json").mock(
+        return_value=httpx.Response(200, json=_b64('{"extends": ["config:recommended"]}')))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"rn2"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_updates" not in repo.fails
+    assert "cooldown" in repo.fails

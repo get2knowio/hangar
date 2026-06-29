@@ -94,9 +94,18 @@ export function RepoDetail() {
           </div>
           {prs.map((pr, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 15px", borderBottom: "1px solid var(--border-2)" }}>
-              <span style={{ fontSize: 11, width: 14, textAlign: "center", color: pr.kind === "dependabot" ? "var(--warn)" : "var(--fg-2)" }}>
-                {pr.kind === "dependabot" ? "⚙" : "↗"}
-              </span>
+              {(() => {
+                const isBot = pr.kind === "dependabot" || pr.kind === "renovate";
+                const source = pr.kind === "renovate" ? "Renovate" : pr.kind === "dependabot" ? "Dependabot" : "Human";
+                return (
+                  <span
+                    title={`${source} PR`}
+                    style={{ fontSize: 11, width: 14, textAlign: "center", color: isBot ? "var(--warn)" : "var(--fg-2)" }}
+                  >
+                    {isBot ? "⚙" : "↗"}
+                  </span>
+                );
+              })()}
               {pr.url ? (
                 <a
                   href={pr.url}

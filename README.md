@@ -286,6 +286,13 @@ Reads use conditional requests (`If-None-Match`/ETag), so a poll that finds noth
 changed costs no quota. Content changes are always delivered as pull requests; Hangar
 never pushes or force-pushes.
 
+**Dependency bots — Dependabot and Renovate.** Hangar recognizes both. Open PRs from
+`dependabot[bot]` or `renovate[bot]` are counted as bot PRs (and labelled with their real
+source in the repo's PR list), and the *Version updates configured* check passes for either
+a Dependabot config (`.github/dependabot.yml`) or a Renovate config (`renovate.json`,
+`.github/renovate.json`, `.renovaterc`, …). The *Update cooldown* check reads whichever is
+present — Dependabot's `cooldown` block or Renovate's `minimumReleaseAge`.
+
 ---
 
 ## Choosing an access mode

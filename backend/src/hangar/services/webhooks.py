@@ -33,11 +33,11 @@ async def apply_event(session: AsyncSession, event: WebhookEvent, connection_id:
         changed = True
     if event.pr_delta:
         row.open_prs = max(0, row.open_prs + event.pr_delta)
-        # Keep the Dependabot sub-count consistent with open_prs (a closed bot PR must
-        # decrement both, else dependabot_prs can exceed open_prs until the next poll).
+        # Keep the bot sub-count consistent with open_prs (a closed bot PR must decrement
+        # both, else bot_prs can exceed open_prs until the next poll).
         if event.pr_is_bot:
-            row.dependabot_prs = max(0, row.dependabot_prs + event.pr_delta)
-        row.dependabot_prs = min(row.dependabot_prs, row.open_prs)
+            row.bot_prs = max(0, row.bot_prs + event.pr_delta)
+        row.bot_prs = min(row.bot_prs, row.open_prs)
         changed = True
 
     if changed:

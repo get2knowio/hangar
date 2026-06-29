@@ -232,7 +232,7 @@ class PullRequestSummary(BaseModel):
     title: str = ""
     number: int | None = None
     url: str | None = None
-    kind: str = "human"  # "dependabot" | "human"
+    kind: str = "human"  # "dependabot" | "renovate" | "human" — the PR's real author
     created_at: str | None = None  # ISO timestamp; display age is derived at render
     draft: bool = False
 
@@ -245,7 +245,8 @@ class Repo(BaseModel):
     description: str = ""
     default_branch: str = "main"
     open_prs: int = 0
-    dependabot_prs: int = 0
+    # Open PRs authored by a recognized dependency-update bot (Dependabot or Renovate).
+    bot_prs: int = 0
     ci_status: CIStatus = CIStatus.none
     alerts: AlertCounts = Field(default_factory=AlertCounts)
     release_pending_days: int | None = None

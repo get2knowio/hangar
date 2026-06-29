@@ -187,7 +187,7 @@ class SyncService:
         row.description = snapshot.description
         row.default_branch = snapshot.default_branch
         row.open_prs = snapshot.open_prs
-        row.dependabot_prs = snapshot.dependabot_prs
+        row.bot_prs = snapshot.bot_prs
         row.ci_status = snapshot.ci_status.value
         row.alerts = {
             "critical": snapshot.alerts.critical, "high": snapshot.alerts.high,
