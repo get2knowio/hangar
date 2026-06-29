@@ -676,6 +676,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Manually refresh every connection now (operator-triggered re-interrogation).
+         * @description Enqueues an immediate background re-interrogation of all connections — the same path as the scheduled poll, so reads stay cache-served and the request never blocks on the provider. The dashboard reflects the result once the sync lands (202 Accepted).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SyncAccepted"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/{connection_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manually refresh one connection now (operator-triggered re-interrogation). */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    connection_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SyncAccepted"];
+                    };
+                };
+                /** @description Unknown connection */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/audit": {
         parameters: {
             query?: never;
@@ -1031,6 +1115,12 @@ export interface components {
             synced?: string;
             /** @description operator's repo selection; null ⇒ watching all repos */
             repo_allowlist?: string[] | null;
+        };
+        SyncAccepted: {
+            /** @example accepted */
+            status: string;
+            /** @description the refreshed connection; null for a fleet-wide refresh */
+            connection_id?: string | null;
         };
         AuditEntry: {
             timestamp?: string;

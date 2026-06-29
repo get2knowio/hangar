@@ -2,7 +2,7 @@
 
 import { useLocation } from "react-router-dom";
 import { ConnSwitcher } from "../components/ConnSwitcher";
-import { useProviders } from "../lib/api";
+import { useProviders, useSyncFleet } from "../lib/api";
 import { useConnection, useTheme } from "./state";
 
 const TITLES: Record<string, string> = {
@@ -22,6 +22,7 @@ export function Topbar() {
   const { theme, toggle } = useTheme();
   const { active } = useConnection();
   const { data } = useProviders();
+  const syncFleet = useSyncFleet();
 
   const conn = data?.connections?.find((c) => c.id === active);
   const synced = active === "all" ? "2m ago" : (conn?.synced ?? "—");
@@ -61,6 +62,36 @@ export function Topbar() {
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <ConnSwitcher />
         <span style={{ fontSize: 11, color: "var(--muted)" }}>synced {synced}</span>
+        <button
+          onClick={() => syncFleet.mutate()}
+          disabled={syncFleet.isPending}
+          title="Re-interrogate every connection now"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 10px",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            cursor: syncFleet.isPending ? "default" : "pointer",
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--fg-2)",
+            background: "transparent",
+            fontFamily: "inherit",
+            opacity: syncFleet.isPending ? 0.6 : 1,
+          }}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              animation: syncFleet.isPending ? "hgspin .8s linear infinite" : undefined,
+            }}
+          >
+            ↻
+          </span>
+          {syncFleet.isPending ? "Refreshing…" : "Refresh"}
+        </button>
         <div
           onClick={toggle}
           style={{
