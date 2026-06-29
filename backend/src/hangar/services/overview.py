@@ -35,7 +35,7 @@ def build_overview(
         return sum(fn(r) for r in repos)
 
     open_prs = s(lambda r: r.open_prs)
-    dep_prs = s(lambda r: r.dependabot_prs)
+    bot_prs = s(lambda r: r.bot_prs)
     ci_fail = sum(1 for r in repos if r.ci_status is CIStatus.fail)
     crit = s(lambda r: r.alerts.critical)
     alerts_total = s(lambda r: r.alerts.total)
@@ -48,9 +48,9 @@ def build_overview(
     # `tone` colors the value; `sub_tone` colors the sub-label — both structured so the UI
     # never re-derives color by matching tile titles or parsing the value (Constitution VII).
     stats = [
-        {"label": "Open PRs", "value": str(open_prs), "sub": f"{dep_prs} Dependabot",
+        {"label": "Open PRs", "value": str(open_prs), "sub": f"{bot_prs} from bots",
          "tone": Tone.neutral, "sub_tone": Tone.warn},
-        {"label": "Bot PRs", "value": str(dep_prs), "sub": "awaiting merge",
+        {"label": "Bot PRs", "value": str(bot_prs), "sub": "awaiting merge",
          "tone": Tone.neutral, "sub_tone": Tone.neutral},
         {"label": "CI failing", "value": str(ci_fail), "sub": "on default",
          "tone": Tone.fail if ci_fail else Tone.neutral, "sub_tone": Tone.neutral},
@@ -74,7 +74,7 @@ def build_overview(
             "connection_badge": badge,
             "description": r.description,
             "open_prs": r.open_prs,
-            "dependabot_prs": r.dependabot_prs,
+            "bot_prs": r.bot_prs,
             "ci": r.ci_status.value,
             "license": r.license_spdx,
             "alerts_total": a.total,
@@ -127,9 +127,9 @@ def _build_feed(repos: list[Repo]) -> list[dict]:
                                "connection_id": r.connection_id,
                                "title": f"{n} high-severity alert{'s' if n > 1 else ''}"}))
     for r in repos:
-        if r.dependabot_prs >= 2:
+        if r.bot_prs >= 2:
             ranked.append((4, {"tag": "Bot PRs", "tone": Tone.neutral, "repo_id": r.id,
                                "connection_id": r.connection_id,
-                               "title": f"{r.dependabot_prs} Dependabot PRs awaiting merge"}))
+                               "title": f"{r.bot_prs} bot dependency PRs awaiting merge"}))
     ranked.sort(key=lambda t: t[0])
     return [item for _, item in ranked[:7]]

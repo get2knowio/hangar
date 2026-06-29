@@ -52,6 +52,15 @@ _RELEASE_STALE_DAYS = 14
 # else is always re-evaluated.
 _METADATA_CHECKS = frozenset({"license", "description", "default_branch", "secret_scanning"})
 
+# Update-bot config locations. "Version updates configured" (check id ``dependabot_updates``,
+# kept stable) passes when EITHER a Dependabot or a Renovate config is present — Hangar tracks
+# both, so a Renovate-only repo is not falsely failed for "no version updates".
+_DEPENDABOT_CONFIG_FILES = [".github/dependabot.yml", ".github/dependabot.yaml"]
+_RENOVATE_CONFIG_FILES = [
+    "renovate.json", "renovate.json5", ".github/renovate.json", ".github/renovate.json5",
+    ".renovaterc", ".renovaterc.json", ".renovaterc.json5",
+]
+
 # Candidate paths whose presence satisfies a file-based check. (license is determined
 # from repo metadata below — GitHub's own license detection — not a filename match.)
 _FILE_CHECKS = {
@@ -63,7 +72,7 @@ _FILE_CHECKS = {
     "release_please": ["release-please-config.json", ".release-please-manifest.json"],
     "templates": [".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE",
                   ".github/PULL_REQUEST_TEMPLATE.md"],
-    "dependabot_updates": [".github/dependabot.yml", ".github/dependabot.yaml"],
+    "dependabot_updates": _DEPENDABOT_CONFIG_FILES + _RENOVATE_CONFIG_FILES,
 }
 
 
@@ -106,7 +115,7 @@ async def interrogate_repo(
     else:
         meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(repo_data)
 
-    (dyn_fails, dyn_unknowns, open_prs, dependabot_prs, ci, alerts, release_pending, pulls) = (
+    (dyn_fails, dyn_unknowns, open_prs, bot_prs, ci, alerts, release_pending, pulls) = (
         await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
     )
 
@@ -118,7 +127,7 @@ async def interrogate_repo(
         description=description,
         default_branch=default_branch,
         open_prs=open_prs,
-        dependabot_prs=dependabot_prs,
+        bot_prs=bot_prs,
         ci_status=ci,
         alerts=alerts,
         release_pending_days=release_pending,
@@ -204,7 +213,7 @@ async def _dynamic_checks(
     can_org = Capability.read_org_policy in granted
 
     # Scalars produced by the activity groups below (filled via nonlocal).
-    open_prs = dependabot_prs = 0
+    open_prs = bot_prs = 0
     pull_details: list[dict] = []
     ci = CIStatus.none
     alerts = AlertCounts()
@@ -246,17 +255,16 @@ async def _dynamic_checks(
             elif st == "absent":
                 fails.append(cid)
 
-        # cooldown: dependabot.yml must contain a cooldown block (requires reading content).
+        # cooldown: the present update-bot config must declare a cooldown (requires reading
+        # content). Dependabot uses a `cooldown:` block; Renovate uses `minimumReleaseAge`
+        # (legacy `stabilityDays`). Keyed off dependabot_updates so a repo with no update bot
+        # at all fails once (here) rather than twice.
         if statuses.get("dependabot_updates") == "unknown":
             unknowns.append("cooldown")
         elif statuses.get("dependabot_updates") == "absent":
-            fails.append("cooldown")  # no dependabot.yml at all
-        else:
-            content = await _read_text(
-                cget, gh, connection.id, owner, repo_ref, ".github/dependabot.yml"
-            )
-            if content is None or "cooldown" not in content:
-                fails.append("cooldown")
+            fails.append("cooldown")  # no update bot configured at all
+        elif not await _has_cooldown(cget, gh, connection.id, owner, repo_ref):
+            fails.append("cooldown")
 
     async def _settings_group() -> None:
         # settings/ruleset checks (403 = unknown, 404 = not configured = fail)
@@ -324,8 +332,8 @@ async def _dynamic_checks(
             fails.append("release_health")
 
     async def _pulls_group() -> None:
-        nonlocal open_prs, dependabot_prs, pull_details
-        open_prs, dependabot_prs, pull_details = await _pull_data(cget, gh, connection.id, owner, repo_ref)
+        nonlocal open_prs, bot_prs, pull_details
+        open_prs, bot_prs, pull_details = await _pull_data(cget, gh, connection.id, owner, repo_ref)
 
     async def _ci_group() -> None:
         nonlocal ci
@@ -365,7 +373,7 @@ async def _dynamic_checks(
         _dependabot_alerts_group(),
     )
 
-    return fails, unknowns, open_prs, dependabot_prs, ci, alerts, release_pending, pull_details
+    return fails, unknowns, open_prs, bot_prs, ci, alerts, release_pending, pull_details
 
 
 async def _workflow_action_refs(
@@ -463,6 +471,25 @@ async def _read_text(
     return None
 
 
+async def _has_cooldown(cget: Any, gh: GitHub, cid: str, owner: str, repo: str) -> bool:
+    """Whether the present update-bot config declares a cooldown.
+
+    Dependabot uses a ``cooldown:`` block in dependabot.yml; Renovate uses
+    ``minimumReleaseAge`` (legacy ``stabilityDays``) in its config. Reads the Dependabot
+    config first, then the Renovate config — a substring check, matching the lightweight
+    approach used for the rest of the file-content checks.
+    """
+    for path in _DEPENDABOT_CONFIG_FILES:
+        content = await _read_text(cget, gh, cid, owner, repo, path)
+        if content is not None:
+            return "cooldown" in content
+    for path in _RENOVATE_CONFIG_FILES:
+        content = await _read_text(cget, gh, cid, owner, repo, path)
+        if content is not None:
+            return "minimumReleaseAge" in content or "stabilityDays" in content
+    return False
+
+
 _MAX_PAGES = 10  # bound a list resource at ~1000 items rather than silently capping at 100
 
 
@@ -526,18 +553,37 @@ async def _paged_cursor(gh: GitHub, cid: str, path: str, params: dict[str, Any])
 
 
 _PR_DETAIL_CAP = 20  # store the most-recent N open PRs for the activity strip
-_BOT_LOGINS = ("dependabot[bot]", "dependabot-preview[bot]")
+
+# Dependency-update bots Hangar recognizes, by author login. Each PR is labelled with its
+# real source (honest-state, Constitution VIII) — never lumped under one bot's name — and
+# both feed the aggregate ``bot_prs`` count.
+_DEPENDABOT_LOGINS = ("dependabot[bot]", "dependabot-preview[bot]")
+_RENOVATE_LOGINS = ("renovate[bot]", "renovate-bot")
+
+
+def pr_kind(login: str | None) -> str:
+    """Classify a PR by its author login: ``dependabot`` | ``renovate`` | ``human``."""
+    if login in _DEPENDABOT_LOGINS:
+        return "dependabot"
+    if login in _RENOVATE_LOGINS:
+        return "renovate"
+    return "human"
+
+
+def is_bot_login(login: str | None) -> bool:
+    """True when the login is a recognized dependency-update bot (Dependabot or Renovate)."""
+    return pr_kind(login) != "human"
 
 
 async def _pull_data(
     cget: Any, gh: GitHub, cid: str, owner: str, repo: str
 ) -> tuple[int, int, list[dict]]:
-    """Open-PR count, Dependabot count, and the most-recent PR details (capped)."""
+    """Open-PR count, dependency-bot count (Dependabot + Renovate), and recent PR details."""
     data = await _paged(
         cget, gh, cid, f"/repos/{owner}/{repo}/pulls",
         {"state": "open", "sort": "created", "direction": "desc", "per_page": 100},
     )
-    dependabot = sum(1 for pr in data if (pr.get("user") or {}).get("login") in _BOT_LOGINS)
+    bot = sum(1 for pr in data if is_bot_login((pr.get("user") or {}).get("login")))
     details: list[dict] = []
     for pr in data[:_PR_DETAIL_CAP]:
         login = (pr.get("user") or {}).get("login")
@@ -545,11 +591,11 @@ async def _pull_data(
             "title": pr.get("title") or "",
             "number": pr.get("number"),
             "url": pr.get("html_url"),
-            "kind": "dependabot" if login in _BOT_LOGINS else "human",
+            "kind": pr_kind(login),
             "created_at": pr.get("created_at"),
             "draft": bool(pr.get("draft")),
         })
-    return len(data), dependabot, details
+    return len(data), bot, details
 
 
 async def _ci_status(

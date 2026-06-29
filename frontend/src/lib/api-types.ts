@@ -1205,7 +1205,8 @@ export interface components {
             connection_badge?: string;
             description?: string;
             open_prs?: number;
-            dependabot_prs?: number;
+            /** @description open PRs from a dependency-update bot (Dependabot or Renovate) */
+            bot_prs?: number;
             /** @enum {string} */
             ci?: "pass" | "fail" | "none";
             /** @description SPDX id of the detected license (e.g. MIT); null when absent/unidentifiable */
@@ -1298,8 +1299,11 @@ export interface components {
             ci?: "pass" | "fail" | "none";
             pull_requests?: {
                 title?: string;
-                /** @enum {string} */
-                kind?: "dependabot" | "human";
+                /**
+                 * @description the PR's author: a dependency bot or a human
+                 * @enum {string}
+                 */
+                kind?: "dependabot" | "renovate" | "human";
                 /** @description human-display status (e.g. "open", "draft") */
                 status?: string;
                 status_tone?: components["schemas"]["Tone"];

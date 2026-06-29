@@ -85,7 +85,7 @@ class RepoRow(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     default_branch: Mapped[str] = mapped_column(String(64), default="main")
     open_prs: Mapped[int] = mapped_column(Integer, default=0)
-    dependabot_prs: Mapped[int] = mapped_column(Integer, default=0)
+    bot_prs: Mapped[int] = mapped_column(Integer, default=0)
     ci_status: Mapped[str] = mapped_column(String(8), default="none")
     alerts: Mapped[dict] = mapped_column(JSON, default=dict)
     release_pending_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -105,7 +105,7 @@ class RepoRow(Base):
             description=self.description,
             default_branch=self.default_branch,
             open_prs=self.open_prs,
-            dependabot_prs=self.dependabot_prs,
+            bot_prs=self.bot_prs,
             ci_status=CIStatus(self.ci_status),
             alerts=AlertCounts(
                 critical=a.get("critical", a.get("c", 0)),

@@ -422,10 +422,11 @@ class GitHubAdapter:
         if event == "pull_request":
             action = payload.get("action")
             if action in ("opened", "reopened", "closed"):
+                from hangar.providers.github.detection import is_bot_login
+
                 delta = 1 if action in ("opened", "reopened") else -1
                 login = ((payload.get("pull_request") or {}).get("user") or {}).get("login")
-                is_bot = login in ("dependabot[bot]", "dependabot-preview[bot]")
-                return WebhookEvent(repo_name, pr_delta=delta, pr_is_bot=is_bot)
+                return WebhookEvent(repo_name, pr_delta=delta, pr_is_bot=is_bot_login(login))
             return None
         # vulnerability/dependabot alert events: reconcile on the next poll (nothing to apply).
         return None

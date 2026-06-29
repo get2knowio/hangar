@@ -129,8 +129,8 @@ export function RepoTable({ repos }: { repos: Row[] }) {
             </div>
             <div className="mono" style={{ textAlign: "right", fontSize: 12, whiteSpace: "nowrap" }}>
               <span style={{ color: "var(--fg)" }}>{r.open_prs}</span>
-              {(r.dependabot_prs ?? 0) > 0 && (
-                <span style={{ color: "var(--warn)", fontSize: 10 }}> · {r.dependabot_prs} 🤖</span>
+              {(r.bot_prs ?? 0) > 0 && (
+                <span style={{ color: "var(--warn)", fontSize: 10 }}> · {r.bot_prs} 🤖</span>
               )}
             </div>
             <div className="mono" style={{ textAlign: "center", fontSize: 13, color: ci.color }} title={ci.title}>

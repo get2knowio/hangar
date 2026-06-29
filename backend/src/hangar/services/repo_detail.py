@@ -76,7 +76,7 @@ def _pr_list(repo: Repo, *, synthesize: bool) -> list[dict]:
     if not synthesize:
         return []
     prs: list[dict] = []
-    for i in range(repo.dependabot_prs):
+    for i in range(repo.bot_prs):
         cooldown = i == 0
         prs.append({
             "title": f"Bump {_DEP_TITLES[i % len(_DEP_TITLES)]}",
@@ -85,7 +85,7 @@ def _pr_list(repo: Repo, *, synthesize: bool) -> list[dict]:
             "status_tone": (Tone.warn if cooldown else Tone.passing).value,
             "age": f"{i + 1}d",
         })
-    for i in range(max(0, repo.open_prs - repo.dependabot_prs)):
+    for i in range(max(0, repo.open_prs - repo.bot_prs)):
         prs.append({
             "title": _HUMAN_TITLES[i % len(_HUMAN_TITLES)],
             "kind": "human",

@@ -59,3 +59,23 @@ def test_parse_webhook_normalizes_ci_and_pr_events() -> None:
         ).encode(),
     )
     assert pr is not None and pr.pr_delta == 1 and pr.pr_is_bot is True
+
+
+def test_parse_webhook_recognizes_renovate_and_humans() -> None:
+    import json
+
+    def _pr(login: str, action: str = "opened"):
+        return _adapter.parse_webhook(
+            {"X-GitHub-Event": "pull_request"},
+            json.dumps(
+                {"repository": {"name": "r"}, "action": action,
+                 "pull_request": {"user": {"login": login}}}
+            ).encode(),
+        )
+
+    # Renovate PRs are dependency-bot PRs, just like Dependabot.
+    ren = _pr("renovate[bot]")
+    assert ren is not None and ren.pr_delta == 1 and ren.pr_is_bot is True
+    # A human PR is not a bot PR; a closed bot PR decrements (-1).
+    assert _pr("octocat").pr_is_bot is False
+    assert _pr("renovate[bot]", "closed").pr_delta == -1

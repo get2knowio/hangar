@@ -20,8 +20,8 @@ def test_overview_repo_rows_carry_connection_badge_and_dependabot(client) -> Non
     # every row attributed to a connection badge
     assert all(row["connection_badge"] for row in body["repos"])
     # hangar has 3 dependabot PRs in the seed
-    assert rows["hangar"]["dependabot_prs"] == 3
-    assert "dependabot_prs" in rows["hangar"]
+    assert rows["hangar"]["bot_prs"] == 3
+    assert "bot_prs" in rows["hangar"]
 
 
 def test_overview_feed_urgency_ordered_hangar_critical_first(client) -> None:

@@ -21,7 +21,7 @@ def _insert_repos(n: int) -> None:
                         description=f"perf repo {i}",
                         default_branch="main",
                         open_prs=i % 5,
-                        dependabot_prs=i % 3,
+                        bot_prs=i % 3,
                         ci_status="fail" if i % 7 == 0 else "pass",
                         alerts={"critical": i % 4 == 0, "high": 0, "moderate": 1, "low": 0},
                         release_pending_days=(i % 30) if i % 2 == 0 else None,

@@ -159,7 +159,7 @@ def test_pr_list_not_fabricated_for_live_connections() -> None:
     the illustrative list and tags each row with a structured status_tone (#4, #9)."""
     from hangar.services.repo_detail import _pr_list
 
-    repo = Repo(id="r", connection_id="c", open_prs=3, dependabot_prs=1)
+    repo = Repo(id="r", connection_id="c", open_prs=3, bot_prs=1)
     assert _pr_list(repo, synthesize=False) == []
     synthetic = _pr_list(repo, synthesize=True)
     assert len(synthetic) == 3 and all("status_tone" in p for p in synthetic)

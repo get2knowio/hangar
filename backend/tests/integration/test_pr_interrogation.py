@@ -9,7 +9,7 @@ from hangar.services.repo_detail import _pr_list, build_repo_detail
 
 def _repo_with_prs() -> Repo:
     return Repo(
-        id="r", connection_id="c", open_prs=2, dependabot_prs=1,
+        id="r", connection_id="c", open_prs=2, bot_prs=1,
         pull_requests=[
             PullRequestSummary(title="Bump vite", kind="dependabot", url="http://x/pull/7",
                                draft=False, created_at="2024-01-01T00:00:00Z"),
@@ -27,12 +27,12 @@ def test_real_cached_prs_are_rendered() -> None:
 
 
 def test_no_rows_for_live_connection_without_cached_prs() -> None:
-    repo = Repo(id="r", connection_id="c", open_prs=3, dependabot_prs=1)  # no captured PRs
+    repo = Repo(id="r", connection_id="c", open_prs=3, bot_prs=1)  # no captured PRs
     assert _pr_list(repo, synthesize=False) == []
 
 
 def test_synthetic_rows_only_for_demo_without_real_data() -> None:
-    repo = Repo(id="r", connection_id="c", open_prs=2, dependabot_prs=1)
+    repo = Repo(id="r", connection_id="c", open_prs=2, bot_prs=1)
     assert len(_pr_list(repo, synthesize=True)) == 2
 
 

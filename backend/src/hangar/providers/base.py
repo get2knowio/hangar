@@ -42,7 +42,7 @@ class WebhookEvent:
     repo_name: str
     ci_status: str | None = None  # "pass" | "fail" when a CI run concluded
     pr_delta: int = 0             # +1 opened/reopened, -1 closed
-    pr_is_bot: bool = False       # the PR in pr_delta is a Dependabot PR
+    pr_is_bot: bool = False       # the PR in pr_delta is from a dependency bot (Dependabot/Renovate)
 
 
 def provider_name(provider_type: str) -> str:
