@@ -87,3 +87,10 @@ class GiteaClient:
             return _NO_CONTENT
         resp.raise_for_status()
         return resp.json()
+
+    async def post(self, path: str, json: dict) -> dict:
+        """POST ``{api_base}{path}``; return the created resource. Raises on any non-2xx so a
+        failed write never looks like a success (no silent no-op, Constitution VIII)."""
+        resp = await self._client.post(f"{self._base}{path}", json=json)
+        resp.raise_for_status()
+        return resp.json()

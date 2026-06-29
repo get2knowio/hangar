@@ -56,7 +56,7 @@ _FILE_CHECKS = {
     "readme": ["README.md", "README.rst", "README"],
     "license": ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"],
     "security_md": ["SECURITY.md", ".github/SECURITY.md"],
-    "codeowners": ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
+    "codeowners": ["CODEOWNERS", ".gitea/CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
     "changelog": ["CHANGELOG.md", "CHANGELOG"],
     "lockfile": ["poetry.lock", "package-lock.json", "pnpm-lock.yaml", "uv.lock", "Cargo.lock"],
     "release_please": ["release-please-config.json", ".release-please-manifest.json"],
