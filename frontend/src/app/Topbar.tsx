@@ -2,7 +2,7 @@
 
 import { useLocation } from "react-router-dom";
 import { ConnSwitcher } from "../components/ConnSwitcher";
-import { useProviders, useSyncFleet } from "../lib/api";
+import { useOverview, useSyncFleet } from "../lib/api";
 import { useConnection, useTheme } from "./state";
 
 const TITLES: Record<string, string> = {
@@ -21,11 +21,13 @@ export function Topbar() {
   const { pathname } = useLocation();
   const { theme, toggle } = useTheme();
   const { active } = useConnection();
-  const { data } = useProviders();
   const syncFleet = useSyncFleet();
 
-  const conn = data?.connections?.find((c) => c.id === active);
-  const synced = active === "all" ? "2m ago" : (conn?.synced ?? "—");
+  // Honest, single-sourced staleness: /fleet/overview computes summary.synced as the most
+  // recent successful sync across the scoped connections (or "never" during an outage) — no
+  // hardcoded value. Reuses the query the Sidebar already loads, so it costs nothing extra.
+  const overview = useOverview(active);
+  const synced = overview.data?.summary?.synced ?? "—";
 
   return (
     <div
