@@ -115,6 +115,18 @@ def test_config_pr_yields_pr_url(client) -> None:
     assert "/pull/" in body["pr_url"]
 
 
+def test_remediation_audit_timestamp_is_derived_not_hardcoded(client, monkeypatch) -> None:
+    # The echoed audit timestamp must come from the entry's REAL time via format_relative,
+    # never a hardcoded "just now" — patch the humanizer to a sentinel and prove it flows
+    # through to the response (guards the honest-state fix).
+    import hangar.api.repos as repos_api
+
+    monkeypatch.setattr(repos_api, "format_relative", lambda dt: "SENTINEL-REL")
+    r = client.post("/api/v1/repos/gh-main/hangar/checks/license/remediate", json={"kind": "config_pr"})
+    assert r.status_code == 200
+    assert r.json()["audit"]["timestamp"] == "SENTINEL-REL"
+
+
 def test_adapters_never_force_push() -> None:
     # No adapter exposes any push / force-push verb — corrections are PR-first only.
     for adapter in (DemoProvider("github"), GitHubAdapter()):
