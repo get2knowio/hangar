@@ -24,7 +24,10 @@ def test_gitea_declares_read_and_deep_link_only() -> None:
     assert Capability.deep_link in caps
     assert Capability.read_settings in caps
     assert Capability.read_files in caps
-    assert Capability.read_alerts in caps
-    # no write capabilities
+    # read_alerts is intentionally NOT declared: OSS Gitea has no vulnerability-alert feed,
+    # so the alert checks resolve to honest `unknown` rather than a fabricated state
+    # (Constitution VIII).
+    assert Capability.read_alerts not in caps
+    # no write capabilities (PR-first remediation arrives in a later stage)
     assert Capability.write_settings not in caps
     assert Capability.open_pull_request not in caps

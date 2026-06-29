@@ -554,25 +554,12 @@ async def _paged_cursor(gh: GitHub, cid: str, path: str, params: dict[str, Any])
 
 _PR_DETAIL_CAP = 20  # store the most-recent N open PRs for the activity strip
 
-# Dependency-update bots Hangar recognizes, by author login. Each PR is labelled with its
-# real source (honest-state, Constitution VIII) — never lumped under one bot's name — and
-# both feed the aggregate ``bot_prs`` count.
-_DEPENDABOT_LOGINS = ("dependabot[bot]", "dependabot-preview[bot]")
-_RENOVATE_LOGINS = ("renovate[bot]", "renovate-bot")
+# Bot-login classification is provider-neutral (Renovate runs on Gitea too) and lives in
+# ``hangar.providers.bots``; re-exported here so this module stays the GitHub detection
+# façade its callers already import from.
+from hangar.providers.bots import is_bot_login, pr_kind  # noqa: E402
 
-
-def pr_kind(login: str | None) -> str:
-    """Classify a PR by its author login: ``dependabot`` | ``renovate`` | ``human``."""
-    if login in _DEPENDABOT_LOGINS:
-        return "dependabot"
-    if login in _RENOVATE_LOGINS:
-        return "renovate"
-    return "human"
-
-
-def is_bot_login(login: str | None) -> bool:
-    """True when the login is a recognized dependency-update bot (Dependabot or Renovate)."""
-    return pr_kind(login) != "human"
+__all__ = ["interrogate_repo", "is_bot_login", "pr_kind"]
 
 
 async def _pull_data(
