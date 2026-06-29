@@ -33,6 +33,13 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
+# Per-connection failure backoff: when a connection's discovery fails (outage, auth, or an
+# exhausted rate-limit budget), the scheduled poll skips it with exponentially growing
+# delay instead of hammering it every cycle — capped so it always recovers within ~30 min.
+# An operator-triggered manual refresh bypasses the skip (it calls sync_connection directly).
+_BACKOFF_BASE_SECONDS = 60
+_BACKOFF_MAX_SECONDS = 1800
+
 
 def format_relative(dt: datetime | None, *, now: datetime | None = None) -> str:
     """Humanize a timestamp as the prototype's ``synced 2m ago`` strings."""
@@ -69,6 +76,23 @@ class SyncService:
     def __init__(self, sessionmaker: async_sessionmaker | None = None) -> None:
         self._sessionmaker = sessionmaker or get_sessionmaker()
         self._scheduler: AsyncIOScheduler | None = None
+        # Per-connection failure backoff state (consulted only by the scheduled sync_all).
+        self._fail_streak: dict[str, int] = {}
+        self._backoff_until: dict[str, datetime] = {}
+
+    def _record_failure(self, connection_id: str) -> datetime:
+        """Grow the connection's backoff window exponentially; return when it next polls."""
+        streak = self._fail_streak.get(connection_id, 0) + 1
+        self._fail_streak[connection_id] = streak
+        delay = min(_BACKOFF_BASE_SECONDS * (2 ** (streak - 1)), _BACKOFF_MAX_SECONDS)
+        until = datetime.now(UTC) + timedelta(seconds=delay)
+        self._backoff_until[connection_id] = until
+        return until
+
+    def _record_success(self, connection_id: str) -> None:
+        """Clear any backoff once a connection's discovery succeeds again."""
+        self._fail_streak.pop(connection_id, None)
+        self._backoff_until.pop(connection_id, None)
 
     async def ensure_seed(self) -> None:
         if not get_settings().seed_demo_data:
@@ -98,10 +122,13 @@ class SyncService:
             try:
                 refs = await provider.list_repos(connection)
             except Exception as exc:  # noqa: BLE001 - resilience boundary (whole connection)
+                until = self._record_failure(connection_id)
                 log.warning(
                     "sync.connection_failed",
                     connection=connection_id, error=str(exc),
-                    note="serving last good snapshots",
+                    fail_streak=self._fail_streak[connection_id],
+                    backoff_until=until.isoformat(),
+                    note="serving last good snapshots; backing off",
                 )
                 return 0
 
@@ -141,6 +168,8 @@ class SyncService:
                     await session.commit()
             except Exception as exc:  # noqa: BLE001
                 log.warning("sync.last_sync_failed", connection=connection_id, error=str(exc))
+            # Discovery succeeded (repos were listable) — clear any prior backoff.
+            self._record_success(connection_id)
             return updated
 
     async def _upsert_repo(self, session: AsyncSession, snapshot: Repo) -> None:
@@ -169,7 +198,16 @@ class SyncService:
     async def sync_all(self) -> None:
         async with self._sessionmaker() as session:
             connections = await repo.list_connections(session)
+        now = datetime.now(UTC)
         for connection in connections:
+            until = self._backoff_until.get(connection.id)
+            if until is not None and until > now:
+                log.info(
+                    "sync.skip_backoff", connection=connection.id,
+                    backoff_until=until.isoformat(),
+                    fail_streak=self._fail_streak.get(connection.id, 0),
+                )
+                continue
             await self.sync_connection(connection.id)
 
     def start(self) -> None:
@@ -178,7 +216,14 @@ class SyncService:
         scheduler = AsyncIOScheduler()
         self._scheduler = scheduler
         interval = get_settings().poll_interval_seconds
-        scheduler.add_job(self.sync_all, "interval", seconds=interval, id="poll-all")
+        # Guard against the cycle overlapping itself: if one run outlasts the interval,
+        # coalesce the queued runs into one and never let two fire concurrently (which would
+        # double the provider load and race on snapshot writes). A late run within one
+        # interval still fires; older misfires are dropped.
+        scheduler.add_job(
+            self.sync_all, "interval", seconds=interval, id="poll-all",
+            max_instances=1, coalesce=True, misfire_grace_time=interval,
+        )
         scheduler.start()
         log.info("sync.scheduler_started", interval_seconds=interval)
 

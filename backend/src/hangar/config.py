@@ -112,6 +112,14 @@ class Settings(BaseSettings):
     # --- sync / poller (Constitution VI) ---
     poll_interval_seconds: int = Field(default=300)
     stale_after_seconds: int = Field(default=900)
+    # Provider-client resilience: a hung request must not stall the whole poll cycle, and a
+    # single repo's interrogation fans out many sub-requests — bound the burst so it doesn't
+    # trip GitHub's secondary (concurrency) rate limits. Both are plain knobs, not security
+    # gates. Rate-limit/5xx retries (honoring Retry-After) are handled inside the adapter.
+    github_http_timeout_seconds: float = Field(default=30.0, description="per-request HTTP timeout")
+    github_max_concurrency: int = Field(
+        default=8, description="max concurrent provider sub-requests per repo interrogation"
+    )
     # Off by default — production runs against real provider connections only. Set true
     # (or use the test/offline harness) to load the prototype sample fixtures.
     seed_demo_data: bool = Field(default=False, description="load sample fixtures on first boot")

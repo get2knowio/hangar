@@ -197,6 +197,8 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 | `HANGAR_DATABASE_URL` | no | `sqlite+aiosqlite:///./hangar.db` | Full SQLAlchemy URL escape hatch (used only when no `HANGAR_POSTGRES_HOST`). |
 | `HANGAR_POLL_INTERVAL_SECONDS` | no | `300` | Per-connection poll ceiling (ETag/webhook-driven). |
 | `HANGAR_STALE_AFTER_SECONDS` | no | `900` | Age after which a cached snapshot is flagged "stale" in the UI. |
+| `HANGAR_GITHUB_HTTP_TIMEOUT_SECONDS` | no | `30` | Per-request timeout for provider calls, so one hung request can't stall the poll cycle. |
+| `HANGAR_GITHUB_MAX_CONCURRENCY` | no | `8` | Max concurrent provider sub-requests per repo interrogation (lower it if you hit GitHub's secondary rate limit). |
 | `HANGAR_WEBHOOK_SECRET` | no | — | HMAC secret for inbound provider webhooks; webhooks are refused (fail-closed) when unset. |
 | `HANGAR_SEED_DEMO_DATA` | no | `false` | Load sample fixtures on first boot (offline demo). Production runs against real connections. |
 | `HANGAR_STATIC_DIR` | no³ | — (image: `/app/static`) | Directory of the built SPA served at `/`. Set by the container image; don't override in a container. |
