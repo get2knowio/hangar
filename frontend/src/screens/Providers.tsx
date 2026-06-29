@@ -1,7 +1,8 @@
 /* Providers & access (/providers) — access banner, connection cards, audit log
    (FR-021–FR-032). Access state is wired from /providers + /me (T074). */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { AuditLog } from "../components/AuditLog";
 import { AddConnectionModal, RepoPickerModal } from "../components/ConnectionModals";
@@ -16,6 +17,22 @@ export function Providers() {
   const { show } = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const [picker, setPicker] = useState<{ id: string; label: string } | null>(null);
+  const [params, setParams] = useSearchParams();
+
+  // The "Connect with GitHub" flow returns the browser here with ?connected=<id> on success
+  // or ?connect_error=<reason> on failure. Surface it, refresh the list, and clear the query.
+  useEffect(() => {
+    const connected = params.get("connected");
+    const connectError = params.get("connect_error");
+    if (connected) {
+      show(`Connected · ${connected}`);
+      refetch();
+      setParams({}, { replace: true });
+    } else if (connectError) {
+      show(`Couldn’t connect to GitHub (${connectError.replace(/_/g, " ")})`, "error");
+      setParams({}, { replace: true });
+    }
+  }, [params, show, refetch, setParams]);
 
   if (isError) {
     return <ErrorState title="Couldn't load providers" error={error} onRetry={refetch} />;

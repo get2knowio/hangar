@@ -189,6 +189,7 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 | `HANGAR_ALLOW_PUBLIC_BIND` | no | unset | Must be set to bind a non-private/public interface; otherwise refused. |
 | `HANGAR_OPERATOR` | no | `local-operator` | Audit actor used in `disabled` mode. |
 | `HANGAR_SECRET_KEY` | **yes** (real providers) | — | Fernet key; encrypts provider credentials at rest (FR-032). |
+| `HANGAR_BASE_URL` | recommended (Connect with GitHub) | derived | Instance browser URL for the GitHub App manifest callbacks. LAN/VPN URLs are valid (browser redirects; no inbound). |
 | `HANGAR_HOST` / `HANGAR_PORT` | no | `127.0.0.1` / `8000` | Bind host/port for startup safety checks. |
 | `HANGAR_POSTGRES_HOST` | no | unset | Set to switch to Postgres (takes precedence over `HANGAR_DATABASE_URL`). |
 | `HANGAR_POSTGRES_PASSWORD` | with `_HOST` | — | Postgres password; required when `HANGAR_POSTGRES_HOST` is set (fail-closed). |
@@ -227,6 +228,29 @@ provider credentials.
 
 Hangar uses a **GitHub App** (not a personal token) so it can hold least-privilege,
 per-connection scopes and receive webhooks.
+
+### One-click: Connect with GitHub (recommended)
+
+Open **Providers → Add connection → Connect with GitHub**. Hangar creates *your own*
+GitHub App via the App-manifest flow, then sends you to GitHub's install screen to pick the
+org and repos — no App ID, installation ID, or PEM to copy. It captures the credentials
+automatically and starts watching the selected repos.
+
+- Set **`HANGAR_BASE_URL`** to your instance's browser URL (e.g. `https://hangar.lan`). It's
+  only used to build the manifest's callback URLs. These are **browser redirects** — GitHub
+  never connects inbound — so a **LAN/VPN-only** Hangar works fine (no public ingress needed).
+  When unset it's derived from the request.
+- **GitHub Enterprise** is supported: in the dialog set **GitHub host** to your GHES instance
+  (`https://ghe.example.com`) or GHEC data-residency tenant (`https://acme.ghe.com`). Hangar
+  derives the right API host (`…/api/v3` for GHES, `api.<tenant>.ghe.com` for GHEC) and install
+  URL automatically. github.com is the default.
+- The App is created under your user and can be installed on any org you administer; it
+  requests write permissions so it can open fix PRs. Re-connecting another org reuses the same
+  App. Webhooks ship **off**; the poller keeps snapshots fresh.
+
+The manual paths below remain available (e.g. to reuse an App you already manage, or a PAT).
+
+### Manual: bring your own App or token
 
 1. Create a GitHub App (org or user settings → Developer settings → GitHub Apps).
 2. Note the **App ID**, generate a **private key** (`.pem`), and set a **webhook secret**.
