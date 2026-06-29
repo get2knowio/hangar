@@ -44,7 +44,8 @@ Either:
 For production-like runs you also want:
 
 - A **GitHub App** (App id + private key + webhook secret) installed on the org/user you
-  want to watch (least-privilege scopes — see below). A read-only Gitea token is optional.
+  want to watch (least-privilege scopes — see below), and/or a **scoped Gitea token** for a
+  self-hosted Gitea instance (see *Gitea setup*). At least one provider connection.
 - A **reverse proxy doing forward-auth** (Traefik + Authentik reference). For local dev you
   can skip this with `HANGAR_FORWARD_AUTH=disabled`.
 
@@ -292,6 +293,48 @@ source in the repo's PR list), and the *Version updates configured* check passes
 a Dependabot config (`.github/dependabot.yml`) or a Renovate config (`renovate.json`,
 `.github/renovate.json`, `.renovaterc`, …). The *Update cooldown* check reads whichever is
 present — Dependabot's `cooldown` block or Renovate's `minimumReleaseAge`.
+
+## Gitea setup
+
+Gitea is a first-class provider alongside GitHub. Because Gitea's REST API is
+GitHub-shaped, the same 23-check catalog, scorecard, and PR-first remediation apply — the
+adapter just talks to your self-hosted instance.
+
+1. In Gitea, create a **scoped access token** (Settings → Applications → *Generate New
+   Token*). Grant `read:repository` and `read:organization` for detection; add
+   `write:repository` if you want Hangar to open fix PRs.
+2. Open **Providers → Add connection → Provider: Gitea**. Enter your **instance URL**
+   (e.g. `https://gitea.example.com`), the **owner** (org or user), and the **access
+   token**. Tick **Writable** only if the token can write. Or `POST /api/v1/providers`:
+
+   ```json
+   {
+     "provider_type": "gitea",
+     "label": "gitea:your-org",
+     "base_url": "https://gitea.example.com",
+     "owner": "your-org",
+     "credential": "<scoped access token>",
+     "writable": true
+   }
+   ```
+
+   `base_url` is the instance's browser URL; the adapter derives the API base
+   (`{base_url}/api/v1`) and all deep-links/PR URLs from it. `credential` is encrypted at
+   rest with `HANGAR_SECRET_KEY`. Remediation writes a **`renovate.json`** for the update-bot
+   check (Gitea runs Renovate, not Dependabot).
+
+**What reads as `unknown` on Gitea.** OSS Gitea has no equivalent for several GitHub
+signals, so those checks honestly report `unknown` rather than a fabricated pass/fail:
+Dependabot/vulnerability **alerts**, **secret scanning**, **code scanning (CodeQL)**, the
+Actions **workflow-permissions** model, and **org-wide 2FA enforcement**. Everything else
+(files, branch protection, workflows, releases, CI via commit status, pull requests) is
+evaluated against live Gitea data.
+
+**Webhooks (optional).** Point a Gitea repo/org webhook at
+`https://hangar.<your-domain>/api/v1/webhooks/<connection_id>`, content type
+`application/json`, with a **secret** matching `HANGAR_WEBHOOK_SECRET`. Gitea signs the body
+with HMAC-SHA256 in the `X-Gitea-Signature` header (raw hex); Hangar verifies it and refuses
+unsigned/forged deliveries (fail-closed). Without webhooks the poller keeps snapshots fresh.
 
 ---
 
