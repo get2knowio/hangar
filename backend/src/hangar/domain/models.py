@@ -175,6 +175,12 @@ class ProviderConnection(BaseModel):
     granted_capabilities: set[Capability] = Field(default_factory=set)
     last_sync_at: datetime | None = None
     has_credential: bool = False  # True when a real provider credential is stored
+    # The provider's browser-visible host for this connection — an OPAQUE string the core
+    # never interprets. github.com by default; an enterprise connection overrides it
+    # (e.g. https://ghe.example.com for GHES, https://acme.ghe.com for GHEC data residency).
+    # The adapter (provider seam) derives the API host and UI URLs from it; the domain only
+    # carries it, so multi-host support adds no platform branch to the core (Constitution I).
+    base_url: str = "https://github.com"
     # The org/user that owns this connection's repos — a first-class, persisted field used
     # to build provider API paths. Defaults to the label suffix when not set explicitly, so
     # a label that doesn't follow the "prefix:owner" convention can still be addressed.

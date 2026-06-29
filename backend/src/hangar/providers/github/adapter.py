@@ -22,6 +22,7 @@ import hmac
 import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from hangar.domain.models import (
     Capability,
@@ -57,6 +58,44 @@ def _retry_policy() -> RetryChainDecision:
 
         _RETRY = RetryChainDecision(RetryRateLimit(max_retry=3), RetryServerError(max_retry=2))
     return _RETRY
+
+
+# ----------------------------------------------------------------- host derivation
+# All GitHub-host math lives here (the provider seam). The domain carries only an opaque
+# ``base_url`` (the browser host); these turn it into the API base and UI path prefixes for
+# github.com, GHEC (incl. data-residency ``*.ghe.com``) and GHES — so multi-host support
+# never leaks a platform branch into the core (Constitution I).
+_DOTCOM_HOSTS = {"github.com", "www.github.com"}
+
+
+def github_web_base(base_url: str | None) -> str:
+    """The browser host with no trailing slash (defaults to github.com)."""
+    return (base_url or "https://github.com").rstrip("/")
+
+
+def github_api_base(base_url: str | None) -> str:
+    """Derive the REST API base from the browser host:
+
+    - ``github.com``        → ``https://api.github.com``
+    - ``<tenant>.ghe.com``  → ``https://api.<tenant>.ghe.com``  (GHEC data residency)
+    - ``<host>`` (GHES)     → ``https://<host>/api/v3``
+    """
+    web = github_web_base(base_url)
+    parsed = urlsplit(web)
+    host = parsed.netloc
+    if host in _DOTCOM_HOSTS:
+        return "https://api.github.com"
+    if host.endswith(".ghe.com"):
+        return f"{parsed.scheme}://api.{host}"
+    return f"{web}/api/v3"
+
+
+def github_install_prefix(base_url: str | None) -> str:
+    """App-install path prefix: github.com/GHEC use ``/apps``; GHES uses ``/github-apps``."""
+    host = urlsplit(github_web_base(base_url)).netloc
+    if host in _DOTCOM_HOSTS or host.endswith(".ghe.com"):
+        return "/apps"
+    return "/github-apps"
 
 
 # Files/config Hangar writes via PR for the writable PR-tier checks (research.md §9).
@@ -143,6 +182,9 @@ class GitHubAdapter:
         settings = get_settings()
         return GitHub(
             auth,
+            # Per-connection API host: api.github.com for github.com, the data-residency
+            # api.<tenant>.ghe.com for GHEC, or <host>/api/v3 for GHES (Constitution I).
+            base_url=github_api_base(connection.base_url),
             http_cache=False,
             timeout=settings.github_http_timeout_seconds,
             throttler=LocalThrottler(max_concurrency=settings.github_max_concurrency),
@@ -260,10 +302,11 @@ class GitHubAdapter:
             "workflow_permissions": "/settings/actions",
             "actions_pinned_sha": "/settings/actions",
         }.get(check_id, "")
-        return f"{self.base_url}/{connection.owner}/{repo.id}{anchor}"
+        return f"{github_web_base(connection.base_url)}/{connection.owner}/{repo.id}{anchor}"
 
     def pr_url(self, connection: ProviderConnection, repo: Repo, pr_number: int | None) -> str:
-        return f"{self.base_url}/{connection.owner}/{repo.id}/pull/{pr_number}"
+        web = github_web_base(connection.base_url)
+        return f"{web}/{connection.owner}/{repo.id}/pull/{pr_number}"
 
     async def correct(
         self, connection: ProviderConnection, request: CorrectionRequest

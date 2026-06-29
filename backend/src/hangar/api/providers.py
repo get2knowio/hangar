@@ -37,6 +37,9 @@ async def _connection_card(
         "writes": conn.writes,
         "write_label": "Read + write" if conn.writes else "Read-only",
         "remediation": "API + PR + deep-link" if conn.writes else "Deep-link only",
+        # Browser host this connection targets (github.com, or a GHES/GHEC enterprise host).
+        # Structured field so the SPA can show/seed it without parsing the label.
+        "base_url": conn.base_url,
         "synced": format_relative(conn.last_sync_at),
         # Machine-readable companion to `synced`: the SPA polls this after a manual refresh
         # to detect the new snapshot landing, rather than parsing the display string or
@@ -85,6 +88,10 @@ class NewConnection(BaseModel):
     webhook_secret: str | None = None
     # Optional owner (org/user) override; defaults to the label suffix.
     owner: str | None = None
+    # Optional provider browser host (github.com by default). Set to an enterprise host to
+    # watch a GHES instance (https://ghe.example.com) or GHEC data-residency tenant
+    # (https://acme.ghe.com); the adapter derives the API host from it.
+    base_url: str | None = None
     # Optional repo allowlist (repo names). Omit/null ⇒ watch every repo the credential
     # can see; a list scopes the connection's fleet to exactly those repos.
     repo_allowlist: list[str] | None = None
@@ -121,6 +128,7 @@ async def add_provider(
             webhook_secret=body.webhook_secret,
             owner=body.owner,
             repo_allowlist=body.repo_allowlist,
+            base_url=body.base_url,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

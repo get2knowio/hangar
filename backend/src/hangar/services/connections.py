@@ -82,6 +82,7 @@ async def add_connection(
     webhook_secret: str | None = None,
     owner: str | None = None,
     repo_allowlist: list[str] | None = None,
+    base_url: str | None = None,
     connection_id: str | None = None,
 ) -> ProviderConnection:
     """Add a connection. The credential is encrypted before it ever touches the DB.
@@ -121,6 +122,8 @@ async def add_connection(
         # Persist the owner explicitly (derived from the label unless given), so provider
         # API addressing no longer depends on re-parsing the display label on every read.
         owner=owner or (label.split(":")[-1] if ":" in label else label),
+        # Default to github.com when unset so existing callers/connections are unchanged.
+        base_url=base_url or "https://github.com",
         credential_ciphertext=ciphertext,
         webhook_secret_ciphertext=webhook_ciphertext,
         granted_capabilities=[c.value for c in granted],
