@@ -36,7 +36,7 @@ export function Overview() {
           The fleet is the union of repositories across your provider connections. Add a connection
           to start watching repos — no per-repo setup required.
         </p>
-        <div
+        <button
           onClick={() => navigate("/providers")}
           style={{
             display: "inline-block",
@@ -44,13 +44,15 @@ export function Overview() {
             fontWeight: 600,
             color: "var(--bg)",
             background: "var(--fg)",
+            border: "none",
             borderRadius: 6,
             padding: "8px 14px",
             cursor: "pointer",
+            fontFamily: "inherit",
           }}
         >
           Add a connection →
-        </div>
+        </button>
       </div>
     );
   }

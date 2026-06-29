@@ -102,8 +102,10 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_methods=["*"],
-        allow_headers=["*"],
+        # Scope to the verbs/headers the SPA actually sends rather than a wildcard — with
+        # credentialed CORS the surface should be explicit, not "*".
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Accept", "Content-Type"],
         # Cookie-based OIDC sessions require credentialed CORS (origins stay an explicit list).
         allow_credentials=True,
     )

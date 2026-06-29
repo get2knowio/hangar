@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "../app/state";
 import { type BatchTarget, type Scorecard, useRemediateBatch } from "../lib/api";
 import { hygColor, viz, type FindingStatus } from "../lib/status";
+import { Modal } from "./Modal";
 
 const CELL = 42;
 const REPO_COL = 230;
@@ -156,55 +157,47 @@ export function ScorecardMatrix({ data, failingOnly }: { data: Scorecard; failin
       </div>
     </div>
     {prompt && (
-      <div
-        onClick={() => !batch.isPending && setPrompt(null)}
-        style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 90,
-          display: "flex", alignItems: "center", justifyContent: "center",
+      <Modal
+        onClose={() => {
+          if (!batch.isPending) setPrompt(null);
         }}
+        label={`Remediate ${prompt.label} across failing repos`}
+        width={380}
       >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10,
-            padding: "20px 22px", width: 380, boxShadow: "0 12px 40px rgba(0,0,0,.3)",
-          }}
-        >
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>
-            Remediate “{prompt.label}”
-          </div>
-          <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 16px" }}>
-            {prompt.targets.length === 0
-              ? "No failing repos for this check."
-              : `Opens a fix PR on each of ${prompt.targets.length} failing repo${prompt.targets.length === 1 ? "" : "s"} (read-only connections collapse to a deep-link). This is idempotent — an existing Hangar PR is reused, not duplicated.`}
-          </p>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <button
-              onClick={() => setPrompt(null)}
-              disabled={batch.isPending}
-              style={{
-                fontSize: 12, fontWeight: 600, padding: "7px 13px", borderRadius: 6,
-                border: "1px solid var(--border)", background: "transparent", color: "var(--fg-2)",
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={runBatch}
-              disabled={batch.isPending || prompt.targets.length === 0}
-              style={{
-                fontSize: 12, fontWeight: 600, padding: "7px 13px", borderRadius: 6,
-                border: "1px solid var(--fg)", background: "var(--fg)", color: "var(--bg)",
-                cursor: batch.isPending || prompt.targets.length === 0 ? "default" : "pointer",
-                opacity: prompt.targets.length === 0 ? 0.5 : 1,
-              }}
-            >
-              {batch.isPending ? "Working…" : `Remediate ${prompt.targets.length}`}
-            </button>
-          </div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>
+          Remediate “{prompt.label}”
         </div>
-      </div>
+        <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 16px" }}>
+          {prompt.targets.length === 0
+            ? "No failing repos for this check."
+            : `Opens a fix PR on each of ${prompt.targets.length} failing repo${prompt.targets.length === 1 ? "" : "s"} (read-only connections collapse to a deep-link). This is idempotent — an existing Hangar PR is reused, not duplicated.`}
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            onClick={() => setPrompt(null)}
+            disabled={batch.isPending}
+            style={{
+              fontSize: 12, fontWeight: 600, padding: "7px 13px", borderRadius: 6,
+              border: "1px solid var(--border)", background: "transparent", color: "var(--fg-2)",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={runBatch}
+            disabled={batch.isPending || prompt.targets.length === 0}
+            style={{
+              fontSize: 12, fontWeight: 600, padding: "7px 13px", borderRadius: 6,
+              border: "1px solid var(--fg)", background: "var(--fg)", color: "var(--bg)",
+              cursor: batch.isPending || prompt.targets.length === 0 ? "default" : "pointer",
+              opacity: prompt.targets.length === 0 ? 0.5 : 1,
+            }}
+          >
+            {batch.isPending ? "Working…" : `Remediate ${prompt.targets.length}`}
+          </button>
+        </div>
+      </Modal>
     )}
     </>
   );

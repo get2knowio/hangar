@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useToast } from "../app/state";
+import { Modal } from "./Modal";
 import {
   useAddConnection,
   useConnectionRepos,
@@ -14,29 +15,6 @@ import {
   type ConnectionCard,
   type NewConnectionBody,
 } from "../lib/api";
-
-function Backdrop({ onClose, children }: { onClose: () => void; children: ReactNode }) {
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 90,
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10,
-          padding: "20px 22px", width: 460, maxHeight: "85vh", overflowY: "auto",
-          boxShadow: "0 12px 40px rgba(0,0,0,.3)",
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
 
 const labelStyle: React.CSSProperties = {
   fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em",
@@ -159,7 +137,7 @@ export function AddConnectionModal({
   }
 
   return (
-    <Backdrop onClose={onClose}>
+    <Modal onClose={onClose} label="Add connection">
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Add connection</div>
       <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 16px" }}>
         Most setups use a Personal Access Token. Reuse an existing connection’s credential to
@@ -261,7 +239,7 @@ export function AddConnectionModal({
           {add.isPending ? "Connecting…" : "Add connection"}
         </button>
       </div>
-    </Backdrop>
+    </Modal>
   );
 }
 
@@ -318,7 +296,7 @@ export function RepoPickerModal({
   const selectedCount = watchAll ? available.length : selected.size;
 
   return (
-    <Backdrop onClose={onClose}>
+    <Modal onClose={onClose} label={`Manage repos for ${connectionLabel}`}>
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
         Repos — <span className="mono">{connectionLabel}</span>
       </div>
@@ -391,6 +369,6 @@ export function RepoPickerModal({
           </button>
         </div>
       </div>
-    </Backdrop>
+    </Modal>
   );
 }

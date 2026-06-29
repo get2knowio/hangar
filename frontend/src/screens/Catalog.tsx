@@ -49,13 +49,18 @@ export function Catalog() {
               const pct = c.repo_count ? Math.round(((c.pass_count ?? 0) / c.repo_count) * 100) : 100;
               return (
                 <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", borderBottom: "1px solid var(--border-2)" }}>
-                  <div
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={c.enabled}
+                    aria-label={`${c.enabled ? "Disable" : "Enable"} ${c.label}`}
                     onClick={() => patch.mutate({ check_id: c.id!, enabled: !c.enabled })}
                     style={{
                       flex: "none",
                       width: 34,
                       height: 19,
                       borderRadius: 11,
+                      border: "none",
                       background: c.enabled ? "var(--fg)" : "var(--border)",
                       display: "flex",
                       alignItems: "center",
@@ -66,7 +71,7 @@ export function Catalog() {
                     }}
                   >
                     <div style={{ width: 15, height: 15, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.3)" }} />
-                  </div>
+                  </button>
                   <div style={{ flex: 1, minWidth: 0, opacity: c.enabled ? 1 : 0.45 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>{c.label}</span>
