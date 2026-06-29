@@ -35,6 +35,12 @@ class ConnectionRow(Base):
     auth_mode: Mapped[str] = mapped_column(String(128))
     # Org/user that owns the repos (first-class; defaults to the label suffix at creation).
     owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Provider browser host for this connection (github.com by default; an enterprise host
+    # for GHES/GHEC). Opaque to the core — the adapter derives API/UI URLs from it.
+    base_url: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="https://github.com",
+        server_default="https://github.com",
+    )
     credential_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     # Per-connection webhook HMAC secret (encrypted at rest). When null, the inbound
     # webhook falls back to the global HANGAR_WEBHOOK_SECRET.
@@ -56,6 +62,7 @@ class ConnectionRow(Base):
             scope=self.scope,
             auth_mode=self.auth_mode,
             owner=self.owner or "",  # empty → ProviderConnection derives it from the label
+            base_url=self.base_url or "https://github.com",
             granted_capabilities={Capability(c) for c in (self.granted_capabilities or [])},
             app_id=self.app_id,
             installation_id=self.installation_id,

@@ -275,6 +275,7 @@ paths:
                 writable: { type: boolean, default: false, description: grant write tiers only if the credential can write (least-privilege, FR-026) }
                 webhook_secret: { type: string, description: "write-only; per-connection inbound-webhook HMAC secret. Encrypted at rest; falls back to the global secret when omitted (FR-033)" }
                 owner: { type: string, description: "org/user that owns the repos; defaults to the label suffix when omitted" }
+                base_url: { type: string, nullable: true, description: "provider browser host; github.com when omitted. Set to a GHES host (https://ghe.example.com) or GHEC data-residency tenant (https://acme.ghe.com) — the adapter derives the API host from it" }
                 repo_allowlist:
                   type: array
                   nullable: true
@@ -579,6 +580,7 @@ components:
         has_credential: { type: boolean, description: "whether a real credential is stored (reusable by another connection)" }
         scope: { type: string }
         auth_mode: { type: string }
+        base_url: { type: string, description: "provider browser host this connection targets (github.com, or a GHES/GHEC enterprise host)" }
         repos: { type: integer }
         writes: { type: boolean }
         write_label: { type: string, example: "Read + write" }
