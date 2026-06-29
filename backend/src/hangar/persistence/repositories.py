@@ -19,6 +19,7 @@ from hangar.domain.policy import RemediationMap, default_policy
 from hangar.persistence.models import (
     AuditRow,
     ConnectionRow,
+    GitHubAppRegistration,
     PolicyRow,
     RemediationRow,
     RepoRow,
@@ -249,3 +250,38 @@ async def next_pr_number(session: AsyncSession) -> int:
     pr_number into Python to max() it (the table grows with every remediation)."""
     current = (await session.execute(select(func.max(RemediationRow.pr_number)))).scalar()
     return (current if current is not None else 142) + 1
+
+
+# ------------------------------------------------------- github app registrations
+async def get_app_registration(
+    session: AsyncSession, base_url: str
+) -> GitHubAppRegistration | None:
+    """The GitHub App provisioned for ``base_url`` (one per host), or None."""
+    return await session.get(GitHubAppRegistration, base_url)
+
+
+async def upsert_app_registration(
+    session: AsyncSession,
+    *,
+    base_url: str,
+    app_id: str,
+    slug: str,
+    client_id: str | None,
+    private_key_ciphertext: bytes,
+    webhook_secret_ciphertext: bytes | None,
+    client_secret_ciphertext: bytes | None,
+) -> GitHubAppRegistration:
+    """Create or replace the App registration for ``base_url`` (re-provisioning overwrites)."""
+    row = await session.get(GitHubAppRegistration, base_url)
+    if row is None:
+        row = GitHubAppRegistration(base_url=base_url)
+        session.add(row)
+    row.app_id = app_id
+    row.slug = slug
+    row.client_id = client_id
+    row.private_key_ciphertext = private_key_ciphertext
+    row.webhook_secret_ciphertext = webhook_secret_ciphertext
+    row.client_secret_ciphertext = client_secret_ciphertext
+    row.created_at = datetime.now(UTC)
+    await session.commit()
+    return row

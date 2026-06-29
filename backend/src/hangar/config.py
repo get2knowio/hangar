@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     # --- crypto (FR-032) ---
     secret_key: str | None = Field(default=None, description="Fernet key for credential encryption")
 
+    # --- GitHub App "Connect with GitHub" flow (#25) ---
+    # The instance's browser-visible base URL (e.g. https://hangar.lan), used to build the
+    # GitHub App manifest's redirect/setup callback URLs. LAN/VPN URLs are valid — the
+    # callbacks are browser redirects, GitHub never connects inbound. When unset it is derived
+    # from the incoming request (mirrors HANGAR_OIDC_REDIRECT_URL).
+    base_url: str | None = Field(
+        default=None, description="instance browser base URL for GitHub App callbacks"
+    )
+
     # --- webhooks (FR-033) ---
     webhook_secret: str | None = Field(
         default=None, description="HMAC secret for inbound provider webhooks; required to accept them"
