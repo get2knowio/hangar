@@ -16,6 +16,7 @@ from hangar.providers.registry import provider_for
 from hangar.services.connections import attach_credential
 from hangar.services.fleet_remediation import remediate_check_across
 from hangar.services.repo_detail import build_repo_detail
+from hangar.services.sync import format_relative
 
 router = APIRouter(tags=["repos"])
 
@@ -96,7 +97,10 @@ async def remediate(
         e = await repo_store.get_audit(session, outcome.audit_id)
         if e is not None:
             audit = {
-                "timestamp": "just now", "repo_id": e.repo_id, "check_label": e.check_label,
+                # Humanize the entry's REAL timestamp (same as the audit-list endpoint) —
+                # never a hardcoded "just now", which would lie if the write lagged.
+                "timestamp": format_relative(e.timestamp),
+                "repo_id": e.repo_id, "check_label": e.check_label,
                 "connection_label": e.connection_label, "actor": e.actor,
                 "result": e.result, "pr_url": e.pr_url,
             }

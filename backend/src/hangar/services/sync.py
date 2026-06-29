@@ -50,6 +50,11 @@ def format_relative(dt: datetime | None, *, now: datetime | None = None) -> str:
         dt = dt.replace(tzinfo=UTC)
     delta = now - dt
     secs = int(delta.total_seconds())
+    if secs < 0:
+        # dt is in the future. Sub-minute is benign clock skew (a just-written timestamp can
+        # read a few ms ahead of `now`); anything larger is anomalous, so surface it honestly
+        # rather than masking a clock/data problem as a fresh "just now" (Constitution VIII).
+        return "just now" if secs > -60 else "in the future"
     if secs < 60:
         return "just now"
     if secs < 3600:

@@ -8,7 +8,7 @@ via the Providers screen are interrogated by the adapters and overwrite/augment 
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
 from sqlalchemy import func, select
@@ -99,6 +99,22 @@ AUDIT: list[_Audit] = [
 ]
 
 
+def _ago(text: str) -> timedelta:
+    """Turn a prototype display string ('2m ago' / '1h ago' / 'yesterday') into a real
+    timedelta. The demo then seeds honest, *aging* timestamps (rendered back through
+    ``format_relative``) instead of frozen hardcoded strings (Constitution VIII)."""
+    text = text.strip().lower()
+    if text == "yesterday":
+        return timedelta(hours=26)
+    token = text.split()[0]  # "12m", "1h", "3d"
+    try:
+        value, unit = int(token[:-1]), token[-1]
+    except ValueError:
+        return timedelta()
+    return {"m": timedelta(minutes=value), "h": timedelta(hours=value),
+            "d": timedelta(days=value)}.get(unit, timedelta())
+
+
 async def seed_if_empty(session: AsyncSession) -> bool:
     """Idempotent: populate fixtures only when the connections table is empty.
 
@@ -115,7 +131,9 @@ async def seed_if_empty(session: AsyncSession) -> bool:
                 id=c["id"], label=c["label"], provider_type=c["provider_type"],
                 scope=c["scope"], auth_mode=c["auth_mode"],
                 granted_capabilities=[cap.value for cap in c["caps"]],
-                last_sync_at=now, created_at=now,
+                # Real, staggered sync times (computed from the fixture's relative offset)
+                # so the demo shows honest, aging "synced …" values, not frozen strings.
+                last_sync_at=now - _ago(c["sync"]), created_at=now,
             )
         )
     for r in REPOS:
@@ -133,7 +151,7 @@ async def seed_if_empty(session: AsyncSession) -> bool:
     for entry in AUDIT:
         session.add(
             AuditRow(
-                timestamp=now, connection_label=entry["conn"], actor="paul",
+                timestamp=now - _ago(entry["t"]), connection_label=entry["conn"], actor="paul",
                 repo_id=entry["repo"], check_label=entry["check"], result=entry["result"],
                 pr_url=None,
             )
