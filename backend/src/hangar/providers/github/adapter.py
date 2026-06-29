@@ -37,6 +37,27 @@ if TYPE_CHECKING:
         GitHub,
         TokenAuthStrategy,
     )
+    from githubkit.retry import RetryChainDecision
+
+# Retry policy for the githubkit client: back off and retry on a rate-limit / secondary
+# (concurrency) limit — honoring the server's Retry-After — and on a transient 5xx, before
+# giving up. A little more patient than githubkit's default (rate-limit retried once) because
+# a single homelab token shares GitHub's secondary-limit budget across the whole fleet. When
+# retries are exhausted the call raises and the caller degrades that repo/connection to its
+# last good snapshot (sync.py), so this never blocks the poll cycle indefinitely.
+_RETRY: RetryChainDecision | None = None
+
+
+def _retry_policy() -> RetryChainDecision:
+    """Lazily build (and cache) the retry chain so importing the adapter doesn't import
+    githubkit at module load — its imports are deferred everywhere else here too."""
+    global _RETRY
+    if _RETRY is None:
+        from githubkit.retry import RetryChainDecision, RetryRateLimit, RetryServerError
+
+        _RETRY = RetryChainDecision(RetryRateLimit(max_retry=3), RetryServerError(max_retry=2))
+    return _RETRY
+
 
 # Files/config Hangar writes via PR for the writable PR-tier checks (research.md §9).
 _PR_FILES = {
@@ -80,6 +101,13 @@ class GitHubAdapter:
     def _client(self, connection: ProviderConnection) -> GitHub:
         """Build an authenticated githubkit client (real GitHub App or token auth).
 
+        Resilience (Constitution VI): a bounded per-request ``timeout`` so a hung GitHub
+        connection can't stall the whole poll cycle; a ``LocalThrottler`` caps the burst of
+        concurrent sub-requests one repo's interrogation fans out (avoids GitHub's secondary
+        concurrency rate limit); and ``auto_retry`` backs off on a primary/secondary
+        rate-limit (honoring ``Retry-After``) or a transient 5xx before giving up — a single
+        exhausted repo then degrades to its last snapshot, never the whole cycle.
+
         http_cache is disabled because we manage conditional requests explicitly.
         """
         from githubkit import (
@@ -87,6 +115,9 @@ class GitHubAdapter:
             GitHub,
             TokenAuthStrategy,
         )
+        from githubkit.throttling import LocalThrottler
+
+        from hangar.config import get_settings
 
         if not connection.token:
             raise RuntimeError(
@@ -109,7 +140,14 @@ class GitHubAdapter:
             )
         else:
             auth = TokenAuthStrategy(connection.token)
-        return GitHub(auth, http_cache=False)
+        settings = get_settings()
+        return GitHub(
+            auth,
+            http_cache=False,
+            timeout=settings.github_http_timeout_seconds,
+            throttler=LocalThrottler(max_concurrency=settings.github_max_concurrency),
+            auto_retry=_retry_policy(),
+        )
 
     # --------------------------------------------------- conditional requests
     async def _conditional_get(
