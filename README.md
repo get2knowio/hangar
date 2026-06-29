@@ -106,9 +106,31 @@ export HANGAR_STATIC_DIR="$(pwd)/../frontend/dist"
 uvicorn hangar.main:app                                          # full app on http://127.0.0.1:8000
 ```
 
-### Full container stack (Docker Compose)
+### Run the published image (adopters)
 
-Builds the SPA + backend into one image and runs it the way it deploys. One-time setup:
+The fastest way to try Hangar — pulls the prebuilt multi-arch image from GHCR
+(`ghcr.io/get2knowio/hangar`), no source checkout or build required. Uses the
+self-contained [`deploy/docker-compose.example.yml`](deploy/docker-compose.example.yml)
+(no Traefik, no external network):
+
+```bash
+cp deploy/.env.example deploy/.env        # then edit deploy/.env (optional for a first look)
+docker compose -f deploy/docker-compose.example.yml up -d
+# open http://127.0.0.1:8000
+```
+
+It boots in `disabled` access mode on the loopback interface — fine for kicking the
+tyres locally. **Before exposing Hangar to a network, set `HANGAR_ACCESS_MODE` to
+`forward-auth` or `oidc`** (`disabled` means no auth). Set `HANGAR_SECRET_KEY` (generate
+it with the command [below](#generate-the-credential-encryption-key)) before adding a real
+GitHub connection, and `HANGAR_SEED_DEMO_DATA=true` to explore with offline sample data.
+Pin a release in production via `HANGAR_IMAGE=ghcr.io/get2knowio/hangar:0.1.0`. To add
+Postgres, uncomment `HANGAR_POSTGRES_*` in `deploy/.env` and run with `--profile postgres`.
+
+### Full container stack (Docker Compose, build from source)
+
+Builds the SPA + backend into one image and runs it the way it deploys behind Traefik +
+forward-auth (the homelab reference). One-time setup:
 
 ```bash
 cp deploy/.env.example deploy/.env
@@ -160,8 +182,10 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 | `HANGAR_OIDC_SCOPES` | no | `openid email profile` | Scopes requested at login. |
 | `HANGAR_OIDC_USERNAME_CLAIM` | no | `email` | ID-token claim used as the audit actor. |
 | `HANGAR_OIDC_ALLOWED_USERS` / `HANGAR_OIDC_ALLOWED_GROUPS` | no | — | Optional allowlist (email/sub, or group via `HANGAR_OIDC_GROUPS_CLAIM`). Empty ⇒ admit any authenticated user. |
+| `HANGAR_OIDC_POST_LOGOUT_REDIRECT_URL` | no | — | Optional RP-initiated logout target at the IdP. |
 | `HANGAR_SESSION_SECRET` | oidc² | — | Signs the session cookie; falls back to `HANGAR_SECRET_KEY`. |
 | `HANGAR_SESSION_MAX_AGE_SECONDS` / `HANGAR_SESSION_COOKIE_SECURE` | no | `28800` / `true` | Session lifetime; set `_SECURE=false` only for local http dev. |
+| `HANGAR_SESSION_COOKIE_NAME` | no | `hangar_session` | Name of the OIDC session cookie (rarely changed). |
 | `HANGAR_ALLOW_PUBLIC_BIND` | no | unset | Must be set to bind a non-private/public interface; otherwise refused. |
 | `HANGAR_OPERATOR` | no | `local-operator` | Audit actor used in `disabled` mode. |
 | `HANGAR_SECRET_KEY` | **yes** (real providers) | — | Fernet key; encrypts provider credentials at rest (FR-032). |
@@ -172,14 +196,19 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 | `HANGAR_POSTGRES_SSLMODE` | no | unset | libpq sslmode (`require`/`verify-full`/…), forwarded to asyncpg's `ssl` arg. |
 | `HANGAR_DATABASE_URL` | no | `sqlite+aiosqlite:///./hangar.db` | Full SQLAlchemy URL escape hatch (used only when no `HANGAR_POSTGRES_HOST`). |
 | `HANGAR_POLL_INTERVAL_SECONDS` | no | `300` | Per-connection poll ceiling (ETag/webhook-driven). |
+| `HANGAR_STALE_AFTER_SECONDS` | no | `900` | Age after which a cached snapshot is flagged "stale" in the UI. |
 | `HANGAR_WEBHOOK_SECRET` | no | — | HMAC secret for inbound provider webhooks; webhooks are refused (fail-closed) when unset. |
 | `HANGAR_SEED_DEMO_DATA` | no | `false` | Load sample fixtures on first boot (offline demo). Production runs against real connections. |
-| `HANGAR_DOMAIN` | compose | `example.com` | Base domain for the Traefik router rule (`hangar.${HANGAR_DOMAIN}`). |
+| `HANGAR_STATIC_DIR` | no³ | — (image: `/app/static`) | Directory of the built SPA served at `/`. Set by the container image; don't override in a container. |
+| `HANGAR_DOMAIN` | compose | `example.com` | Base domain for the Traefik router rule; used by `docker-compose.yml` only. |
+| `HANGAR_IMAGE` | compose | `ghcr.io/get2knowio/hangar:latest` | Published image tag; used by `docker-compose.example.yml` only. |
 
 ¹ Exactly one access mode must be chosen — set `HANGAR_ACCESS_MODE` **or** the legacy
 `HANGAR_FORWARD_AUTH`. If neither is set, Hangar refuses to start (fail-closed, FR-029).
 ² `oidc` mode also requires a session-signing secret — a dedicated `HANGAR_SESSION_SECRET`,
 or it reuses `HANGAR_SECRET_KEY`.
+³ Required only when running the backend **outside** a container (it must point at the built
+SPA, e.g. `frontend/dist`); the container image sets it for you.
 
 ### Generate the credential-encryption key
 
