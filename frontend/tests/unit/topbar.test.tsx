@@ -47,4 +47,10 @@ describe("Topbar synced indicator", () => {
     expect(screen.getByText("synced —")).toBeInTheDocument();
     expect(screen.queryByText(/synced \d+m ago/)).not.toBeInTheDocument();
   });
+
+  it("makes the top-left brand a link back to the overview (/)", () => {
+    useOverview.mockReturnValue({ data: undefined });
+    renderTopbar();
+    expect(screen.getByRole("link", { name: /hangar/i })).toHaveAttribute("href", "/");
+  });
 });
