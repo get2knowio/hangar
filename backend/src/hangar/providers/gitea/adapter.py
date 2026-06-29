@@ -12,10 +12,14 @@ so no platform string leaks into the core. Webhook ingest arrives in a later sta
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
+import json
 from collections.abc import Mapping
 
 from hangar.domain.models import Capability, ProviderConnection, RemediationKind, Repo
 from hangar.providers.base import CorrectionRequest, CorrectionResult, RepoListing, WebhookEvent
+from hangar.providers.bots import is_bot_login
 from hangar.providers.gitea.client import _FORBIDDEN, GiteaClient, gitea_web_base
 
 # Files/config Hangar writes via PR for the writable PR-tier checks. Mostly the same paths as
@@ -48,6 +52,7 @@ class GiteaAdapter:
             Capability.read_files,
             Capability.deep_link,
             Capability.open_pull_request,
+            Capability.subscribe_webhooks,
         }
 
     def _client(self, connection: ProviderConnection) -> GiteaClient:
@@ -174,11 +179,49 @@ class GiteaAdapter:
         )
 
     async def subscribe(self, connection: ProviderConnection) -> None:
+        # Hangar verifies/parses inbound Gitea webhooks (below) but does not auto-register
+        # them; the operator points the repo/org webhook at /api/v1/webhooks/<connection_id>
+        # with the connection's secret. No-op, mirroring the GitHub adapter.
         return None
 
+    # --------------------------------------------------------------- webhooks
     def verify_webhook(self, headers: Mapping[str, str], body: bytes, secret: str) -> bool:
-        # Gitea webhook ingest is a later stage; reject (fail-closed) until implemented.
-        return False
+        """Verify Gitea's ``X-Gitea-Signature`` HMAC (constant-time, fail-closed).
+
+        Unlike GitHub's ``X-Hub-Signature-256: sha256=<hex>``, Gitea sends a **raw hex**
+        HMAC-SHA256 digest with no algorithm prefix. A missing header or secret rejects.
+        """
+        h = {k.lower(): v for k, v in headers.items()}
+        sig = h.get("x-gitea-signature")
+        if not sig or not secret:
+            return False
+        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, sig)
 
     def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent | None:
+        """Normalize a Gitea event (``X-Gitea-Event`` + payload) into a WebhookEvent."""
+        h = {k.lower(): v for k, v in headers.items()}
+        event = h.get("x-gitea-event", "")
+        try:
+            payload = json.loads(body or b"{}")
+        except ValueError:
+            return None
+        repo_name = (payload.get("repository") or {}).get("name")
+        if not repo_name:
+            return None
+        if event == "status":
+            # A commit-status event carries the combined state for the head commit.
+            state = payload.get("state")
+            if state == "success":
+                return WebhookEvent(repo_name, ci_status="pass")
+            if state in ("failure", "error"):
+                return WebhookEvent(repo_name, ci_status="fail")
+            return None
+        if event == "pull_request":
+            action = payload.get("action")
+            if action in ("opened", "reopened", "closed"):
+                delta = 1 if action in ("opened", "reopened") else -1
+                login = ((payload.get("pull_request") or {}).get("user") or {}).get("login")
+                return WebhookEvent(repo_name, pr_delta=delta, pr_is_bot=is_bot_login(login))
+            return None
         return None

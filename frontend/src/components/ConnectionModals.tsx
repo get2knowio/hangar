@@ -97,8 +97,9 @@ export function AddConnectionModal({
   const [appId, setAppId] = useState("");
   const [installationId, setInstallationId] = useState("");
   const [writable, setWritable] = useState(false);
-  // GitHub browser host — github.com by default; an enterprise host for GHES/GHEC. Feeds both
-  // the one-click "Connect with GitHub" start URL and a manually-entered connection's base_url.
+  // The connection's browser host. For GitHub it's github.com by default (an enterprise host
+  // for GHES/GHEC) and feeds the one-click "Connect with GitHub" start URL; for self-hosted
+  // Gitea it's the REQUIRED instance URL. Both flow through to the connection's base_url.
   const [host, setHost] = useState("https://github.com");
 
   // Existing same-provider connections whose stored credential we can reuse (so a PAT
@@ -107,10 +108,13 @@ export function AddConnectionModal({
     (c) => c.provider_type === providerType && c.has_credential,
   );
 
-  // Keep the auth method valid as the provider changes (no reuse target, App is GitHub-only).
+  // Keep the auth method valid as the provider changes (no reuse target, App is GitHub-only),
+  // and swap the host default so a Gitea connection never inherits the github.com placeholder.
   useEffect(() => {
     if (authMethod === "reuse" && reusable.length === 0) setAuthMethod("pat");
     if (authMethod === "app" && providerType !== "github") setAuthMethod("pat");
+    if (providerType === "gitea") setHost((h) => (h === "https://github.com" ? "" : h));
+    if (providerType === "github") setHost((h) => (h === "" ? "https://github.com" : h));
   }, [authMethod, reusable.length, providerType]);
 
   // Owner defaults to the label suffix (gh:my-org → my-org), mirroring the backend.
@@ -121,8 +125,15 @@ export function AddConnectionModal({
     authMethod === "reuse" ? copyFrom.length > 0 : credential.trim().length > 0;
   const writableNeedsCred = writable && !hasCredential;
   const reuseNeedsSource = authMethod === "reuse" && !copyFrom;
+  // A self-hosted Gitea connection has no default host — its instance URL is required.
+  const trimmedHost = host.trim();
+  const giteaNeedsHost = providerType === "gitea" && !/^https?:\/\/.+/.test(trimmedHost);
   const canSubmit =
-    label.trim().length > 0 && !writableNeedsCred && !reuseNeedsSource && !add.isPending;
+    label.trim().length > 0 &&
+    !writableNeedsCred &&
+    !reuseNeedsSource &&
+    !giteaNeedsHost &&
+    !add.isPending;
 
   function submit() {
     if (!canSubmit) return;
@@ -137,11 +148,14 @@ export function AddConnectionModal({
       app_id: authMethod === "app" ? appId.trim() || undefined : undefined,
       installation_id:
         authMethod === "app" && installationId.trim() ? Number(installationId.trim()) : undefined,
-      // Only send a non-default host (github.com is the backend default).
+      // Gitea always sends its instance URL; GitHub only sends a non-default enterprise host
+      // (github.com is the backend default).
       base_url:
-        providerType === "github" && host.trim() && host.trim() !== "https://github.com"
-          ? host.trim()
-          : undefined,
+        providerType === "gitea"
+          ? trimmedHost || undefined
+          : trimmedHost && trimmedHost !== "https://github.com"
+            ? trimmedHost
+            : undefined,
       writable,
     };
     add.mutate(body, {
@@ -157,8 +171,9 @@ export function AddConnectionModal({
     <Modal onClose={onClose} label="Add connection">
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Add connection</div>
       <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 16px" }}>
-        Connect a GitHub org in two clicks below — Hangar creates a GitHub App and installs it,
-        no tokens to copy. Or enter a credential manually.
+        {providerType === "gitea"
+          ? "Connect a self-hosted Gitea instance with a scoped access token. Hangar reads over its API and, when writable, opens fix PRs."
+          : "Connect a GitHub org in two clicks below — Hangar creates a GitHub App and installs it, no tokens to copy. Or enter a credential manually."}
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -215,9 +230,24 @@ export function AddConnectionModal({
         </>
       )}
 
+      {providerType === "gitea" && (
+        <Field
+          label="Gitea instance URL"
+          hint="Your self-hosted instance, e.g. https://gitea.example.com."
+        >
+          <input
+            style={inputStyle}
+            placeholder="https://gitea.example.com"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            aria-invalid={giteaNeedsHost}
+          />
+        </Field>
+      )}
+
       <Field
         label="Owner (org / user)"
-        hint="The GitHub org or user whose repos to watch. Defaults to the part after “:” in the label."
+        hint={`The ${providerType === "gitea" ? "Gitea" : "GitHub"} org or user whose repos to watch. Defaults to the part after “:” in the label.`}
       >
         <input style={inputStyle} placeholder={derivedOwner || "my-org"} value={owner} onChange={(e) => setOwner(e.target.value)} />
       </Field>
