@@ -5,15 +5,21 @@ import { useState } from "react";
 
 import { AuditLog } from "../components/AuditLog";
 import { AddConnectionModal, RepoPickerModal } from "../components/ConnectionModals";
+import { ErrorState } from "../components/ErrorState";
+import { useToast } from "../app/state";
 import { useAudit, useProviders, useSyncConnection } from "../lib/api";
 
 export function Providers() {
-  const { data, isLoading } = useProviders();
+  const { data, isLoading, isError, error, refetch } = useProviders();
   const audit = useAudit();
   const syncConn = useSyncConnection();
+  const { show } = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const [picker, setPicker] = useState<{ id: string; label: string } | null>(null);
 
+  if (isError) {
+    return <ErrorState title="Couldn't load providers" error={error} onRetry={refetch} />;
+  }
   if (isLoading || !data) {
     return <div style={{ padding: "24px 28px", color: "var(--muted)" }}>Loading providers…</div>;
   }
@@ -97,7 +103,12 @@ export function Providers() {
                 const pending = syncConn.isPending && syncConn.variables === cn.id;
                 return (
                   <button
-                    onClick={() => syncConn.mutate(cn.id ?? "")}
+                    onClick={() =>
+                      syncConn.mutate(cn.id ?? "", {
+                        onSuccess: () => show(`Refreshed · ${cn.label}`),
+                        onError: () => show(`Refresh failed · ${cn.label}`, "error"),
+                      })
+                    }
                     disabled={syncConn.isPending}
                     title="Re-interrogate this connection now"
                     style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 10px", cursor: syncConn.isPending ? "default" : "pointer", background: "transparent", fontFamily: "inherit", opacity: syncConn.isPending && !pending ? 0.5 : 1 }}

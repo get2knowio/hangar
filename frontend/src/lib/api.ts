@@ -231,10 +231,37 @@ export function useSetConnectionRepos(connectionId: string) {
 }
 
 // Manual refresh: trigger an immediate re-interrogation (the backend runs it in the
-// background, the same path as the scheduled poll). The endpoint returns 202 right away,
-// so we wait a beat before invalidating to give the snapshot a chance to land — and keep
-// the mutation `pending` during that window so the button can show a "Refreshing…" state.
-const REFRESH_SETTLE_MS = 2500;
+// background, the same path as the scheduled poll, and returns 202 at once). Instead of
+// guessing with a fixed timer — too short for a real provider, wastefully long for the demo
+// — we poll the connection's machine-readable `last_sync_at` and resolve the moment a newer
+// snapshot lands (Constitution VII: a structured field, never a parsed display string),
+// keeping the mutation `pending` (so the button shows "Refreshing…") until then or the cap.
+const REFRESH_POLL_INTERVAL_MS = 800;
+const REFRESH_POLL_TRIES = 18; // ~14s ceiling — then refresh anyway so the UI never hangs
+
+type ConnList = NonNullable<Providers["connections"]>;
+
+function syncedAtOf(conns: ConnList | undefined, connectionId: string): string | null {
+  return conns?.find((c) => c.id === connectionId)?.last_sync_at ?? null;
+}
+
+// A sync "landed" when the timestamp exists and is newer than the one captured before the
+// trigger (ISO-8601 UTC sorts chronologically; any change means a fresh poll committed).
+function advanced(before: string | null, after: string | null | undefined): boolean {
+  return !!after && (!before || after > before);
+}
+
+async function pollProvidersUntil(done: (conns: ConnList) => boolean): Promise<void> {
+  for (let i = 0; i < REFRESH_POLL_TRIES; i++) {
+    await new Promise((r) => setTimeout(r, REFRESH_POLL_INTERVAL_MS));
+    try {
+      const fresh = await get<Providers>("/providers");
+      if (done(fresh.connections ?? [])) return;
+    } catch {
+      return; // a failing poll: stop waiting and let invalidation surface the error state
+    }
+  }
+}
 
 function invalidateAfterSync(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["providers"] });
@@ -248,8 +275,9 @@ export function useSyncConnection() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (connectionId: string) => {
+      const before = syncedAtOf(qc.getQueryData<Providers>(["providers"])?.connections, connectionId);
       await send("POST", `/providers/${connectionId}/sync`);
-      await new Promise((r) => setTimeout(r, REFRESH_SETTLE_MS));
+      await pollProvidersUntil((conns) => advanced(before, syncedAtOf(conns, connectionId)));
     },
     onSuccess: () => invalidateAfterSync(qc),
   });
@@ -259,8 +287,15 @@ export function useSyncFleet() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
+      const cached = qc.getQueryData<Providers>(["providers"])?.connections ?? [];
+      const before = new Map(cached.map((c) => [c.id, c.last_sync_at ?? null]));
       await send("POST", "/providers/sync");
-      await new Promise((r) => setTimeout(r, REFRESH_SETTLE_MS));
+      // Resolve once every connection that existed before the trigger has a newer snapshot
+      // (or the cap is hit). A connection in backoff won't advance, so the cap bounds the
+      // wait either way.
+      await pollProvidersUntil((conns) =>
+        conns.every((c) => advanced(before.get(c.id) ?? null, c.last_sync_at)),
+      );
     },
     onSuccess: () => invalidateAfterSync(qc),
   });

@@ -1112,7 +1112,13 @@ export interface components {
             write_label?: string;
             /** @example API + PR + deep-link */
             remediation?: string;
+            /** @description humanized last-sync time for display */
             synced?: string;
+            /**
+             * Format: date-time
+             * @description machine-readable last successful sync (null if never); poll this to detect a refresh landing
+             */
+            last_sync_at?: string | null;
             /** @description operator's repo selection; null ⇒ watching all repos */
             repo_allowlist?: string[] | null;
         };

@@ -583,7 +583,12 @@ components:
         writes: { type: boolean }
         write_label: { type: string, example: "Read + write" }
         remediation: { type: string, example: "API + PR + deep-link" }
-        synced: { type: string }
+        synced: { type: string, description: "humanized last-sync time for display" }
+        last_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: "machine-readable last successful sync (null if never); poll this to detect a refresh landing"
         repo_allowlist:
           type: array
           nullable: true

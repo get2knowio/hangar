@@ -36,6 +36,10 @@ async def _connection_card(
         "write_label": "Read + write" if conn.writes else "Read-only",
         "remediation": "API + PR + deep-link" if conn.writes else "Deep-link only",
         "synced": format_relative(conn.last_sync_at),
+        # Machine-readable companion to `synced`: the SPA polls this after a manual refresh
+        # to detect the new snapshot landing, rather than parsing the display string or
+        # guessing with a fixed timer (Constitution VII — structured field, not display text).
+        "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
         # None ⇒ watching all repos; a list ⇒ the operator's explicit selection.
         "repo_allowlist": conn.repo_allowlist,
     }

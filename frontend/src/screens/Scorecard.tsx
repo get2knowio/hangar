@@ -2,6 +2,7 @@
    toggle (FR-005–FR-007). */
 
 import { useState } from "react";
+import { ErrorState } from "../components/ErrorState";
 import { ScorecardMatrix } from "../components/ScorecardMatrix";
 import { useConnection } from "../app/state";
 import { useProviders, useScorecard } from "../lib/api";
@@ -9,7 +10,7 @@ import { useProviders, useScorecard } from "../lib/api";
 export function Scorecard() {
   const { active } = useConnection();
   const [failingOnly, setFailingOnly] = useState(false);
-  const { data, isLoading } = useScorecard(active, failingOnly);
+  const { data, isLoading, isError, error, refetch } = useScorecard(active, failingOnly);
   const providers = useProviders();
 
   const scopeLabel =
@@ -17,6 +18,9 @@ export function Scorecard() {
       ? "all connections"
       : (providers.data?.connections?.find((c) => c.id === active)?.label ?? active);
 
+  if (isError) {
+    return <ErrorState title="Couldn't load the scorecard" error={error} onRetry={refetch} />;
+  }
   if (isLoading || !data) {
     return <div style={{ padding: "24px 28px", color: "var(--muted)" }}>Loading scorecard…</div>;
   }
