@@ -18,16 +18,18 @@ def test_gitea_satisfies_protocol() -> None:
     assert not inspect.iscoroutinefunction(adapter.deep_link)
 
 
-def test_gitea_declares_read_and_deep_link_only() -> None:
+def test_gitea_declares_read_deep_link_and_pull_requests() -> None:
     caps = GiteaAdapter().declared_capabilities()
     assert isinstance(caps, set)
     assert Capability.deep_link in caps
     assert Capability.read_settings in caps
     assert Capability.read_files in caps
+    # PR-first remediation is offered (granted only on a writable connection).
+    assert Capability.open_pull_request in caps
     # read_alerts is intentionally NOT declared: OSS Gitea has no vulnerability-alert feed,
     # so the alert checks resolve to honest `unknown` rather than a fabricated state
     # (Constitution VIII).
     assert Capability.read_alerts not in caps
-    # no write capabilities (PR-first remediation arrives in a later stage)
+    # write_settings is NOT offered: no settings-patch check has a Gitea API, so those
+    # degrade to deep-link rather than a fabricated converged setting.
     assert Capability.write_settings not in caps
-    assert Capability.open_pull_request not in caps

@@ -1,19 +1,36 @@
-"""Gitea adapter — read-only ``RepoProvider`` at this stage (Constitution I, FR-025).
+"""Gitea adapter — read + PR-first remediation ``RepoProvider`` (Constitution I, FR-025).
 
-A Gitea connection authenticates with a scoped personal access token and offers read +
-deep-link capabilities; write tiers therefore collapse to deep-link per connection
-(FR-018). Interrogation mirrors GitHub's file/settings heuristics against Gitea's
-GitHub-shaped REST API (see ``detection.py``); all Gitea host/URL math lives in
-``client.py``, so no platform string leaks into the core.
+A Gitea connection authenticates with a scoped personal access token and offers read,
+deep-link, and (when the operator declares the token writable) pull-request capabilities.
+Interrogation mirrors GitHub's file/settings heuristics against Gitea's GitHub-shaped REST
+API (see ``detection.py``); writes are **human-triggered and PR-first** — a remediation
+file delivered on a fresh ``hangar/<check>`` branch via an opened pull request, never a
+push/force-push (Constitution II, FR-014). All Gitea host/URL math lives in ``client.py``,
+so no platform string leaks into the core. Webhook ingest arrives in a later stage.
 """
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Mapping
 
 from hangar.domain.models import Capability, ProviderConnection, RemediationKind, Repo
 from hangar.providers.base import CorrectionRequest, CorrectionResult, RepoListing, WebhookEvent
 from hangar.providers.gitea.client import _FORBIDDEN, GiteaClient, gitea_web_base
+
+# Files/config Hangar writes via PR for the writable PR-tier checks. Mostly the same paths as
+# GitHub, but Gitea is a Renovate (not Dependabot) world, so the update-bot remediation writes
+# a ``renovate.json`` — and CODEOWNERS/templates use Gitea's ``.gitea/`` location. Each path is
+# also a candidate in ``detection._FILE_CHECKS`` so the opened PR actually clears the finding.
+_PR_FILES = {
+    "license": "LICENSE",
+    "security_md": "SECURITY.md",
+    "codeowners": ".gitea/CODEOWNERS",
+    "templates": ".gitea/ISSUE_TEMPLATE/bug_report.md",
+    "dependabot_updates": "renovate.json",
+    "cooldown": "renovate.json",
+    "release_please": "release-please-config.json",
+}
 
 
 class GiteaAdapter:
@@ -21,14 +38,16 @@ class GiteaAdapter:
     default_auth_mode = "Scoped token"
 
     def declared_capabilities(self) -> set[Capability]:
-        # Read + deep-link only at this stage. ``read_alerts`` is intentionally absent:
-        # OSS Gitea has no vulnerability-alert feed, so there is nothing to read and the
-        # alert checks honestly resolve to ``unknown`` (Constitution VIII). Writes and
-        # webhooks arrive in later stages.
+        # ``read_alerts`` is intentionally absent: OSS Gitea has no vulnerability-alert feed,
+        # so the alert checks honestly resolve to ``unknown`` (Constitution VIII). ``open_pull
+        # _request`` is offered (granted only on a writable connection) so PR-tier checks
+        # remediate via a real PR; ``write_settings`` is not — none of the settings-patch
+        # checks (e.g. Dependabot alerts) has a Gitea API, so those degrade to deep-link.
         return {
             Capability.read_settings,
             Capability.read_files,
             Capability.deep_link,
+            Capability.open_pull_request,
         }
 
     def _client(self, connection: ProviderConnection) -> GiteaClient:
@@ -85,19 +104,74 @@ class GiteaAdapter:
     async def correct(
         self, connection: ProviderConnection, request: CorrectionRequest
     ) -> CorrectionResult:
-        # Read-only connection: write tiers collapse to deep-link; report stays report
-        # (FR-018). PR-first writes arrive in a later stage.
-        if request.kind in (
-            RemediationKind.deep_link,
-            RemediationKind.settings_patch,
-            RemediationKind.config_pr,
-        ):
-            return CorrectionResult(
-                applied=True,
-                deep_link_url=self.deep_link(connection, request.repo, request.check_id),
-                summary="Opened in Gitea",
+        """Apply a human-triggered correction. PR-first; NEVER a push/force-push.
+
+        The remediation service resolves the kind from the connection's granted tiers, so a
+        read-only connection (no ``open_pull_request``) never reaches ``config_pr`` here — it
+        sends ``deep_link`` instead (FR-018).
+        """
+        if request.kind is RemediationKind.deep_link:
+            url = self.deep_link(connection, request.repo, request.check_id)
+            return CorrectionResult(applied=True, deep_link_url=url, summary="Opened in Gitea")
+        if request.kind is RemediationKind.report:
+            return CorrectionResult(applied=True, summary="Reported")
+        if request.kind is RemediationKind.config_pr:
+            return await self._open_pr(connection, request)
+        if request.kind is RemediationKind.settings_patch:
+            # No Gitea settings-patch remediation exists (the patch-tier checks are GitHub-only),
+            # and ``write_settings`` is never granted, so the service never sends this. Refuse
+            # rather than fake a converged setting (fail-closed, Constitution VIII).
+            raise ValueError(
+                f"no settings-patch remediation for Gitea check '{request.check_id}'"
             )
-        return CorrectionResult(applied=True, summary="Reported")
+        raise ValueError(f"unknown remediation kind: {request.kind}")
+
+    async def _open_pr(
+        self, connection: ProviderConnection, request: CorrectionRequest
+    ) -> CorrectionResult:
+        owner, repo = connection.owner, request.repo.id
+        branch = f"hangar/{request.check_id}"
+        base = request.repo.default_branch
+
+        async with self._client(connection) as client:
+            # Idempotency: surface an existing open Hangar PR for this (repo, check) rather
+            # than opening a duplicate (FR-015). Gitea's pulls list carries each PR's head ref.
+            existing = await client.get(
+                f"/repos/{owner}/{repo}/pulls", {"state": "open", "limit": 50}
+            )
+            if isinstance(existing, list):
+                for pr in existing:
+                    if (pr.get("head") or {}).get("ref") == branch:
+                        return CorrectionResult(
+                            applied=True, pr_url=pr.get("html_url"), pr_number=pr.get("number"),
+                            idempotent_hit=True, summary=f"PR #{pr.get('number')} already open",
+                        )
+
+            # Create a fresh branch off the default branch and commit the remediation file
+            # onto it, then open a PR. The default branch is never written to directly.
+            await client.post(
+                f"/repos/{owner}/{repo}/branches",
+                {"new_branch_name": branch, "old_branch_name": base},
+            )
+            path = _PR_FILES.get(request.check_id, f".gitea/hangar-{request.check_id}.md")
+            content = base64.b64encode(
+                f"# {request.check_label}\n\nAdded by Hangar to remediate "
+                f"`{request.check_id}`.\n".encode()
+            ).decode()
+            await client.post(
+                f"/repos/{owner}/{repo}/contents/{path}",
+                {"content": content, "message": f"chore: {request.check_label} (via Hangar)",
+                 "branch": branch},
+            )
+            pr = await client.post(
+                f"/repos/{owner}/{repo}/pulls",
+                {"title": f"{request.check_label} (via Hangar)", "head": branch, "base": base,
+                 "body": "Opened by Hangar — review and merge to remediate this finding."},
+            )
+        return CorrectionResult(
+            applied=True, pr_url=pr.get("html_url"), pr_number=pr.get("number"),
+            summary=f"PR #{pr.get('number')} opened",
+        )
 
     async def subscribe(self, connection: ProviderConnection) -> None:
         return None
