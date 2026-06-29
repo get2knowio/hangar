@@ -516,6 +516,8 @@ export interface paths {
                         webhook_secret?: string;
                         /** @description org/user that owns the repos; defaults to the label suffix when omitted */
                         owner?: string;
+                        /** @description provider browser host; github.com when omitted. Set to a GHES host (https://ghe.example.com) or GHEC data-residency tenant (https://acme.ghe.com) — the adapter derives the API host from it */
+                        base_url?: string | null;
                         /** @description repo names to watch; omit/null ⇒ watch every repo the credential can see */
                         repo_allowlist?: string[] | null;
                     };
@@ -754,6 +756,150 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/github/app/new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start the one-click "Connect with GitHub" App manifest flow (#25).
+         * @description Browser-navigated (not fetch). Stashes a CSRF state in the session, then either returns an auto-submitting HTML form that POSTs a generated App **manifest** to the chosen host's `/settings/apps/new`, or — if an App already exists for that host — 303-redirects straight to the install page. Behind the access-control middleware (the operator is logged in).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description target GitHub host (github.com, a GHEC tenant, or a GHES instance) */
+                    base_url?: string;
+                    /** @description request contents/pull_requests write so Hangar can open fix PRs */
+                    writable?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Auto-submitting manifest form (HTML) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Redirect to GitHub's App install page (App already provisioned for this host) */
+                303: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/github/app/created": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Manifest redirect_url — exchange the code for App credentials, then go install.
+         * @description Browser-navigated. Validates the CSRF state, exchanges the one-time manifest `code` for the App credentials (id/slug/pem/secrets), stores the per-host registration (secrets Fernet-encrypted), and 303-redirects to GitHub's install page. State mismatch → 400.
+         */
+        get: {
+            parameters: {
+                query: {
+                    code: string;
+                    state: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Redirect to GitHub's App install page */
+                303: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description CSRF state mismatch */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/github/app/installed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * App setup_url — create the connection from the real installation, return to SPA.
+         * @description Browser-navigated. Validates the CSRF state, resolves the installation's owner and repo selection (selected repos ⇒ allowlist; all ⇒ watch everything), creates the connection, and 303-redirects to the SPA `/providers?connected=<id>`. State mismatch → 400.
+         */
+        get: {
+            parameters: {
+                query: {
+                    installation_id: number;
+                    setup_action?: string;
+                    state: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Redirect to the SPA providers screen with the new connection id */
+                303: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description CSRF state mismatch */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1106,6 +1252,8 @@ export interface components {
             has_credential?: boolean;
             scope?: string;
             auth_mode?: string;
+            /** @description provider browser host this connection targets (github.com, or a GHES/GHEC enterprise host) */
+            base_url?: string;
             repos?: number;
             writes?: boolean;
             /** @example Read + write */

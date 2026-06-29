@@ -50,6 +50,15 @@ function Lock() {
   );
 }
 
+// GitHub wordmark glyph for the primary "Connect with GitHub" call to action.
+function GitHubMark() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+  );
+}
+
 function Field({
   label,
   hint,
@@ -88,6 +97,9 @@ export function AddConnectionModal({
   const [appId, setAppId] = useState("");
   const [installationId, setInstallationId] = useState("");
   const [writable, setWritable] = useState(false);
+  // GitHub browser host — github.com by default; an enterprise host for GHES/GHEC. Feeds both
+  // the one-click "Connect with GitHub" start URL and a manually-entered connection's base_url.
+  const [host, setHost] = useState("https://github.com");
 
   // Existing same-provider connections whose stored credential we can reuse (so a PAT
   // spanning several orgs isn't pasted again).
@@ -125,6 +137,11 @@ export function AddConnectionModal({
       app_id: authMethod === "app" ? appId.trim() || undefined : undefined,
       installation_id:
         authMethod === "app" && installationId.trim() ? Number(installationId.trim()) : undefined,
+      // Only send a non-default host (github.com is the backend default).
+      base_url:
+        providerType === "github" && host.trim() && host.trim() !== "https://github.com"
+          ? host.trim()
+          : undefined,
       writable,
     };
     add.mutate(body, {
@@ -140,8 +157,8 @@ export function AddConnectionModal({
     <Modal onClose={onClose} label="Add connection">
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Add connection</div>
       <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 16px" }}>
-        Most setups use a Personal Access Token. Reuse an existing connection’s credential to
-        watch another org with the same token, or pick GitHub App if you have one configured.
+        Connect a GitHub org in two clicks below — Hangar creates a GitHub App and installs it,
+        no tokens to copy. Or enter a credential manually.
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -155,6 +172,48 @@ export function AddConnectionModal({
           <input style={inputStyle} placeholder="gh:my-org" value={label} onChange={(e) => setLabel(e.target.value)} />
         </Field>
       </div>
+
+      {providerType === "github" && (
+        <>
+          <Field
+            label="GitHub host"
+            hint="github.com, or an enterprise host — https://ghe.example.com (GHES) or https://acme.ghe.com (GHEC)."
+          >
+            <input
+              style={inputStyle}
+              placeholder="https://github.com"
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+            />
+          </Field>
+
+          <a
+            href={`/api/v1/providers/github/app/new?base_url=${encodeURIComponent(
+              host.trim() || "https://github.com",
+            )}&writable=true`}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
+              fontSize: 13, fontWeight: 600, padding: "10px 15px", borderRadius: 6,
+              border: "1px solid var(--fg)", background: "var(--fg)", color: "var(--bg)",
+              textDecoration: "none", marginTop: 2,
+            }}
+          >
+            <GitHubMark /> Connect with GitHub
+          </a>
+          <p style={{ fontSize: 11, color: "var(--muted)", margin: "7px 0 14px" }}>
+            You’ll approve which org and repos on GitHub, and it can open fix PRs. Returns here
+            when done — nothing to paste.
+          </p>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 14px" }}>
+            <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+            <span style={{ fontSize: 10.5, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              or enter a credential manually
+            </span>
+            <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+          </div>
+        </>
+      )}
 
       <Field
         label="Owner (org / user)"
