@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hangar.domain.models import (
@@ -74,8 +74,6 @@ async def prune_repos_outside_allowlist(
 
 async def repo_counts_by_connection(session: AsyncSession) -> dict[str, int]:
     """Repo count per connection in a single grouped query (avoids N+1 on /providers)."""
-    from sqlalchemy import func
-
     rows = await session.execute(
         select(RepoRow.connection_id, func.count()).group_by(RepoRow.connection_id)
     )
@@ -121,8 +119,16 @@ def _rem_key(row: RemediationRow) -> tuple[str, str, str]:
     return (row.connection_id, row.repo_id, row.check_id)
 
 
-async def remediation_map(session: AsyncSession) -> RemediationMap:
-    rows = (await session.execute(select(RemediationRow))).scalars().all()
+async def remediation_map(
+    session: AsyncSession, connection_id: str | None = None
+) -> RemediationMap:
+    """State overlay for the fleet. Scope to ``connection_id`` when a single connection is
+    selected so an overview/scorecard read doesn't scan the whole RemediationRow table for
+    a one-connection view (mirrors ``list_repos``' scoping)."""
+    stmt = select(RemediationRow)
+    if connection_id and connection_id != "all":
+        stmt = stmt.where(RemediationRow.connection_id == connection_id)
+    rows = (await session.execute(stmt)).scalars().all()
     return {_rem_key(r): RemediationState(r.state) for r in rows}
 
 
@@ -237,7 +243,9 @@ async def list_audit(session: AsyncSession, limit: int = 50) -> list[AuditLogEnt
 
 
 async def next_pr_number(session: AsyncSession) -> int:
-    """Monotonic PR number for demo corrections (prototype ``prCounter`` seeded at 142)."""
-    rows = (await session.execute(select(RemediationRow.pr_number))).scalars().all()
-    existing = [n for n in rows if n is not None]
-    return (max(existing) if existing else 142) + 1
+    """Monotonic PR number for demo corrections (prototype ``prCounter`` seeded at 142).
+
+    Uses SQL ``MAX`` so the database returns one scalar instead of streaming every
+    pr_number into Python to max() it (the table grows with every remediation)."""
+    current = (await session.execute(select(func.max(RemediationRow.pr_number)))).scalar()
+    return (current if current is not None else 142) + 1

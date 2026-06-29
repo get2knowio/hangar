@@ -39,11 +39,20 @@ class FleetContext:
 
 async def load_fleet(session: AsyncSession, connection: str = "all") -> FleetContext:
     """Fleet-wide context for the overview/scorecard endpoints. The repo-detail path does
-    NOT use this — it loads only its one connection + that repo's remediation overlay."""
+    NOT use this — it loads only its one connection + that repo's remediation overlay.
+
+    When a single connection is selected, the repos, connections, and remediation overlay
+    are all scoped to it — the scoped repos only ever reference that one connection, so
+    loading every connection and the entire remediation table would be O(total) work to
+    render a one-connection view."""
     repos = await repo_store.list_repos(session, connection)
-    conns = {c.id: c for c in await repo_store.list_connections(session)}
+    if connection and connection != "all":
+        row = await repo_store.get_connection_row(session, connection)
+        conns = {row.id: row.to_domain()} if row is not None else {}
+    else:
+        conns = {c.id: c for c in await repo_store.list_connections(session)}
     policy = await repo_store.get_policy(session)
-    remediations = await repo_store.remediation_map(session)
+    remediations = await repo_store.remediation_map(session, connection)
     return FleetContext(repos, conns, policy, remediations)
 
 
