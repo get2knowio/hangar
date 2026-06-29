@@ -1,6 +1,6 @@
 /* Topbar (52px): logo + breadcrumb, connection switcher, synced indicator, theme toggle. */
 
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ConnSwitcher } from "../components/ConnSwitcher";
 import { useOverview, useSyncFleet } from "../lib/api";
 import { useConnection, useTheme, useToast } from "./state";
@@ -44,7 +44,12 @@ export function Topbar() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <Link
+          to="/"
+          aria-label="Hangar — fleet overview"
+          title="Fleet overview"
+          style={{ display: "flex", alignItems: "center", gap: 9, textDecoration: "none", color: "inherit" }}
+        >
           <div style={{ width: 18, height: 18, background: "var(--fg)", borderRadius: 4, position: "relative" }}>
             <div
               style={{
@@ -57,7 +62,7 @@ export function Topbar() {
             />
           </div>
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>Hangar</span>
-        </div>
+        </Link>
         <span style={{ color: "var(--border)" }}>/</span>
         <span style={{ fontSize: 13, color: "var(--fg-2)", fontWeight: 500 }}>{titleFor(pathname)}</span>
       </div>

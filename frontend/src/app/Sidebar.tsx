@@ -142,6 +142,13 @@ export function Sidebar() {
             behind Traefik
           </div>
         )}
+        {/* Which build is running — baked in at SPA build time (vite define). */}
+        <div
+          className="mono"
+          style={{ fontSize: 9.5, color: "var(--muted)", marginTop: 8, opacity: 0.8 }}
+        >
+          Hangar v{__APP_VERSION__}
+        </div>
       </div>
     </div>
   );
