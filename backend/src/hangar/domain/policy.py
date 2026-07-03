@@ -42,10 +42,27 @@ def enabled_checks(policy: Policy) -> list[Check]:
     return [c for c in all_checks() if policy.is_enabled(c.id)]
 
 
+def scored_checks(repo: Repo, policy: Policy) -> list[Check]:
+    """Enabled checks that this repo actually participates in — its suppressions removed.
+
+    This is the score *denominator* for the repo: a check opted out via ``.hangar.json`` is
+    neither counted as a pass nor a fail. Single-sourced so hygiene/pass_count and the
+    scorecard roll-up agree.
+    """
+    return [c for c in enabled_checks(policy) if c.id not in repo.suppressions]
+
+
 def effective_status(
     repo: Repo, check_id: str, remediations: RemediationMap | None = None
 ) -> FindingStatus:
-    """Effective status incl. remediation overlay (prototype ``effStatus``)."""
+    """Effective status incl. remediation overlay (prototype ``effStatus``).
+
+    A repo-level suppression (from its ``.hangar.json``) wins over everything: an opted-out
+    check does not participate — it is neither fail/unknown nor a fabricated pass, and no
+    in-flight remediation applies to it.
+    """
+    if check_id in repo.suppressions:
+        return FindingStatus.suppressed
     rem = (remediations or {}).get((repo.connection_id, repo.id, check_id))
     if rem is not None:
         if rem is RemediationState.fixed:
@@ -62,8 +79,12 @@ def effective_status(
 
 
 def hygiene(repo: Repo, policy: Policy, remediations: RemediationMap | None = None) -> int:
-    """Passing enabled checks ÷ enabled checks, as a percent (prototype ``hygiene``)."""
-    checks = enabled_checks(policy)
+    """Passing scored checks ÷ scored checks, as a percent (prototype ``hygiene``).
+
+    Suppressed checks are excluded from the denominator — a repo that opts out of a check
+    is not penalized for it, nor credited a free pass.
+    """
+    checks = scored_checks(repo, policy)
     if not checks:
         return 100
     passing = sum(
@@ -75,7 +96,7 @@ def hygiene(repo: Repo, policy: Policy, remediations: RemediationMap | None = No
 def pass_count(repo: Repo, policy: Policy, remediations: RemediationMap | None = None) -> int:
     return sum(
         1
-        for c in enabled_checks(policy)
+        for c in scored_checks(repo, policy)
         if effective_status(repo, c.id, remediations) is FindingStatus.passing
     )
 
@@ -91,6 +112,8 @@ def hygiene_tone(pct: int) -> Tone:
 
 def evidence_for(repo: Repo, check_id: str, status: FindingStatus) -> str:
     """Human evidence string for a finding (prototype ``EVID`` + unknown handling)."""
+    if status is FindingStatus.suppressed:
+        return repo.suppressions.get(check_id) or "Suppressed by .hangar.json"
     if status is FindingStatus.unknown:
         return "Insufficient scope on this connection"
     if status in (FindingStatus.fail,):

@@ -25,6 +25,9 @@ export function viz(status: FindingStatus): Viz {
       return { color: "var(--warn)", glyph: "◐", label: "Working" };
     case "pending":
       return { color: "var(--warn)", glyph: "◐", label: "PR open" };
+    case "suppressed":
+      // Opted out via .hangar.json — muted, distinct from a fail or a pass (honest state).
+      return { color: "var(--muted)", glyph: "⊘", label: "Suppressed" };
   }
 }
 

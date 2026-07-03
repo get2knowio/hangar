@@ -8,11 +8,21 @@ org→user repo-listing fallback.
 
 from __future__ import annotations
 
+import base64
+
 import httpx
 import respx
 
 from hangar.domain.models import Capability, CIStatus, ProviderConnection, Repo
 from hangar.providers.gitea.adapter import GiteaAdapter
+
+
+def _contents_b64(text: str) -> httpx.Response:
+    """A Gitea contents-API response carrying base64 file content (as _read_text expects)."""
+    return httpx.Response(200, json={
+        "type": "file", "encoding": "base64",
+        "content": base64.b64encode(text.encode()).decode(),
+    })
 
 WEB = "https://gitea.example.com"
 API = f"{WEB}/api/v1"
@@ -135,6 +145,44 @@ async def test_list_repos_falls_back_from_org_to_user(respx_mock) -> None:
     assert await adapter.list_repos(_connection()) == ["hangar", "secret-svc"]
     listings = await adapter.list_repo_listings(_connection())
     assert {r.name: r.private for r in listings} == {"hangar": False, "secret-svc": True}
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_hangar_json_populates_suppressions(respx_mock) -> None:
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
+        return_value=_contents_b64(
+            '{"ignore": [{"check": "dependabot_alerts", "reason": "no deps"}, "code_scanning"]}'
+        ))
+    _routes(respx_mock, protection=httpx.Response(200, json={"branch_name": "main"}))
+
+    repo = await GiteaAdapter().interrogate(_connection(), "hangar")
+
+    assert repo is not None
+    assert repo.suppressions == {"dependabot_alerts": "no deps", "code_scanning": ""}
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_absent_hangar_json_leaves_suppressions_empty(respx_mock) -> None:
+    # No .hangar.json route → catch-all 404; suppressions stay empty (no crash).
+    _routes(respx_mock, protection=httpx.Response(200, json={"branch_name": "main"}))
+
+    repo = await GiteaAdapter().interrogate(_connection(), "hangar")
+
+    assert repo is not None
+    assert repo.suppressions == {}
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_malformed_hangar_json_is_ignored_not_fatal(respx_mock) -> None:
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
+        return_value=_contents_b64("{ this is not valid json"))
+    _routes(respx_mock, protection=httpx.Response(200, json={"branch_name": "main"}))
+
+    repo = await GiteaAdapter().interrogate(_connection(), "hangar")
+
+    # Malformed config is fail-safe: no suppressions, snapshot still built.
+    assert repo is not None
+    assert repo.suppressions == {}
 
 
 def test_deep_link_and_pr_url_are_absolute_instance_urls() -> None:

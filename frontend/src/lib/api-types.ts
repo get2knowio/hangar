@@ -1252,10 +1252,10 @@ export interface components {
          */
         Tone: "pass" | "warn" | "fail" | "unknown" | "neutral";
         /**
-         * @description effective status incl. remediation overlay (FR-005, FR-005a)
+         * @description effective status incl. remediation overlay (FR-005, FR-005a). `suppressed` = the repo opted out of this check via its committed `.hangar.json`; it is excluded from the score denominator and never shown as a fabricated pass.
          * @enum {string}
          */
-        FindingStatus: "pass" | "fail" | "unknown" | "pending" | "working";
+        FindingStatus: "pass" | "fail" | "unknown" | "pending" | "working" | "suppressed";
         RepoRow: {
             id?: string;
             /** @description owning connection — used to address the repo connection-scoped */
@@ -1373,8 +1373,10 @@ export interface components {
             description?: string;
             read_only?: boolean;
             hygiene_pct?: number;
-            /** @example 14/23 checks */
+            /** @example 14/21 scored · 2 suppressed */
             pass_count?: string;
+            /** @description checks this repo opted out of via .hangar.json (excluded from the score denominator) */
+            suppressed_count?: number;
             open_prs?: number;
             /** @enum {string} */
             ci?: "pass" | "fail" | "none";
@@ -1409,6 +1411,8 @@ export interface components {
                     kind?: "report" | "deep_link" | "settings_patch" | "config_pr";
                     tier_label?: string;
                     evidence?: string;
+                    /** @description operator's reason from .hangar.json when status is suppressed; null otherwise */
+                    suppressed_reason?: string | null;
                     open_pr_url?: string | null;
                     open_pr_number?: number | null;
                     /** @description display label only, e.g. Open fix PR | Enable | Open in GitHub */

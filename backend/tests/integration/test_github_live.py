@@ -676,3 +676,66 @@ async def test_renovate_config_without_cooldown_fails_cooldown_only(respx_mock) 
     assert repo is not None
     assert "dependabot_updates" not in repo.fails
     assert "cooldown" in repo.fails
+
+
+# --- .hangar.json in-repo config drives per-repo suppressions ---
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_hangar_json_populates_suppressions(respx_mock) -> None:
+    """A committed .hangar.json opts specific checks out for this repo (honest suppression)."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
+        return_value=httpx.Response(200, json=_b64(
+            '{"ignore": [{"check": "dependabot_alerts", "reason": "no deps"}, "code_scanning"]}'
+        )))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"hj1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.suppressions == {"dependabot_alerts": "no deps", "code_scanning": ""}
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_absent_hangar_json_leaves_suppressions_empty(respx_mock) -> None:
+    """No .hangar.json (catch-all 404) → no suppressions, no crash."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"hj2"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.suppressions == {}
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_malformed_hangar_json_is_ignored_not_fatal(respx_mock) -> None:
+    """Malformed .hangar.json is fail-safe: no suppressions, snapshot still built."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
+        return_value=httpx.Response(200, json=_b64("{ not valid json")))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"hj3"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.suppressions == {}
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_hangar_json_not_read_without_read_files_capability(respx_mock) -> None:
+    """A connection without read_files can't read .hangar.json → suppressions stay empty."""
+    adapter = GitHubAdapter()
+    conn = ProviderConnection(
+        id="gh-narrow", label="gh:acme", provider_type="github", scope="org",
+        auth_mode="App", app_id="123", installation_id=456,
+        granted_capabilities={Capability.read_alerts},  # no read_files
+        has_credential=True, token=_rsa_pem(),
+    )
+    # Even if the file were served, the capability gate skips the read entirely.
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
+        return_value=httpx.Response(200, json=_b64('{"ignore": ["license"]}')))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"hj4"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert repo.suppressions == {}

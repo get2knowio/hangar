@@ -8,6 +8,11 @@ describe("viz", () => {
     expect(viz("unknown")).toMatchObject({ glyph: "○", color: "var(--unknown)" });
     expect(viz("working")).toMatchObject({ glyph: "◐", label: "Working", color: "var(--warn)" });
     expect(viz("pending")).toMatchObject({ glyph: "◐", label: "PR open", color: "var(--warn)" });
+    expect(viz("suppressed")).toMatchObject({
+      glyph: "⊘",
+      label: "Suppressed",
+      color: "var(--muted)",
+    });
   });
 });
 

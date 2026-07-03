@@ -42,7 +42,10 @@ def build_scorecard(
         statuses = [effective_status(r, c.id, remediations) for c in checks]
         matrix[r.id] = statuses
         passing = sum(1 for s in statuses if s is FindingStatus.passing)
-        hyg[r.id] = round(passing / n_checks * 100) if n_checks else 100
+        # Suppressed cells (repo opted out via .hangar.json) drop out of the denominator,
+        # matching domain.policy.hygiene — an opted-out check neither passes nor fails.
+        scored = n_checks - sum(1 for s in statuses if s is FindingStatus.suppressed)
+        hyg[r.id] = round(passing / scored * 100) if scored else 100
 
     # An empty fleet has nothing evaluated — report 0%, never a misleading "100% healthy".
     compliance = round(sum(hyg.values()) / len(repos)) if repos else 0

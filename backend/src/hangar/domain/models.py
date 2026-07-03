@@ -86,6 +86,7 @@ class FindingStatus(StrEnum):
     unknown = "unknown"
     pending = "pending"      # a Hangar-authored PR is open for this finding
     working = "working"      # correction submitting
+    suppressed = "suppressed"  # opted out for this repo via .hangar.json — not scored
 
 
 class CIStatus(StrEnum):
@@ -252,6 +253,10 @@ class Repo(BaseModel):
     release_pending_days: int | None = None
     fails: list[str] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
+    # check_id -> reason, from the repo's committed .hangar.json. A suppressed check opts
+    # out of scoring for this repo (neither pass nor fail); shown honestly as "suppressed",
+    # never a fabricated pass (Constitution VIII). Empty when no config / unreadable.
+    suppressions: dict[str, str] = Field(default_factory=dict)
     # SPDX id of the detected license (e.g. "MIT", "Apache-2.0") when the license check
     # passes; None when absent or unidentifiable (GitHub "NOASSERTION"). Used to enrich the
     # license finding's evidence ("MIT" rather than a generic "Detected").

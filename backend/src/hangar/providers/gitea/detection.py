@@ -21,6 +21,7 @@ from hangar.domain.models import (
     PullRequestSummary,
     Repo,
 )
+from hangar.domain.repo_config import HangarRepoConfig
 from hangar.providers.bots import is_bot_login, pr_kind
 from hangar.providers.gitea.client import _FORBIDDEN, _NOT_FOUND, GiteaClient
 
@@ -103,6 +104,11 @@ async def interrogate_repo(
     if not (description and has_topics):
         fails.append("description")
 
+    # The repo's committed .hangar.json opt-outs. Gated on file reads; unreadable → {}.
+    suppressions: dict[str, str] = {}
+    if Capability.read_files in granted:
+        suppressions = await _read_suppressions(client, owner, repo_ref)
+
     fails += dyn_fails
     unknowns += dyn_unknowns
     return Repo(
@@ -117,6 +123,7 @@ async def interrogate_repo(
         release_pending_days=release_pending,
         fails=sorted(set(fails)),
         unknowns=sorted(set(unknowns) - set(fails)),
+        suppressions=suppressions,
         license_spdx=None,  # Gitea exposes no reliable SPDX id
         pull_requests=[PullRequestSummary(**d) for d in pulls],
     )
@@ -255,6 +262,19 @@ async def _read_text(client: GiteaClient, owner: str, repo: str, path: str) -> s
         except ValueError:
             return None
     return None
+
+
+async def _read_suppressions(client: GiteaClient, owner: str, repo: str) -> dict[str, str]:
+    """Read + parse the repo's ``.hangar.json`` into a {check_id: reason} suppression map.
+
+    Fail-safe: an absent file, a 403, or malformed content all yield ``{}`` — never an
+    exception. Parsing is contained in ``HangarRepoConfig.parse`` (drops unknown ids).
+    """
+    raw = await _read_text(client, owner, repo, ".hangar.json")
+    if raw is None:
+        return {}
+    config = HangarRepoConfig.parse(raw)
+    return config.suppressions() if config else {}
 
 
 async def _has_cooldown(client: GiteaClient, owner: str, repo: str) -> bool:

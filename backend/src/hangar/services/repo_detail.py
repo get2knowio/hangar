@@ -28,6 +28,7 @@ from hangar.domain.policy import (
     evidence_for,
     hygiene,
     pass_count,
+    scored_checks,
 )
 from hangar.providers.base import provider_name
 
@@ -119,6 +120,10 @@ def build_repo_detail(
     rem_pr_numbers: dict[tuple[str, str, str], int | None],
 ) -> dict:
     checks = enabled_checks(policy)
+    # Scored denominator excludes this repo's .hangar.json opt-outs — a suppressed check is
+    # still shown in its group, just not counted toward the pass fraction.
+    scored = len(scored_checks(repo, policy))
+    suppressed_count = sum(1 for c in checks if c.id in repo.suppressions)
     hyg = hygiene(repo, policy, remediations)
     pc = pass_count(repo, policy, remediations)
     read_only = not connection.writes
@@ -141,6 +146,9 @@ def build_repo_detail(
                 "kind": kind_for_tier(tier).value,
                 "tier_label": tier_label(tier),
                 "evidence": evidence_for(repo, c.id, status),
+                "suppressed_reason": repo.suppressions.get(c.id)
+                if status is FindingStatus.suppressed
+                else None,
                 "open_pr_url": rem_pr_urls.get(key) if pending else None,
                 "open_pr_number": rem_pr_numbers.get(key) if pending else None,
                 "primary_action": primary,
@@ -156,7 +164,9 @@ def build_repo_detail(
         "description": repo.description,
         "read_only": read_only,
         "hygiene_pct": hyg,
-        "pass_count": f"{pc}/{len(checks)} checks",
+        "pass_count": f"{pc}/{scored} scored"
+        + (f" · {suppressed_count} suppressed" if suppressed_count else ""),
+        "suppressed_count": suppressed_count,
         "open_prs": repo.open_prs,
         "ci": ci,
         "pull_requests": _pr_list(repo, synthesize=not connection.has_credential),
@@ -169,7 +179,8 @@ def _actions(
     status: FindingStatus, tier: RemediationTier, provider_type: str
 ) -> tuple[str | None, str | None]:
     """Resolve primary/secondary action labels (prototype ``buildCtl``)."""
-    if status in (FindingStatus.passing, FindingStatus.working):
+    # A suppressed check opts out of scoring — it offers no remediation to run.
+    if status in (FindingStatus.passing, FindingStatus.working, FindingStatus.suppressed):
         return None, None
     if status is FindingStatus.pending:
         return None, "Mark merged"

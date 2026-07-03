@@ -101,6 +101,9 @@ export function Scorecard() {
         <span>
           <span style={{ color: "var(--warn)" }}>◐</span> remediation in flight
         </span>
+        <span>
+          <span style={{ color: "var(--muted)" }}>⊘</span> suppressed (.hangar.json)
+        </span>
         <span>Click a repo to drill in →</span>
       </div>
     </div>
