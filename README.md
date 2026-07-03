@@ -191,6 +191,7 @@ UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.exampl
 | `HANGAR_OPERATOR` | no | `local-operator` | Audit actor used in `disabled` mode. |
 | `HANGAR_SECRET_KEY` | **yes** (real providers) | — | Fernet key; encrypts provider credentials at rest (FR-032). |
 | `HANGAR_BASE_URL` | recommended (Connect with GitHub) | derived | Instance browser URL for the GitHub App manifest callbacks. LAN/VPN URLs are valid (browser redirects; no inbound). |
+| `HANGAR_GITHUB_APP_PUBLIC` | no | `false` | Register the Connect-with-GitHub App as **public** so it can be installed on your orgs, not just your personal account (one connection per org). "Public" ≠ Marketplace-listed; Hangar still solely holds the key. Applies to newly created Apps only. |
 | `HANGAR_HOST` / `HANGAR_PORT` | no | `127.0.0.1` / `8000` | Bind host/port for startup safety checks. |
 | `HANGAR_POSTGRES_HOST` | no | unset | Set to switch to Postgres (takes precedence over `HANGAR_DATABASE_URL`). |
 | `HANGAR_POSTGRES_PASSWORD` | with `_HOST` | — | Postgres password; required when `HANGAR_POSTGRES_HOST` is set (fail-closed). |
@@ -245,9 +246,16 @@ automatically and starts watching the selected repos.
   (`https://ghe.example.com`) or GHEC data-residency tenant (`https://acme.ghe.com`). Hangar
   derives the right API host (`…/api/v3` for GHES, `api.<tenant>.ghe.com` for GHEC) and install
   URL automatically. github.com is the default.
-- The App is created under your user and can be installed on any org you administer; it
-  requests write permissions so it can open fix PRs. Re-connecting another org reuses the same
-  App. Webhooks ship **off**; the poller keeps snapshots fresh.
+- The App is created under your user; it requests write permissions so it can open fix PRs.
+  Re-connecting another org reuses the same App. Webhooks ship **off**; the poller keeps
+  snapshots fresh.
+- **Installing on organizations:** a GitHub App is **private** by default, so GitHub's install
+  screen offers only your personal account. To install it on your orgs (one Hangar connection
+  per org), either set **`HANGAR_GITHUB_APP_PUBLIC=true`** *before* connecting so the App is
+  registered public, or flip an already-created App to public under **GitHub → Settings →
+  Developer settings → GitHub Apps → Hangar → Make this GitHub App public**. "Public" only means
+  installable beyond your own account — it does **not** list the App on the Marketplace, and
+  Hangar still holds the sole copy of its private key.
 
 The manual paths below remain available (e.g. to reuse an App you already manage, or a PAT).
 

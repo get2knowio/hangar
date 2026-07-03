@@ -84,8 +84,13 @@ def _manifest_permissions(writable: bool) -> dict[str, str]:
     return perms
 
 
-def _build_manifest(instance_base: str, writable: bool) -> dict:
-    """The GitHub App manifest. Webhooks are off for the MVP (no inbound dependency)."""
+def _build_manifest(instance_base: str, writable: bool, public: bool = False) -> dict:
+    """The GitHub App manifest. Webhooks are off for the MVP (no inbound dependency).
+
+    ``public`` (HANGAR_GITHUB_APP_PUBLIC) controls installability: a private App can be
+    installed only on the owner's account, so leaving it false confines Hangar to the
+    operator's personal repos; true lets the operator install it on their orgs too.
+    """
     host = urlsplit(instance_base).netloc or "hangar"
     return {
         "name": f"Hangar ({host})",
@@ -93,7 +98,7 @@ def _build_manifest(instance_base: str, writable: bool) -> dict:
         "redirect_url": f"{instance_base}/api/v1/providers/github/app/created",
         "setup_url": f"{instance_base}/api/v1/providers/github/app/installed",
         "setup_on_update": True,
-        "public": False,
+        "public": public,
         "default_permissions": _manifest_permissions(writable),
         "default_events": [],
         "hook_attributes": {
@@ -150,7 +155,9 @@ async def app_new(
         return RedirectResponse(_install_url(web, existing.slug, state), status_code=303)
 
     request.session[_SESSION_KEY] = {"state": state, "base_url": web, "writable": writable}
-    manifest = _build_manifest(_instance_base_url(request, settings), writable)
+    manifest = _build_manifest(
+        _instance_base_url(request, settings), writable, public=settings.github_app_public
+    )
     action = f"{web}/settings/apps/new?state={state}"
     return HTMLResponse(_autosubmit_form(action, manifest))
 
