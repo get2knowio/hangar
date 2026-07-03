@@ -10,9 +10,11 @@ import { Modal } from "./Modal";
 import {
   useAddConnection,
   useConnectionRepos,
+  useForgetGitHubApp,
   useProviders,
   useSetConnectionRepos,
   type ConnectionCard,
+  type ForgetAppResult,
   type NewConnectionBody,
 } from "../lib/api";
 
@@ -32,6 +34,16 @@ const primaryBtn: React.CSSProperties = {
 const ghostBtn: React.CSSProperties = {
   fontSize: 12, fontWeight: 600, padding: "8px 13px", borderRadius: 6,
   border: "1px solid var(--border)", background: "transparent", color: "var(--fg-2)", cursor: "pointer",
+};
+const dangerBtn: React.CSSProperties = {
+  fontSize: 12, fontWeight: 600, padding: "8px 13px", borderRadius: 6,
+  border: "1px solid var(--warn)", background: "var(--warn)", color: "var(--bg)", cursor: "pointer",
+};
+// A boxed callout for the "an App is already registered / forget it" affordance.
+const calloutBox: React.CSSProperties = {
+  border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px",
+  margin: "2px 0 14px", fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5,
+  background: "var(--surface-2)",
 };
 
 // A small padlock shown to the right of private repos in the picker.
@@ -116,6 +128,36 @@ export function AddConnectionModal({
     if (providerType === "gitea") setHost((h) => (h === "https://github.com" ? "" : h));
     if (providerType === "github") setHost((h) => (h === "" ? "https://github.com" : h));
   }, [authMethod, reusable.length, providerType]);
+
+  // "Forget App" teardown — offered when an App is already registered for the entered host,
+  // so the operator can uninstall + discard it (e.g. to re-provision a public one).
+  const forget = useForgetGitHubApp();
+  const [forgetPhase, setForgetPhase] = useState<"idle" | "confirm" | "done">("idle");
+  const [forgetResult, setForgetResult] = useState<ForgetAppResult | null>(null);
+  const normHost = (host.trim() || "https://github.com").replace(/\/+$/, "");
+  const registration = (providers.data?.app_registrations ?? []).find(
+    (r) => r.base_url.replace(/\/+$/, "") === normHost,
+  );
+  // Connections that depend on this host's App — the blast radius shown before teardown.
+  const affectedConns = (providers.data?.connections ?? []).filter(
+    (c) => c.provider_type === "github" && (c.base_url ?? "").replace(/\/+$/, "") === normHost,
+  );
+  // Reset the teardown UI when the target host changes.
+  useEffect(() => {
+    setForgetPhase("idle");
+    setForgetResult(null);
+  }, [normHost]);
+
+  function runForget() {
+    forget.mutate(normHost, {
+      onSuccess: ({ data }) => {
+        setForgetResult(data);
+        setForgetPhase("done");
+        show(`Forgot GitHub App — uninstalled from ${data.uninstalled.length} account${data.uninstalled.length === 1 ? "" : "s"}`);
+      },
+      onError: (e: unknown) => show(e instanceof Error ? e.message : "Could not forget the App", "error"),
+    });
+  }
 
   // Owner defaults to the label suffix (gh:my-org → my-org), mirroring the backend.
   const derivedOwner = owner.trim() || (label.includes(":") ? label.split(":").pop()! : label).trim();
@@ -219,6 +261,86 @@ export function AddConnectionModal({
             You’ll approve which org and repos on GitHub, and it can open fix PRs. Returns here
             when done — nothing to paste.
           </p>
+
+          {registration && forgetPhase === "idle" && (
+            <div style={calloutBox}>
+              An App (<span className="mono">{registration.slug}</span>) is already registered for{" "}
+              <span className="mono">{registration.base_url}</span> — connecting reuses it. To
+              provision a fresh one (e.g. to make it installable on orgs), forget it first.
+              <button
+                onClick={() => setForgetPhase("confirm")}
+                style={{
+                  display: "block", marginTop: 8, padding: 0, border: "none", background: "none",
+                  color: "var(--warn)", fontSize: 11.5, fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                Forget this App…
+              </button>
+            </div>
+          )}
+
+          {registration && forgetPhase === "confirm" && (
+            <div style={{ ...calloutBox, borderColor: "var(--warn)" }}>
+              <div style={{ fontWeight: 700, color: "var(--fg)", marginBottom: 6 }}>
+                Forget {registration.slug}? This can’t be undone.
+              </div>
+              <ul style={{ margin: "0 0 8px", paddingLeft: 16 }}>
+                <li>Uninstalls the App from every account/org it’s installed on, via GitHub.</li>
+                <li>
+                  {affectedConns.length > 0
+                    ? `Removes ${affectedConns.length} connection${affectedConns.length === 1 ? "" : "s"} that use it (${affectedConns.map((c) => c.label).join(", ")}).`
+                    : "No Hangar connections currently use it."}
+                </li>
+                <li>Discards Hangar’s stored credentials for this App.</li>
+                <li>Gives you a link to finish deleting the App itself on GitHub (no API for that).</li>
+              </ul>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={ghostBtn} onClick={() => setForgetPhase("idle")} disabled={forget.isPending}>
+                  Cancel
+                </button>
+                <button style={{ ...dangerBtn, opacity: forget.isPending ? 0.5 : 1 }} onClick={runForget} disabled={forget.isPending}>
+                  {forget.isPending ? "Working…" : "Uninstall & forget"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {forgetPhase === "done" && forgetResult && (
+            <div style={{ ...calloutBox, borderColor: "var(--warn)" }}>
+              <div style={{ fontWeight: 700, color: "var(--fg)", marginBottom: 6 }}>
+                App forgotten — one step left on GitHub.
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                Uninstalled from {forgetResult.uninstalled.length} account
+                {forgetResult.uninstalled.length === 1 ? "" : "s"}; removed{" "}
+                {forgetResult.connections_removed.length} connection
+                {forgetResult.connections_removed.length === 1 ? "" : "s"}. GitHub has no
+                delete-App API, so finish here:
+              </div>
+              <a
+                href={forgetResult.delete_app_url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ ...dangerBtn, display: "inline-block", textDecoration: "none" }}
+              >
+                Delete the App on GitHub ↗
+              </a>
+              {forgetResult.uninstall_failed.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  Couldn’t auto-uninstall from some accounts — remove manually:
+                  <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
+                    {forgetResult.uninstall_failed.map((f) => (
+                      <li key={f.account}>
+                        <a href={f.url} target="_blank" rel="noreferrer" style={{ color: "var(--warn)" }}>
+                          {f.account} ↗
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 14px" }}>
             <span style={{ flex: 1, height: 1, background: "var(--border)" }} />

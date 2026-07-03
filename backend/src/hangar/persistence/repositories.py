@@ -43,6 +43,25 @@ async def delete_connection(session: AsyncSession, connection_id: str) -> None:
     await session.commit()
 
 
+async def list_connection_rows_for_base_url(
+    session: AsyncSession, base_url: str
+) -> list[ConnectionRow]:
+    """Connections targeting one browser host — the ones a per-host App registration backs.
+
+    Used by the "forget App" teardown to enumerate the connections (and their installation
+    ids) that depend on a host's GitHub App before it is uninstalled and forgotten.
+    """
+    return list(
+        (
+            await session.execute(
+                select(ConnectionRow).where(ConnectionRow.base_url == base_url)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 # ---------------------------------------------------------------------- repos
 async def list_repos(session: AsyncSession, connection_id: str | None = None) -> list[Repo]:
     stmt = select(RepoRow)
@@ -285,3 +304,22 @@ async def upsert_app_registration(
     row.created_at = datetime.now(UTC)
     await session.commit()
     return row
+
+
+async def delete_app_registration(session: AsyncSession, base_url: str) -> bool:
+    """Forget the stored GitHub App registration for ``base_url`` (drops its credentials).
+
+    Returns True if a row was removed, False if none existed. Local-only: this discards
+    Hangar's copy of the App's private key — it does not touch the App on GitHub (that is a
+    manual delete the operator finishes via a deep link).
+    """
+    result = await session.execute(
+        delete(GitHubAppRegistration).where(GitHubAppRegistration.base_url == base_url)
+    )
+    await session.commit()
+    return bool(getattr(result, "rowcount", 0))
+
+
+async def list_app_registrations(session: AsyncSession) -> list[GitHubAppRegistration]:
+    """Every stored per-host App registration (non-secret fields used to surface 'forget')."""
+    return list((await session.execute(select(GitHubAppRegistration))).scalars().all())

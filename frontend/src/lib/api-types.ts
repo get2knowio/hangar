@@ -478,6 +478,8 @@ export interface paths {
                                 fail_closed?: boolean;
                             };
                             connections?: components["schemas"]["ConnectionCard"][];
+                            /** @description stored GitHub App registrations (per host) — surfaced so the UI can offer to 'forget' one before re-provisioning. Non-secret fields only. */
+                            app_registrations?: components["schemas"]["AppRegistration"][];
                         };
                     };
                 };
@@ -906,6 +908,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/github/app/forget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Forget a host's GitHub App — uninstall everywhere, drop dependent connections, discard stored credentials.
+         * @description Tears down the App registered for a host: authenticates as the App to uninstall it from every account it is installed on, removes the connections that depended on it, then forgets Hangar's stored credentials. Uninstall runs first (while the key is still held). GitHub has no delete-App API, so the response returns `delete_app_url` — a deep link to the App's Advanced settings — for the operator to finish deleting the App by hand. Audited as one teardown entry. 404 when no App is registered for the host.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @description browser host whose App to tear down (github.com or an enterprise host)
+                         * @default https://github.com
+                         */
+                        base_url?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Torn down */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForgetAppResult"];
+                    };
+                };
+                /** @description No App registered for this host */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/audit": {
         parameters: {
             query?: never;
@@ -1270,6 +1328,29 @@ export interface components {
             last_sync_at?: string | null;
             /** @description operator's repo selection; null ⇒ watching all repos */
             repo_allowlist?: string[] | null;
+        };
+        AppRegistration: {
+            /** @description browser host this App was registered for */
+            base_url: string;
+            /** @description the App's GitHub slug */
+            slug: string;
+            app_id: string;
+            /** @description deep link to the App's Advanced settings — where the owner deletes it on GitHub */
+            delete_app_url: string;
+        };
+        ForgetAppResult: {
+            /** @description accounts the App was uninstalled from */
+            uninstalled: string[];
+            /** @description installations that could not be uninstalled — finish manually via url */
+            uninstall_failed: {
+                account: string;
+                /** @description deep link to uninstall this installation on GitHub */
+                url: string;
+            }[];
+            /** @description connection ids dropped (they depended on this App) */
+            connections_removed: string[];
+            /** @description deep link to finish deleting the App on GitHub (no API for this) */
+            delete_app_url: string;
         };
         SyncAccepted: {
             /** @example accepted */

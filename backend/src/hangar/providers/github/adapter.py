@@ -98,6 +98,15 @@ def github_install_prefix(base_url: str | None) -> str:
     return "/github-apps"
 
 
+def github_app_delete_url(base_url: str | None, slug: str) -> str:
+    """Deep link to an owned App's Advanced settings — where the owner-only *Delete* button
+    lives. GitHub exposes no API to delete a GitHub App you own (only uninstalling
+    *installations* is programmatic), so the "forget App" teardown hands the operator this
+    link to finish by hand. Same ``/settings/apps/<slug>/advanced`` path on github.com/GHES.
+    """
+    return f"{github_web_base(base_url)}/settings/apps/{slug}/advanced"
+
+
 # Files/config Hangar writes via PR for the writable PR-tier checks (research.md §9).
 _PR_FILES = {
     "license": "LICENSE",

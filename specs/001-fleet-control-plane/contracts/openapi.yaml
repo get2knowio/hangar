@@ -254,6 +254,10 @@ paths:
                   connections:
                     type: array
                     items: { $ref: "#/components/schemas/ConnectionCard" }
+                  app_registrations:
+                    type: array
+                    description: "stored GitHub App registrations (per host) — surfaced so the UI can offer to 'forget' one before re-provisioning. Non-secret fields only."
+                    items: { $ref: "#/components/schemas/AppRegistration" }
     post:
       tags: [providers]
       summary: Add a provider connection — configuration, not code (FR-024, SC-004).
@@ -404,6 +408,29 @@ paths:
       responses:
         "303": { description: Redirect to the SPA providers screen with the new connection id }
         "400": { description: CSRF state mismatch }
+
+  /providers/github/app/forget:
+    post:
+      tags: [providers]
+      summary: Forget a host's GitHub App — uninstall everywhere, drop dependent connections, discard stored credentials.
+      description: >
+        Tears down the App registered for a host: authenticates as the App to uninstall it from
+        every account it is installed on, removes the connections that depended on it, then
+        forgets Hangar's stored credentials. Uninstall runs first (while the key is still held).
+        GitHub has no delete-App API, so the response returns `delete_app_url` — a deep link to
+        the App's Advanced settings — for the operator to finish deleting the App by hand.
+        Audited as one teardown entry. 404 when no App is registered for the host.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                base_url: { type: string, default: "https://github.com", description: "browser host whose App to tear down (github.com or an enterprise host)" }
+      responses:
+        "200": { description: Torn down, content: { application/json: { schema: { $ref: "#/components/schemas/ForgetAppResult" } } } }
+        "404": { description: No App registered for this host }
 
   /providers/audit:
     get:
@@ -641,6 +668,36 @@ components:
           nullable: true
           items: { type: string }
           description: "operator's repo selection; null ⇒ watching all repos"
+    AppRegistration:
+      type: object
+      required: [base_url, slug, app_id, delete_app_url]
+      properties:
+        base_url: { type: string, description: "browser host this App was registered for" }
+        slug: { type: string, description: "the App's GitHub slug" }
+        app_id: { type: string }
+        delete_app_url: { type: string, description: "deep link to the App's Advanced settings — where the owner deletes it on GitHub" }
+    ForgetAppResult:
+      type: object
+      required: [uninstalled, uninstall_failed, connections_removed, delete_app_url]
+      properties:
+        uninstalled:
+          type: array
+          items: { type: string }
+          description: "accounts the App was uninstalled from"
+        uninstall_failed:
+          type: array
+          description: "installations that could not be uninstalled — finish manually via url"
+          items:
+            type: object
+            required: [account, url]
+            properties:
+              account: { type: string }
+              url: { type: string, description: "deep link to uninstall this installation on GitHub" }
+        connections_removed:
+          type: array
+          items: { type: string }
+          description: "connection ids dropped (they depended on this App)"
+        delete_app_url: { type: string, description: "deep link to finish deleting the App on GitHub (no API for this)" }
     SyncAccepted:
       type: object
       required: [status]

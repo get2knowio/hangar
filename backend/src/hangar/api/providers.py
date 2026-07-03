@@ -12,6 +12,7 @@ from hangar.config import Settings
 from hangar.domain.models import ProviderConnection
 from hangar.persistence import repositories as repo_store
 from hangar.providers.base import provider_name
+from hangar.providers.github.adapter import github_app_delete_url
 from hangar.providers.registry import provider_for
 from hangar.services import connections as conn_service
 from hangar.services.sync import format_relative
@@ -59,6 +60,10 @@ async def list_providers(
     # One query for all repo counts grouped by connection, instead of N per-card queries.
     counts = await repo_store.repo_counts_by_connection(session)
     cards = [await _connection_card(session, c, counts.get(c.id, 0)) for c in conns]
+    # Stored GitHub App registrations (per host) — surfaced so the add-connection UI can offer
+    # to "forget" a host's App (uninstall + drop stored credentials) before re-provisioning.
+    # Non-secret fields only; the delete link points the operator at GitHub's own delete UI.
+    registrations = await repo_store.list_app_registrations(session)
     return {
         "access": {
             "mode": settings.access_mode.value if settings.access_mode else "disabled",
@@ -67,6 +72,15 @@ async def list_providers(
             "fail_closed": True,
         },
         "connections": cards,
+        "app_registrations": [
+            {
+                "base_url": r.base_url,
+                "slug": r.slug,
+                "app_id": r.app_id,
+                "delete_app_url": github_app_delete_url(r.base_url, r.slug),
+            }
+            for r in registrations
+        ],
     }
 
 
