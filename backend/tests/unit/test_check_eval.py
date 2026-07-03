@@ -12,8 +12,14 @@ from hangar.domain.policy import (
 )
 
 
-def _repo(fails=None, unknowns=None) -> Repo:
-    return Repo(id="r1", connection_id="c1", fails=fails or [], unknowns=unknowns or [])
+def _repo(fails=None, unknowns=None, suppressions=None) -> Repo:
+    return Repo(
+        id="r1",
+        connection_id="c1",
+        fails=fails or [],
+        unknowns=unknowns or [],
+        suppressions=suppressions or {},
+    )
 
 
 def test_catalog_has_exactly_23_checks() -> None:
@@ -74,3 +80,41 @@ def test_hygiene_unknown_counts_as_not_passing() -> None:
     repo = _repo(unknowns=["two_fa"])
     expected = round((total - 1) / total * 100)
     assert hygiene(repo, policy) == expected
+
+
+def test_suppressed_wins_over_fail_pass_and_remediation() -> None:
+    # A suppressed check reports `suppressed` regardless of the underlying fail/unknown or
+    # any in-flight remediation overlay — the opt-out is absolute (honest state).
+    repo = _repo(fails=["license"], suppressions={"license": "internal tool"})
+    assert effective_status(repo, "license") is FindingStatus.suppressed
+
+    key = (repo.connection_id, repo.id, "license")
+    for state in (RemediationState.working, RemediationState.pr_open, RemediationState.fixed):
+        assert effective_status(repo, "license", {key: state}) is FindingStatus.suppressed
+
+    # A check that would otherwise pass, suppressed, still shows suppressed (not a free pass).
+    passing = next(c.id for c in all_checks() if c.id != "license")
+    repo2 = _repo(suppressions={passing: ""})
+    assert effective_status(repo2, passing) is FindingStatus.suppressed
+
+
+def test_suppressed_check_drops_out_of_the_denominator() -> None:
+    policy = default_policy()
+    total = len(enabled_checks(policy))
+
+    # A failing-but-suppressed check no longer drags the score: denominator shrinks by one
+    # and the remaining checks all pass → 100%.
+    repo = _repo(fails=["license"], suppressions={"license": "no deps"})
+    assert hygiene(repo, policy) == 100
+
+    # A second, non-suppressed fail is scored against the reduced denominator.
+    repo2 = _repo(fails=["license", "readme"], suppressions={"license": "no deps"})
+    expected = round((total - 1 - 1) / (total - 1) * 100)
+    assert hygiene(repo2, policy) == expected
+
+
+def test_all_checks_suppressed_scores_100() -> None:
+    policy = default_policy()
+    repo = _repo(fails=["license"], suppressions={c.id: "" for c in all_checks()})
+    # Empty scored set → 100 (nothing to score), never a divide-by-zero.
+    assert hygiene(repo, policy) == 100

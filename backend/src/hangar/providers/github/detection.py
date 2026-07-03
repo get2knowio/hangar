@@ -23,6 +23,7 @@ from hangar.domain.models import (
     PullRequestSummary,
     Repo,
 )
+from hangar.domain.repo_config import HangarRepoConfig
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -119,6 +120,11 @@ async def interrogate_repo(
         await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
     )
 
+    # The repo's committed .hangar.json opt-outs. Gated on file reads; unreadable → {}.
+    suppressions: dict[str, str] = {}
+    if Capability.read_files in granted:
+        suppressions = await _read_suppressions(cget, gh, connection.id, owner, repo_ref)
+
     fails = meta_fails + dyn_fails
     unknowns = meta_unknowns + dyn_unknowns
     return Repo(
@@ -133,6 +139,7 @@ async def interrogate_repo(
         release_pending_days=release_pending,
         fails=sorted(set(fails)),
         unknowns=sorted(set(unknowns) - set(fails)),
+        suppressions=suppressions,
         license_spdx=license_spdx,
         pull_requests=[PullRequestSummary(**d) for d in pulls],
     )
@@ -469,6 +476,21 @@ async def _read_text(
         except ValueError:
             return None
     return None
+
+
+async def _read_suppressions(
+    cget: Any, gh: GitHub, cid: str, owner: str, repo: str
+) -> dict[str, str]:
+    """Read + parse the repo's ``.hangar.json`` into a {check_id: reason} suppression map.
+
+    Fail-safe: an absent file, a 403, or malformed content all yield ``{}`` — never an
+    exception. Parsing is contained in ``HangarRepoConfig.parse`` (drops unknown ids).
+    """
+    raw = await _read_text(cget, gh, cid, owner, repo, ".hangar.json")
+    if raw is None:
+        return {}
+    config = HangarRepoConfig.parse(raw)
+    return config.suppressions() if config else {}
 
 
 async def _has_cooldown(cget: Any, gh: GitHub, cid: str, owner: str, repo: str) -> bool:

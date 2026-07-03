@@ -30,6 +30,10 @@ export function RemediationControl({
   if (status === "working") {
     return <Note text="Working…" color="var(--warn)" />;
   }
+  if (status === "suppressed") {
+    // Opted out via .hangar.json — no remediation offered; the reason shows as evidence.
+    return <Note text="Suppressed" color="var(--muted)" />;
+  }
   if (status === "pending") {
     return (
       <>

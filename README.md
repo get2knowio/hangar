@@ -400,6 +400,36 @@ create the shared network once with `docker network create proxy`.
 
 ---
 
+## Repo-level config (`.hangar.json`)
+
+A watched repo can carry its own `.hangar.json` at the **default branch** to tell Hangar how
+to treat it. Today it supports one thing — **ignoring checks** the repo intentionally doesn't
+satisfy, so a deliberate gap stops dragging the repo's score.
+
+```json
+{
+  "version": 1,
+  "ignore": [
+    { "check": "dependabot_alerts", "reason": "Internal tool, no external deps" },
+    "code_scanning"
+  ]
+}
+```
+
+- Each `ignore` entry is either an object `{ "check": "<id>", "reason": "<optional>" }` or a
+  bare `"<id>"` string. `check` must be a catalog check id (see the Scorecard column headers);
+  unknown ids are ignored.
+- A suppressed check is shown **honestly** — it renders as `⊘ Suppressed` (with your reason as
+  its evidence), offers no remediation, and is **excluded from the score denominator**: it
+  neither passes nor fails, so the repo isn't penalized *or* credited for it. Repo detail reads
+  e.g. `18/20 scored · 2 suppressed`.
+- Reading the file needs the connection's **file-read** capability; a connection without it
+  simply sees no suppressions (nothing is guessed). Malformed JSON is ignored safely — the
+  repo is still interrogated. Suppressions are picked up on the **next sync** after you commit
+  the file (and re-scored when you remove it).
+
+---
+
 ## Persistence: SQLite default, Postgres upgrade
 
 - **SQLite** is the zero-ops default. In Docker the DB lives on the `hangar-data` named

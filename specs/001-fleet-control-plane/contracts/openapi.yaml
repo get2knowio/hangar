@@ -599,8 +599,11 @@ components:
       description: status-only color token (maps to --pass/--warn/--fail/--unknown)
     FindingStatus:
       type: string
-      enum: [pass, fail, unknown, pending, working]
-      description: effective status incl. remediation overlay (FR-005, FR-005a)
+      enum: [pass, fail, unknown, pending, working, suppressed]
+      description: >-
+        effective status incl. remediation overlay (FR-005, FR-005a). `suppressed` = the
+        repo opted out of this check via its committed `.hangar.json`; it is excluded from
+        the score denominator and never shown as a fabricated pass.
     RepoRow:
       type: object
       properties:
@@ -725,7 +728,8 @@ components:
         description: { type: string }
         read_only: { type: boolean }
         hygiene_pct: { type: integer }
-        pass_count: { type: string, example: "14/23 checks" }
+        pass_count: { type: string, example: "14/21 scored · 2 suppressed" }
+        suppressed_count: { type: integer, description: "checks this repo opted out of via .hangar.json (excluded from the score denominator)" }
         open_prs: { type: integer }
         ci: { type: string, enum: [pass, fail, none] }
         pull_requests:
@@ -759,6 +763,7 @@ components:
                     kind: { type: string, enum: [report, deep_link, settings_patch, config_pr], description: structured remediation kind the client sends back (never parse the action label) }
                     tier_label: { type: string }
                     evidence: { type: string }
+                    suppressed_reason: { type: string, nullable: true, description: "operator's reason from .hangar.json when status is suppressed; null otherwise" }
                     open_pr_url: { type: string, nullable: true }
                     open_pr_number: { type: integer, nullable: true }
                     primary_action: { type: string, nullable: true, description: "display label only, e.g. Open fix PR | Enable | Open in GitHub" }

@@ -66,6 +66,37 @@ def test_scorecard_fail_count_excludes_unknown_and_pending() -> None:
     assert meta["license"]["fail_count"] == 1  # only r1; r2 is unknown, not a fail
 
 
+def test_scorecard_excludes_suppressed_from_denominator_and_fail_count() -> None:
+    """A repo that opts a failing check out via .hangar.json: the cell shows `suppressed`,
+    the check's fail_count doesn't count it, and its hygiene is scored over the reduced
+    denominator (matching domain.policy.hygiene, which the scorecard inlines)."""
+    from hangar.domain.policy import enabled_checks, hygiene
+
+    policy = default_policy()
+    total = len(enabled_checks(policy))
+    conn = ProviderConnection(
+        id="c1", label="gh:acme", provider_type="github", scope="org", auth_mode="App"
+    )
+    # license fails but is suppressed → excluded; readme is a real, scored fail.
+    repo = Repo(
+        id="r1", connection_id="c1", fails=["license", "readme"],
+        suppressions={"license": "internal tool"},
+    )
+    data = build_scorecard([repo], {"c1": conn}, policy, {})
+
+    meta = {c["id"]: c for c in data["checks"]}
+    assert meta["license"]["fail_count"] == 0  # suppressed, not a fail
+    assert meta["readme"]["fail_count"] == 1
+
+    # The scorecard row hygiene matches the domain denominator (total-1 scored, 1 fail).
+    row = data["rows"][0]
+    assert row["hygiene_pct"] == round((total - 2) / (total - 1) * 100)
+    assert row["hygiene_pct"] == hygiene(repo, policy)
+    # The license cell carries the honest `suppressed` value, not a fabricated pass.
+    lic_idx = next(i for i, c in enumerate(data["checks"]) if c["id"] == "license")
+    assert row["cells"][lic_idx] == "suppressed"
+
+
 async def test_default_auth_mode_comes_from_adapter(session) -> None:
     """The default auth-mode label is supplied by the adapter (no `if provider == 'github'`
     branch in the provider-neutral connections service)."""
