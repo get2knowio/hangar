@@ -67,6 +67,9 @@ export type Catalog = JSONResponse<"/catalog", "get">;
 export type Policy = JSONResponse<"/policy", "get">;
 export type Providers = JSONResponse<"/providers", "get">;
 export type ConnectionCard = NonNullable<Providers["connections"]>[number];
+export type AppRegistration = NonNullable<Providers["app_registrations"]>[number];
+export type ForgetAppResult =
+  paths["/providers/github/app/forget"]["post"]["responses"][200]["content"]["application/json"];
 export type ConnectionRepos = JSONResponse<"/providers/{connection_id}/repos", "get">;
 // The POST /providers request body — derived from the contract, never hand-written.
 export type NewConnectionBody = NonNullable<
@@ -201,6 +204,23 @@ export function useAddConnection() {
       qc.invalidateQueries({ queryKey: ["providers"] });
       qc.invalidateQueries({ queryKey: ["overview"] });
       qc.invalidateQueries({ queryKey: ["scorecard"] });
+    },
+  });
+}
+
+// Tear down a host's GitHub App: uninstall everywhere, drop the connections that used it,
+// forget the stored credentials, and return deep links to finish deleting the App on GitHub.
+// Invalidates the provider cards (connections removed) and the audit log (teardown entry).
+export function useForgetGitHubApp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (baseUrl: string) =>
+      send<ForgetAppResult>("POST", "/providers/github/app/forget", { base_url: baseUrl }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["overview"] });
+      qc.invalidateQueries({ queryKey: ["scorecard"] });
+      qc.invalidateQueries({ queryKey: ["audit"] });
     },
   });
 }

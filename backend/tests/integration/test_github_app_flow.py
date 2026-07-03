@@ -306,6 +306,78 @@ def test_second_connect_reuses_existing_app(gh_client, app_pem) -> None:
         assert "/apps/hangar-test/installations/new" in r.headers["location"]
 
 
+def _stub_forget(
+    router: respx.MockRouter, api: str, install_id: int, owner: str, *, delete_status: int = 204
+) -> None:
+    """Stub the App-JWT installation list + uninstall used by the teardown."""
+    router.get(f"{api}/app/installations").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": install_id,
+                    "account": {"login": owner},
+                    "html_url": f"https://github.com/organizations/{owner}/settings/installations/{install_id}",
+                }
+            ],
+        )
+    )
+    router.delete(f"{api}/app/installations/{install_id}").mock(
+        return_value=httpx.Response(delete_status)
+    )
+
+
+def test_forget_app_tears_down_and_returns_delete_link(gh_client, app_pem) -> None:
+    """Forget = uninstall everywhere → drop dependent connections → forget creds → deep link."""
+    with respx.mock(assert_all_called=False) as router:
+        r = _drive_flow(
+            gh_client, router, base_url="https://github.com", api="https://api.github.com",
+            pem=app_pem, owner="get2knowio", selection="all", install_id=42,
+        )
+        conn_id = _connected_id(r)
+        # The registration is now surfaced on /providers so the UI can offer "forget".
+        regs = gh_client.get("/api/v1/providers").json()["app_registrations"]
+        assert any(reg["slug"] == "hangar-test" for reg in regs)
+
+        _stub_forget(router, "https://api.github.com", 42, "get2knowio")
+        fr = gh_client.post(
+            "/api/v1/providers/github/app/forget", json={"base_url": "https://github.com"}
+        )
+
+    assert fr.status_code == 200
+    body = fr.json()
+    assert body["uninstalled"] == ["get2knowio"]
+    assert body["uninstall_failed"] == []
+    assert conn_id in body["connections_removed"]
+    assert body["delete_app_url"] == "https://github.com/settings/apps/hangar-test/advanced"
+
+    # The connection is gone, and the registration is forgotten (no longer surfaced).
+    after = gh_client.get("/api/v1/providers").json()
+    assert all(c["id"] != conn_id for c in after["connections"])
+    assert after["app_registrations"] == []
+
+    # Forgetting again is a clean 404 (nothing left to tear down) — no GitHub call needed.
+    fr2 = gh_client.post(
+        "/api/v1/providers/github/app/forget", json={"base_url": "https://github.com"}
+    )
+    assert fr2.status_code == 404
+
+
+def test_forget_app_tolerates_already_uninstalled(gh_client, app_pem) -> None:
+    """A 404 on DELETE (installation already gone) counts as uninstalled — idempotent."""
+    with respx.mock(assert_all_called=False) as router:
+        _drive_flow(
+            gh_client, router, base_url="https://github.com", api="https://api.github.com",
+            pem=app_pem, owner="acme", selection="all", install_id=7,
+        )
+        _stub_forget(router, "https://api.github.com", 7, "acme", delete_status=404)
+        fr = gh_client.post(
+            "/api/v1/providers/github/app/forget", json={"base_url": "https://github.com"}
+        )
+    assert fr.status_code == 200
+    assert fr.json()["uninstalled"] == ["acme"]
+
+
 def test_created_rejects_bad_state(gh_client) -> None:
     # Start the flow so a session state exists, then submit a forged state (CSRF).
     gh_client.get(
