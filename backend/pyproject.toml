@@ -1,6 +1,6 @@
 [project]
 name = "hangar"
-version = "0.3.5"
+version = "0.3.6"
 description = "Hangar — self-hosted fleet control plane (provider-agnostic core)"
 requires-python = ">=3.12"
 dependencies = [
