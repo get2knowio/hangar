@@ -88,6 +88,15 @@ class Settings(BaseSettings):
     base_url: str | None = Field(
         default=None, description="instance browser base URL for GitHub App callbacks"
     )
+    # A GitHub App created from Hangar's manifest is **private** by default (installable only
+    # on the account that owns it — the operator's personal account). Set this true to register
+    # it **public** so it can also be installed on the operator's organizations (one Hangar
+    # connection per org). "Public" only means installable beyond the owner account — it does
+    # NOT list the App on the Marketplace, and Hangar still solely holds the App's private key.
+    # Affects newly provisioned Apps only; an existing App is flipped in its GitHub settings.
+    github_app_public: bool = Field(
+        default=False, description="register the GitHub App as public (installable on orgs)"
+    )
 
     # --- webhooks (FR-033) ---
     webhook_secret: str | None = Field(

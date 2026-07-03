@@ -12,7 +12,9 @@ on both callbacks, App-reuse-on-second-connect, and that secrets never leak into
 
 from __future__ import annotations
 
+import json
 import re
+from html import unescape
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -60,6 +62,13 @@ def _state_from(text_or_url: str) -> str:
     m = re.search(r"state=([A-Za-z0-9_\-]+)", text_or_url)
     assert m, f"no state in: {text_or_url[:200]}"
     return m.group(1)
+
+
+def _manifest_from_form(html: str) -> dict:
+    """Pull the manifest JSON back out of the /new auto-submit form's hidden input."""
+    m = re.search(r'name="manifest" value="(.*?)">', html, re.DOTALL)
+    assert m, f"no manifest input in: {html[:200]}"
+    return json.loads(unescape(m.group(1)))
 
 
 def _connected_id(resp: httpx.Response) -> str:
@@ -160,6 +169,33 @@ def _drive_flow(
         params={"installation_id": install_id, "setup_action": "install", "state": state2},
         follow_redirects=False,
     )
+
+
+def test_manifest_is_private_by_default(gh_client) -> None:
+    """Least-privilege default: the App is registered private (owner-account installs only)."""
+    r = gh_client.get(
+        "/api/v1/providers/github/app/new",
+        params={"base_url": "https://github.com"},
+        follow_redirects=False,
+    )
+    assert _manifest_from_form(r.text)["public"] is False
+
+
+def test_manifest_public_when_env_set(monkeypatch) -> None:
+    """HANGAR_GITHUB_APP_PUBLIC=true registers the App public so orgs can install it (#40+)."""
+    monkeypatch.setenv("HANGAR_SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("HANGAR_BASE_URL", "http://testserver")
+    monkeypatch.setenv("HANGAR_GITHUB_APP_PUBLIC", "true")
+    set_settings(Settings())
+    from hangar.main import create_app
+
+    with TestClient(create_app()) as c:
+        r = c.get(
+            "/api/v1/providers/github/app/new",
+            params={"base_url": "https://github.com"},
+            follow_redirects=False,
+        )
+    assert _manifest_from_form(r.text)["public"] is True
 
 
 def test_dotcom_flow_creates_connection(gh_client, app_pem) -> None:
