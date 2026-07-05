@@ -24,7 +24,7 @@ from hangar.api import api_router
 from hangar.auth.forward_auth import ForwardAuthMiddleware
 from hangar.auth.oidc_routes import router as oidc_router
 from hangar.config import Settings, get_settings, validate_startup
-from hangar.persistence.db import create_all, get_sessionmaker
+from hangar.persistence.db import ensure_schema, get_sessionmaker
 from hangar.services import webhooks
 from hangar.services.sync import SyncService
 
@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     for w in warnings:
         log.warning("startup.warning", message=w)
 
-    await create_all()
+    await ensure_schema()
     sync = SyncService()
     await sync.ensure_seed()
     app.state.sync = sync
