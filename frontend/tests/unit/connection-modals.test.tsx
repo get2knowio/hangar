@@ -5,7 +5,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const addMutate = vi.hoisted(() => vi.fn());
-const forgetMutate = vi.hoisted(() => vi.fn());
+const removeMutate = vi.hoisted(() => vi.fn());
 // Mutable providers payload so a test can inject an existing App registration.
 const providersData = vi.hoisted(
   () => ({ current: { connections: [], app_registrations: [] } }) as {
@@ -18,15 +18,15 @@ vi.mock("../../src/lib/api", () => ({
   useProviders: () => ({ data: providersData.current }),
   useConnectionRepos: () => ({ data: null, isLoading: false, isError: false }),
   useSetConnectionRepos: () => ({ mutate: vi.fn(), isPending: false }),
-  useForgetGitHubApp: () => ({ mutate: forgetMutate, isPending: false }),
+  useRemoveConnection: () => ({ mutate: removeMutate, isPending: false }),
 }));
 vi.mock("../../src/app/state", () => ({ useToast: () => ({ show: vi.fn() }) }));
 
-import { AddConnectionModal } from "../../src/components/ConnectionModals";
+import { AddConnectionModal, RemoveConnectionModal } from "../../src/components/ConnectionModals";
 
 beforeEach(() => {
   addMutate.mockClear();
-  forgetMutate.mockClear();
+  removeMutate.mockReset();
   providersData.current = { connections: [], app_registrations: [] };
 });
 
@@ -69,35 +69,82 @@ describe("AddConnectionModal — Connect with GitHub", () => {
   });
 });
 
-describe("AddConnectionModal — Forget App", () => {
-  const registration = {
-    base_url: "https://github.com",
-    slug: "hangar-hola",
-    app_id: "123",
-    delete_app_url: "https://github.com/settings/apps/hangar-hola/advanced",
-  };
-
-  it("offers to forget an App already registered for the host, then tears it down on confirm", () => {
+describe("AddConnectionModal — App reuse notice", () => {
+  it("notes an already-registered App for the host (connecting reuses it), with no forget button", () => {
     providersData.current = {
-      connections: [
-        { id: "gh-org", label: "gh:org", provider_type: "github", base_url: "https://github.com" },
-      ],
-      app_registrations: [registration],
+      connections: [],
+      app_registrations: [{ base_url: "https://github.com", slug: "hangar-hola", app_id: "123" }],
     };
     render(<AddConnectionModal onClose={vi.fn()} onAdded={vi.fn()} />);
 
-    // The reuse notice surfaces the registered App slug and a "forget" affordance.
-    fireEvent.click(screen.getByRole("button", { name: /forget this app/i }));
-    // The confirm step spells out the blast radius, including the affected connection.
-    expect(screen.getByText(/gh:org/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /uninstall & forget/i }));
-    expect(forgetMutate).toHaveBeenCalledWith("https://github.com", expect.anything());
+    expect(screen.getByText(/already registered/i)).toBeInTheDocument();
+    expect(screen.getByText(/hangar-hola/)).toBeInTheDocument();
+    // The old App-wide "forget" affordance is gone — teardown happens via row Remove now.
+    expect(screen.queryByRole("button", { name: /forget/i })).toBeNull();
   });
 
-  it("does not show the forget affordance when no App is registered for the host", () => {
+  it("shows no reuse notice when no App is registered for the host", () => {
     render(<AddConnectionModal onClose={vi.fn()} onAdded={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: /forget this app/i })).toBeNull();
+    expect(screen.queryByText(/already registered/i)).toBeNull();
+  });
+});
+
+describe("RemoveConnectionModal", () => {
+  it("deletes the connection by id on confirm", () => {
+    render(
+      <RemoveConnectionModal connectionId="gh-org" connectionLabel="gh:org" onClose={vi.fn()} />,
+    );
+    // The confirm names the connection and spells out that audit is kept.
+    expect(screen.getByText(/remove “gh:org”\?/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^remove$/i }));
+    expect(removeMutate).toHaveBeenCalledWith("gh-org", expect.anything());
+  });
+
+  it("surfaces the delete-App deep link when the last org of an App is removed", () => {
+    // The backend reports app_forgotten + a delete link on the final row's removal.
+    removeMutate.mockImplementation((_id, opts) =>
+      opts?.onSuccess?.({
+        org: "org",
+        removed: true,
+        uninstalled: true,
+        app_forgotten: true,
+        delete_app_url: "https://github.com/settings/apps/hangar-hola/advanced",
+      }),
+    );
+    render(
+      <RemoveConnectionModal connectionId="gh-org" connectionLabel="gh:org" onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^remove$/i }));
+
+    const link = screen.getByRole("link", { name: /delete the app on github/i });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://github.com/settings/apps/hangar-hola/advanced",
+    );
+  });
+
+  it("closes immediately when there's no GitHub step left (non-last / non-App removal)", () => {
+    const onClose = vi.fn();
+    removeMutate.mockImplementation((_id, opts) =>
+      opts?.onSuccess?.({ org: "org", removed: true, uninstalled: true, app_forgotten: false }),
+    );
+    render(
+      <RemoveConnectionModal connectionId="gh-org" connectionLabel="gh:org" onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^remove$/i }));
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByText(/one step left on github/i)).toBeNull();
+  });
+
+  it("closes without deleting when cancelled", () => {
+    const onClose = vi.fn();
+    render(
+      <RemoveConnectionModal connectionId="gh-org" connectionLabel="gh:org" onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(removeMutate).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
   });
 });
 

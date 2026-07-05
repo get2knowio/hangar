@@ -306,76 +306,119 @@ def test_second_connect_reuses_existing_app(gh_client, app_pem) -> None:
         assert "/apps/hangar-test/installations/new" in r.headers["location"]
 
 
-def _stub_forget(
-    router: respx.MockRouter, api: str, install_id: int, owner: str, *, delete_status: int = 204
+def _stub_uninstall_one(
+    router: respx.MockRouter, api: str, install_id: int, *, delete_status: int = 204
 ) -> None:
-    """Stub the App-JWT installation list + uninstall used by the teardown."""
-    router.get(f"{api}/app/installations").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {
-                    "id": install_id,
-                    "account": {"login": owner},
-                    "html_url": f"https://github.com/organizations/{owner}/settings/installations/{install_id}",
-                }
-            ],
-        )
-    )
+    """Stub the single-installation uninstall (DELETE) a per-connection removal issues.
+
+    The GET /app/installations/{id} lookup is already stubbed by ``_drive_flow`` (via
+    ``_stub_installation``); the removal only additionally needs the DELETE.
+    """
     router.delete(f"{api}/app/installations/{install_id}").mock(
         return_value=httpx.Response(delete_status)
     )
 
 
-def test_forget_app_tears_down_and_returns_delete_link(gh_client, app_pem) -> None:
-    """Forget = uninstall everywhere → drop dependent connections → forget creds → deep link."""
+def _install_again(
+    gh_client: TestClient,
+    router: respx.MockRouter,
+    *,
+    base_url: str,
+    api: str,
+    owner: str,
+    install_id: int,
+) -> httpx.Response:
+    """Install the *already-registered* App on a second org (reuse path: /new → 303 install)."""
+    r = gh_client.get(
+        "/api/v1/providers/github/app/new",
+        params={"base_url": base_url, "writable": "true"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303  # existing App → straight to install, no manifest conversion
+    state = _state_from(r.headers["location"])
+    _stub_installation(router, api, install_id, selection="all", owner=owner)
+    return gh_client.get(
+        "/api/v1/providers/github/app/installed",
+        params={"installation_id": install_id, "state": state},
+        follow_redirects=False,
+    )
+
+
+def test_remove_last_org_uninstalls_and_returns_delete_link(gh_client, app_pem) -> None:
+    """Removing the App's LAST connection uninstalls that org, forgets the App, and hands back
+    the delete-App deep link (GitHub has no delete-App API)."""
     with respx.mock(assert_all_called=False) as router:
         r = _drive_flow(
             gh_client, router, base_url="https://github.com", api="https://api.github.com",
             pem=app_pem, owner="get2knowio", selection="all", install_id=42,
         )
         conn_id = _connected_id(r)
-        # The registration is now surfaced on /providers so the UI can offer "forget".
-        regs = gh_client.get("/api/v1/providers").json()["app_registrations"]
-        assert any(reg["slug"] == "hangar-test" for reg in regs)
+        _stub_uninstall_one(router, "https://api.github.com", 42)
+        dr = gh_client.delete(f"/api/v1/providers/{conn_id}")
 
-        _stub_forget(router, "https://api.github.com", 42, "get2knowio")
-        fr = gh_client.post(
-            "/api/v1/providers/github/app/forget", json={"base_url": "https://github.com"}
-        )
-
-    assert fr.status_code == 200
-    body = fr.json()
-    assert body["uninstalled"] == ["get2knowio"]
-    assert body["uninstall_failed"] == []
-    assert conn_id in body["connections_removed"]
+    assert dr.status_code == 200
+    body = dr.json()
+    assert body["removed"] is True
+    assert body["uninstalled"] is True
+    assert body["app_forgotten"] is True
     assert body["delete_app_url"] == "https://github.com/settings/apps/hangar-test/advanced"
+    assert body["uninstall_url"] is None
 
-    # The connection is gone, and the registration is forgotten (no longer surfaced).
+    # The connection is gone and the registration is forgotten (no longer surfaced).
     after = gh_client.get("/api/v1/providers").json()
     assert all(c["id"] != conn_id for c in after["connections"])
     assert after["app_registrations"] == []
 
-    # Forgetting again is a clean 404 (nothing left to tear down) — no GitHub call needed.
-    fr2 = gh_client.post(
-        "/api/v1/providers/github/app/forget", json={"base_url": "https://github.com"}
-    )
-    assert fr2.status_code == 404
 
-
-def test_forget_app_tolerates_already_uninstalled(gh_client, app_pem) -> None:
-    """A 404 on DELETE (installation already gone) counts as uninstalled — idempotent."""
+def test_remove_one_org_keeps_the_app_for_siblings(gh_client, app_pem) -> None:
+    """Removing a non-last org drops just that row + uninstalls it; the App and the other org's
+    connection survive (no delete-App link, registration retained)."""
+    api = "https://api.github.com"
     with respx.mock(assert_all_called=False) as router:
-        _drive_flow(
+        r_a = _drive_flow(
+            gh_client, router, base_url="https://github.com", api=api,
+            pem=app_pem, owner="get2knowio", selection="all", install_id=42,
+        )
+        conn_a = _connected_id(r_a)
+        r_b = _install_again(
+            gh_client, router, base_url="https://github.com", api=api, owner="acme", install_id=43,
+        )
+        conn_b = _connected_id(r_b)
+
+        _stub_uninstall_one(router, api, 42)
+        dr = gh_client.delete(f"/api/v1/providers/{conn_a}")
+
+    assert dr.status_code == 200
+    body = dr.json()
+    assert body["removed"] is True
+    assert body["uninstalled"] is True
+    assert body["app_forgotten"] is False  # acme still uses the App
+    assert body["delete_app_url"] is None
+
+    after = gh_client.get("/api/v1/providers").json()
+    assert all(c["id"] != conn_a for c in after["connections"])
+    assert any(c["id"] == conn_b for c in after["connections"])  # sibling survives
+    assert any(reg["slug"] == "hangar-test" for reg in after["app_registrations"])  # App kept
+
+
+def test_remove_tolerates_already_uninstalled(gh_client, app_pem) -> None:
+    """A 404 on DELETE (installation already gone) still counts as uninstalled — idempotent."""
+    with respx.mock(assert_all_called=False) as router:
+        r = _drive_flow(
             gh_client, router, base_url="https://github.com", api="https://api.github.com",
             pem=app_pem, owner="acme", selection="all", install_id=7,
         )
-        _stub_forget(router, "https://api.github.com", 7, "acme", delete_status=404)
-        fr = gh_client.post(
-            "/api/v1/providers/github/app/forget", json={"base_url": "https://github.com"}
-        )
-    assert fr.status_code == 200
-    assert fr.json()["uninstalled"] == ["acme"]
+        conn_id = _connected_id(r)
+        _stub_uninstall_one(router, "https://api.github.com", 7, delete_status=404)
+        dr = gh_client.delete(f"/api/v1/providers/{conn_id}")
+    assert dr.status_code == 200
+    body = dr.json()
+    assert body["uninstalled"] is True
+    assert body["app_forgotten"] is True
+
+
+def test_remove_unknown_connection_is_404(gh_client) -> None:
+    assert gh_client.delete("/api/v1/providers/does-not-exist").status_code == 404
 
 
 def test_created_rejects_bad_state(gh_client) -> None:

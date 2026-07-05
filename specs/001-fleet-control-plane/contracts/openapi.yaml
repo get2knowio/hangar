@@ -256,7 +256,7 @@ paths:
                     items: { $ref: "#/components/schemas/ConnectionCard" }
                   app_registrations:
                     type: array
-                    description: "stored GitHub App registrations (per host) — surfaced so the UI can offer to 'forget' one before re-provisioning. Non-secret fields only."
+                    description: "stored GitHub App registrations (per host) — surfaced so the UI can note that connecting reuses an already-registered App. Non-secret fields only."
                     items: { $ref: "#/components/schemas/AppRegistration" }
     post:
       tags: [providers]
@@ -290,9 +290,17 @@ paths:
   /providers/{connection_id}:
     delete:
       tags: [providers]
-      summary: Remove a connection — drops its repos/findings/snapshots; audit entries retained (clarification).
+      summary: Remove a connection (one org) — drops its repos/findings/snapshots; audit entries retained.
+      description: >
+        Removes one connection. For a GitHub-App connection this also uninstalls that org's
+        installation on GitHub (via the App key) and, when it is the App's last connection,
+        forgets the stored App registration and returns `delete_app_url` — a deep link to
+        finish deleting the App itself (GitHub has no delete-App API). Non-App connections
+        (PAT/Gitea) just drop the row. Audited as one entry.
       parameters: [ { name: connection_id, in: path, required: true, schema: { type: string } } ]
-      responses: { "204": { description: Removed } }
+      responses:
+        "200": { description: Removed, content: { application/json: { schema: { $ref: "#/components/schemas/RemoveConnectionResult" } } } }
+        "404": { description: Unknown connection }
 
   /providers/{connection_id}/repos:
     get:
@@ -408,29 +416,6 @@ paths:
       responses:
         "303": { description: Redirect to the SPA providers screen with the new connection id }
         "400": { description: CSRF state mismatch }
-
-  /providers/github/app/forget:
-    post:
-      tags: [providers]
-      summary: Forget a host's GitHub App — uninstall everywhere, drop dependent connections, discard stored credentials.
-      description: >
-        Tears down the App registered for a host: authenticates as the App to uninstall it from
-        every account it is installed on, removes the connections that depended on it, then
-        forgets Hangar's stored credentials. Uninstall runs first (while the key is still held).
-        GitHub has no delete-App API, so the response returns `delete_app_url` — a deep link to
-        the App's Advanced settings — for the operator to finish deleting the App by hand.
-        Audited as one teardown entry. 404 when no App is registered for the host.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                base_url: { type: string, default: "https://github.com", description: "browser host whose App to tear down (github.com or an enterprise host)" }
-      responses:
-        "200": { description: Torn down, content: { application/json: { schema: { $ref: "#/components/schemas/ForgetAppResult" } } } }
-        "404": { description: No App registered for this host }
 
   /providers/audit:
     get:
@@ -679,28 +664,16 @@ components:
         slug: { type: string, description: "the App's GitHub slug" }
         app_id: { type: string }
         delete_app_url: { type: string, description: "deep link to the App's Advanced settings — where the owner deletes it on GitHub" }
-    ForgetAppResult:
+    RemoveConnectionResult:
       type: object
-      required: [uninstalled, uninstall_failed, connections_removed, delete_app_url]
+      required: [removed]
       properties:
-        uninstalled:
-          type: array
-          items: { type: string }
-          description: "accounts the App was uninstalled from"
-        uninstall_failed:
-          type: array
-          description: "installations that could not be uninstalled — finish manually via url"
-          items:
-            type: object
-            required: [account, url]
-            properties:
-              account: { type: string }
-              url: { type: string, description: "deep link to uninstall this installation on GitHub" }
-        connections_removed:
-          type: array
-          items: { type: string }
-          description: "connection ids dropped (they depended on this App)"
-        delete_app_url: { type: string, description: "deep link to finish deleting the App on GitHub (no API for this)" }
+        org: { type: string, nullable: true, description: "the org/owner login for the removed connection, when known" }
+        removed: { type: boolean, description: "the Hangar connection was dropped" }
+        uninstalled: { type: boolean, description: "the org's App installation was removed on GitHub" }
+        uninstall_url: { type: string, nullable: true, description: "per-org deep link to finish uninstalling on GitHub (present when the auto-uninstall failed)" }
+        app_forgotten: { type: boolean, description: "this was the App's last connection, so its stored registration was discarded" }
+        delete_app_url: { type: string, nullable: true, description: "deep link to finish deleting the App itself on GitHub (present only on the last connection's removal; no API for this)" }
     SyncAccepted:
       type: object
       required: [status]

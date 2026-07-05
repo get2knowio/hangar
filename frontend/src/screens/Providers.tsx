@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { AuditLog } from "../components/AuditLog";
-import { AddConnectionModal, RepoPickerModal } from "../components/ConnectionModals";
+import { AddConnectionModal, RemoveConnectionModal, RepoPickerModal } from "../components/ConnectionModals";
 import { ErrorState } from "../components/ErrorState";
 import { useToast } from "../app/state";
 import { useAudit, useProviders, useSyncConnection } from "../lib/api";
@@ -17,6 +17,7 @@ export function Providers() {
   const { show } = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const [picker, setPicker] = useState<{ id: string; label: string } | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; label: string } | null>(null);
   const [params, setParams] = useSearchParams();
 
   // The "Connect with GitHub" flow returns the browser here with ?connected=<id> on success
@@ -141,6 +142,13 @@ export function Providers() {
               >
                 Manage repos
               </button>
+              <button
+                onClick={() => setRemoving({ id: cn.id ?? "", label: cn.label ?? "" })}
+                title="Remove this connection"
+                style={{ fontSize: 11, fontWeight: 600, color: "var(--warn)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", background: "transparent", fontFamily: "inherit" }}
+              >
+                Remove
+              </button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginTop: 14 }}>
               <Field label="Scope" value={cn.scope ?? ""} />
@@ -176,6 +184,13 @@ export function Providers() {
           connectionId={picker.id}
           connectionLabel={picker.label}
           onClose={() => setPicker(null)}
+        />
+      )}
+      {removing && (
+        <RemoveConnectionModal
+          connectionId={removing.id}
+          connectionLabel={removing.label}
+          onClose={() => setRemoving(null)}
         />
       )}
     </div>

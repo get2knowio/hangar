@@ -256,12 +256,11 @@ automatically and starts watching the selected repos.
   Developer settings → GitHub Apps → Hangar → Make this GitHub App public**. "Public" only means
   installable beyond your own account — it does **not** list the App on the Marketplace, and
   Hangar still holds the sole copy of its private key.
-- **Forgetting / recreating an App:** once an App is registered for a host, **Connect with
-  GitHub** reuses it. To start fresh (e.g. to re-provision it as public), open **Add connection
-  → Connect with GitHub** and use **Forget this App**. Hangar uninstalls the App from every
-  account, removes the connections that used it, and discards its stored credentials — then
-  hands you a deep link to finish deleting the App on GitHub itself (there is no delete-App API,
-  so that last click is manual).
+- **Removing a connection / retiring an App:** each connection row is one org. **Remove** on a
+  row drops that connection and, for a GitHub App, uninstalls that org's installation on GitHub.
+  Removing the App's **last** org additionally forgets its stored credentials and hands you a
+  deep link to finish deleting the App on GitHub itself (there is no delete-App API, so that last
+  click is manual). To re-provision an App as public, remove its last org here, then re-connect.
 
 The manual paths below remain available (e.g. to reuse an App you already manage, or a PAT).
 
