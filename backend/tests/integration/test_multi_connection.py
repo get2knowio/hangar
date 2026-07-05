@@ -43,7 +43,12 @@ def test_delete_connection_drops_repos_but_keeps_audit(client) -> None:
     audit_before = client.get("/api/v1/providers/audit?limit=200").json()
 
     resp = client.delete("/api/v1/providers/gh-labs")
-    assert resp.status_code == 204
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["removed"] is True
+    # A seeded (non-App) connection has nothing to tear down on GitHub.
+    assert body["app_forgotten"] is False
+    assert body["delete_app_url"] is None
 
     after = client.get("/api/v1/fleet/overview").json()
     after_ids = {r["id"] for r in after["repos"]}

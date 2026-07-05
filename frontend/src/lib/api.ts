@@ -68,8 +68,8 @@ export type Policy = JSONResponse<"/policy", "get">;
 export type Providers = JSONResponse<"/providers", "get">;
 export type ConnectionCard = NonNullable<Providers["connections"]>[number];
 export type AppRegistration = NonNullable<Providers["app_registrations"]>[number];
-export type ForgetAppResult =
-  paths["/providers/github/app/forget"]["post"]["responses"][200]["content"]["application/json"];
+export type RemoveConnectionResult =
+  paths["/providers/{connection_id}"]["delete"]["responses"][200]["content"]["application/json"];
 export type ConnectionRepos = JSONResponse<"/providers/{connection_id}/repos", "get">;
 // The POST /providers request body — derived from the contract, never hand-written.
 export type NewConnectionBody = NonNullable<
@@ -208,14 +208,15 @@ export function useAddConnection() {
   });
 }
 
-// Tear down a host's GitHub App: uninstall everywhere, drop the connections that used it,
-// forget the stored credentials, and return deep links to finish deleting the App on GitHub.
-// Invalidates the provider cards (connections removed) and the audit log (teardown entry).
-export function useForgetGitHubApp() {
+// Remove one connection (= one org) via DELETE /providers/{id}. For a GitHub-App connection
+// the backend also uninstalls that org's installation on GitHub and, when it's the App's last
+// connection, forgets the App and returns a delete-App deep link — all surfaced in the result
+// (RemoveConnectionResult). Works for every connection type (App, PAT, reuse, Gitea).
+export function useRemoveConnection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (baseUrl: string) =>
-      send<ForgetAppResult>("POST", "/providers/github/app/forget", { base_url: baseUrl }),
+    mutationFn: async (connectionId: string) =>
+      (await send<RemoveConnectionResult>("DELETE", `/providers/${connectionId}`)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["providers"] });
       qc.invalidateQueries({ queryKey: ["overview"] });

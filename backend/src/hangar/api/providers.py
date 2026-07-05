@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hangar.api.deps import session_dep, settings_dep
+from hangar.api.deps import actor_dep, session_dep, settings_dep
 from hangar.config import Settings
 from hangar.domain.models import ProviderConnection
 from hangar.persistence import repositories as repo_store
 from hangar.providers.base import provider_name
 from hangar.providers.github.adapter import github_app_delete_url
+from hangar.providers.github.app_flow import (
+    RemoveConnectionResult,
+    remove_github_app_connection,
+)
 from hangar.providers.registry import provider_for
 from hangar.services import connections as conn_service
 from hangar.services.sync import format_relative
@@ -60,9 +64,9 @@ async def list_providers(
     # One query for all repo counts grouped by connection, instead of N per-card queries.
     counts = await repo_store.repo_counts_by_connection(session)
     cards = [await _connection_card(session, c, counts.get(c.id, 0)) for c in conns]
-    # Stored GitHub App registrations (per host) — surfaced so the add-connection UI can offer
-    # to "forget" a host's App (uninstall + drop stored credentials) before re-provisioning.
-    # Non-secret fields only; the delete link points the operator at GitHub's own delete UI.
+    # Stored GitHub App registrations (per host) — surfaced so the add-connection UI can note
+    # that connecting reuses an already-registered App. Non-secret fields only; the delete link
+    # points the operator at GitHub's own delete UI (used when removing the App's last org).
     registrations = await repo_store.list_app_registrations(session)
     return {
         "access": {
@@ -266,12 +270,23 @@ async def trigger_connection_sync(
     return SyncAccepted(connection_id=connection_id)
 
 
-@router.delete("/providers/{connection_id}", status_code=204)
+@router.delete("/providers/{connection_id}", response_model=RemoveConnectionResult)
 async def remove_provider(
-    connection_id: str, session: AsyncSession = Depends(session_dep)
-) -> Response:
+    connection_id: str,
+    session: AsyncSession = Depends(session_dep),
+    actor: str = Depends(actor_dep),
+) -> RemoveConnectionResult:
+    """Remove one connection (one org). For a GitHub-App connection this also uninstalls that
+    org's installation on GitHub and — when it is the App's last connection — forgets the App
+    and returns a deep link to finish deleting it. Repos/findings/snapshots are dropped; audit
+    entries are retained. 404 if the connection is unknown."""
+    row = await repo_store.get_connection_row(session, connection_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown connection")
+    if row.provider_type == "github" and row.app_id:
+        return await remove_github_app_connection(session, row, actor)
     await conn_service.remove_connection(session, connection_id)
-    return Response(status_code=204)
+    return RemoveConnectionResult(org=row.owner, removed=True)
 
 
 @router.get("/providers/audit")

@@ -48,8 +48,8 @@ async def list_connection_rows_for_base_url(
 ) -> list[ConnectionRow]:
     """Connections targeting one browser host — the ones a per-host App registration backs.
 
-    Used by the "forget App" teardown to enumerate the connections (and their installation
-    ids) that depend on a host's GitHub App before it is uninstalled and forgotten.
+    Used when removing a connection to find the App's remaining siblings: if none are left, that
+    removal was the App's last org, so its stored registration is forgotten too.
     """
     return list(
         (

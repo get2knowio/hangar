@@ -34,10 +34,11 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from hangar.api.deps import actor_dep, session_dep, settings_dep
+from hangar.api.deps import session_dep, settings_dep
 from hangar.config import Settings
 from hangar.persistence import repositories as repo_store
 from hangar.persistence.crypto import decrypt, encrypt
+from hangar.persistence.models import ConnectionRow
 from hangar.persistence.repositories import get_app_registration, upsert_app_registration
 from hangar.providers.github.adapter import (
     github_api_base,
@@ -301,122 +302,110 @@ async def app_installed(
     return RedirectResponse(f"/providers?connected={conn.id}", status_code=303)
 
 
-async def _uninstall_all_installations(
-    app_id: str, pem: str, api_base: str
-) -> tuple[list[str], list[dict[str, str]]]:
-    """Uninstall the App from every account it is installed on (all the cleanup we can do).
+async def _uninstall_one_installation(
+    app_id: str, pem: str, installation_id: int, api_base: str
+) -> tuple[bool, str | None]:
+    """Uninstall one org's installation via the App JWT. Best-effort and idempotent.
 
-    Authenticates as the App (JWT) to enumerate its installations, then ``DELETE``s each —
-    this reaches every org/account the App landed on, not just the ones Hangar has a
-    connection row for. Best-effort and idempotent: an already-gone installation (404) counts
-    as uninstalled; any other per-installation failure is collected with a manual-uninstall
-    deep link so the operator can finish it. Returns ``(uninstalled_accounts, failures)``.
+    Returns ``(uninstalled, deep_link)``: ``(True, None)`` when the installation is gone (a
+    404 counts — already uninstalled); ``(False, <installation settings URL>)`` when it could
+    not be removed, so the operator can finish it by hand.
     """
     from githubkit import AppAuthStrategy, GitHub
 
     app_gh = GitHub(AppAuthStrategy(app_id, pem), base_url=api_base)
-    installs: list[dict] = []
-    # A single-operator App lives on a handful of accounts; page defensively but bounded.
-    for page in range(1, 6):
-        batch = (
-            await app_gh.arequest(
-                "GET", "/app/installations", params={"per_page": 100, "page": page}
-            )
-        ).json()
-        if not isinstance(batch, list) or not batch:
-            break
-        installs.extend(batch)
-        if len(batch) < 100:
-            break
-
-    uninstalled: list[str] = []
-    failures: list[dict[str, str]] = []
-    for inst in installs:
-        iid = inst.get("id")
-        account = (inst.get("account") or {}).get("login") or str(iid)
-        try:
-            await app_gh.arequest("DELETE", f"/app/installations/{iid}")
-            uninstalled.append(account)
-        except Exception as exc:  # noqa: BLE001 — one failure must not abort the sweep
-            status = getattr(getattr(exc, "response", None), "status_code", None)
-            if status == 404:  # already uninstalled — treat as success (idempotent)
-                uninstalled.append(account)
-                continue
-            log.warning("github_app.uninstall_failed", account=account, error=str(exc))
-            failures.append({"account": account, "url": inst.get("html_url") or ""})
-    return uninstalled, failures
-
-
-class ForgetAppRequest(BaseModel):
-    # Browser host whose App registration to tear down (github.com or an enterprise host).
-    base_url: str = "https://github.com"
-
-
-class ForgetAppResult(BaseModel):
-    uninstalled: list[str]  # accounts the App was uninstalled from
-    uninstall_failed: list[dict[str, str]]  # {account, url} needing a manual uninstall
-    connections_removed: list[str]  # connection ids dropped (they depended on this App)
-    delete_app_url: str  # deep link to finish deleting the App on GitHub
-
-
-@router.post("/forget", response_model=ForgetAppResult)
-async def app_forget(
-    body: ForgetAppRequest,
-    session: AsyncSession = Depends(session_dep),
-    settings: Settings = Depends(settings_dep),
-    actor: str = Depends(actor_dep),
-) -> ForgetAppResult | JSONResponse:
-    """Tear down a host's GitHub App: uninstall everywhere → drop dependent connections →
-    forget the stored credentials → return a deep link to finish deleting the App on GitHub.
-
-    Ordering is deliberate (Constitution III): uninstall while the PEM is still held, *then*
-    forget the credentials. Local-only for the final delete — GitHub has no delete-App API,
-    so the operator finishes via ``delete_app_url``. Audited as one teardown entry.
-    """
-    web = github_web_base(body.base_url)
-    reg = await get_app_registration(session, web)
-    if reg is None:
-        return JSONResponse({"detail": "no App registered for this host"}, status_code=404)
-
-    # 1) Uninstall from every account (while we still hold the private key).
-    pem = decrypt(reg.private_key_ciphertext)
+    html_url: str | None = None
+    try:  # the lookup only feeds the fallback deep link — never fatal
+        inst = (await app_gh.arequest("GET", f"/app/installations/{installation_id}")).json()
+        html_url = inst.get("html_url") or None
+    except Exception:  # noqa: BLE001
+        pass
     try:
-        uninstalled, failed = await _uninstall_all_installations(
-            reg.app_id, pem, github_api_base(web)
+        await app_gh.arequest("DELETE", f"/app/installations/{installation_id}")
+        return True, None
+    except Exception as exc:  # noqa: BLE001 — a failure yields a manual-uninstall link, not an abort
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 404:  # already uninstalled — idempotent success
+            return True, None
+        log.warning(
+            "github_app.uninstall_one_failed", installation=installation_id, error=str(exc)
         )
-    except Exception as exc:  # noqa: BLE001 — App unreachable/deleted already; still clean up locally
-        log.warning("github_app.uninstall_enumeration_failed", base_url=web, error=str(exc))
-        uninstalled, failed = [], []
+        return False, html_url
 
-    # 2) Drop the connections that depended on this App (they are dead once it is uninstalled).
-    rows = await repo_store.list_connection_rows_for_base_url(session, web)
-    removed = [row.id for row in rows if row.app_id == reg.app_id]
-    for cid in removed:
-        await remove_connection(session, cid)
 
-    # 3) Forget the stored credentials (local-only).
-    await repo_store.delete_app_registration(session, web)
+class RemoveConnectionResult(BaseModel):
+    """Outcome of removing one connection (= one org). For a GitHub-App connection this also
+    reflects the GitHub-side cleanup; for other providers only ``org``/``removed`` are set."""
 
-    delete_url = github_app_delete_url(web, reg.slug)
+    org: str | None = None  # the org/owner login, when known
+    removed: bool = True  # the Hangar connection was dropped
+    uninstalled: bool = False  # the org's App installation was removed on GitHub
+    uninstall_url: str | None = None  # per-org deep link to finish uninstalling (auto failed)
+    app_forgotten: bool = False  # this was the App's last connection → registration discarded
+    delete_app_url: str | None = None  # deep link to finish deleting the App itself on GitHub
+
+
+async def remove_github_app_connection(
+    session: AsyncSession, row: ConnectionRow, actor: str
+) -> RemoveConnectionResult:
+    """Remove one GitHub-App-backed connection — i.e. drop one org from the App.
+
+    Uninstalls that org's installation on GitHub (best-effort, using the App key while it is
+    still held), drops the Hangar connection, and — when this was the App's **last** remaining
+    connection — forgets the stored App registration and returns the deep link to finish
+    deleting the App itself (GitHub has no delete-App API). Ordering follows Constitution III:
+    act on GitHub while the credential exists, *then* discard it. Audited as one entry.
+    """
+    web = github_web_base(row.base_url or "https://github.com")
+    reg = await get_app_registration(session, web)
+
+    uninstalled, uninstall_url = False, None
+    if reg is not None and row.installation_id is not None:
+        pem = decrypt(reg.private_key_ciphertext)
+        uninstalled, uninstall_url = await _uninstall_one_installation(
+            reg.app_id, pem, int(row.installation_id), github_api_base(web)
+        )
+
+    # Other connections still backed by this App (same host + app_id) — the ones keeping it alive.
+    siblings = [
+        r
+        for r in await repo_store.list_connection_rows_for_base_url(session, web)
+        if r.app_id == row.app_id and r.id != row.id
+    ]
+    await remove_connection(session, row.id)
+
+    delete_app_url: str | None = None
+    app_forgotten = False
+    if reg is not None and not siblings:  # last one out → retire the App
+        await repo_store.delete_app_registration(session, web)
+        delete_app_url = github_app_delete_url(web, reg.slug)
+        app_forgotten = True
+
     await record_correction(
         session,
         actor=actor,
-        connection_label=f"gh-app:{reg.slug}",
+        connection_label=row.label or f"gh:{row.owner}",
         repo_id="-",
-        check_label="GitHub App teardown",
+        check_label="Connection removed",
         result=(
-            f"forgot App {reg.slug}: uninstalled {len(uninstalled)}, "
-            f"removed {len(removed)} connection(s)"
+            f"removed {row.owner or row.id}"
+            + (" · uninstalled on GitHub" if uninstalled else "")
+            + (f" · forgot App {reg.slug}" if app_forgotten and reg else "")
         ),
-        pr_url=delete_url,
+        pr_url=delete_app_url or "",
     )
     log.info(
-        "github_app.forgotten",
-        base_url=web, slug=reg.slug, uninstalled=len(uninstalled), connections=len(removed),
-    )
-    return ForgetAppResult(
+        "github_app.connection_removed",
+        connection=row.id,
+        owner=row.owner,
         uninstalled=uninstalled,
-        uninstall_failed=failed,
-        connections_removed=removed,
-        delete_app_url=delete_url,
+        app_forgotten=app_forgotten,
+    )
+    return RemoveConnectionResult(
+        org=row.owner,
+        removed=True,
+        uninstalled=uninstalled,
+        uninstall_url=uninstall_url,
+        app_forgotten=app_forgotten,
+        delete_app_url=delete_app_url,
     )
