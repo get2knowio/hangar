@@ -13,6 +13,7 @@ import {
   useProviders,
   useRemoveConnection,
   useSetConnectionRepos,
+  useSyncConnection,
   type ConnectionCard,
   type NewConnectionBody,
   type RemoveConnectionResult,
@@ -472,6 +473,7 @@ export function RepoPickerModal({
 }) {
   const { data, isLoading, isError, error } = useConnectionRepos(connectionId, true);
   const save = useSetConnectionRepos(connectionId);
+  const sync = useSyncConnection();
   const { show } = useToast();
 
   const [watchAll, setWatchAll] = useState(true);
@@ -503,8 +505,13 @@ export function RepoPickerModal({
   function commit() {
     const repos = watchAll ? null : [...selected];
     save.mutate(repos, {
-      onSuccess: () =>
-        show(repos === null ? "Watching all repos" : `Watching ${repos.length} repo${repos.length === 1 ? "" : "s"}`),
+      onSuccess: () => {
+        show(repos === null ? "Watching all repos" : `Watching ${repos.length} repo${repos.length === 1 ? "" : "s"}`);
+        // Re-interrogate so the newly-watched repos populate the count now instead of
+        // waiting for the next poll cycle — the same reason we auto-refresh right after a
+        // connection is added. Fire-and-forget; the sync invalidates the list on success.
+        sync.mutate(connectionId);
+      },
       onError: (e: unknown) => show(e instanceof Error ? e.message : "Could not update selection", "error"),
     });
     onClose();
