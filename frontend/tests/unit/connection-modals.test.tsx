@@ -18,6 +18,7 @@ vi.mock("../../src/lib/api", () => ({
   useProviders: () => ({ data: providersData.current }),
   useConnectionRepos: () => ({ data: null, isLoading: false, isError: false }),
   useSetConnectionRepos: () => ({ mutate: vi.fn(), isPending: false }),
+  useSyncConnection: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
   useRemoveConnection: () => ({ mutate: removeMutate, isPending: false }),
 }));
 vi.mock("../../src/app/state", () => ({ useToast: () => ({ show: vi.fn() }) }));

@@ -21,19 +21,28 @@ export function Providers() {
   const [params, setParams] = useSearchParams();
 
   // The "Connect with GitHub" flow returns the browser here with ?connected=<id> on success
-  // or ?connect_error=<reason> on failure. Surface it, refresh the list, and clear the query.
+  // or ?connect_error=<reason> on failure. On success, surface it and clear the query, then
+  // immediately interrogate the new connection so its repo count populates now — a brand-new
+  // connection has no snapshot yet, so the list would otherwise read "0 repos" until the
+  // background poller's next cycle (the bug this handles). useSyncConnection polls the
+  // connection's last_sync_at and invalidates providers/overview/scorecard once the first
+  // snapshot lands; refetch() shows the new card right away in the meantime.
+  const syncMutate = syncConn.mutate;
   useEffect(() => {
     const connected = params.get("connected");
     const connectError = params.get("connect_error");
     if (connected) {
-      show(`Connected · ${connected}`);
-      refetch();
+      show("Connected · fetching repos…");
       setParams({}, { replace: true });
+      refetch();
+      syncMutate(connected, {
+        onError: () => show("Couldn’t auto-refresh — hit Refresh on the connection", "error"),
+      });
     } else if (connectError) {
       show(`Couldn’t connect to GitHub (${connectError.replace(/_/g, " ")})`, "error");
       setParams({}, { replace: true });
     }
-  }, [params, show, refetch, setParams]);
+  }, [params, show, refetch, setParams, syncMutate]);
 
   if (isError) {
     return <ErrorState title="Couldn't load providers" error={error} onRetry={refetch} />;
