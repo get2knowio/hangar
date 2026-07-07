@@ -13,11 +13,13 @@ CHECKS: list[Check] = [
         id="release_please", label="release-please configured", group=_G,
         tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
         evidence_fail="No release-please manifest",
+        doc_url="https://github.com/googleapis/release-please",
     ),
     Check(
         id="conventional", label="Conventional commits enforced", group=_G,
         tier=RemediationTier.link, required_capabilities=caps_for_tier(RemediationTier.link),
         evidence_fail="No commitlint / PR-title workflow",
+        doc_url="https://www.conventionalcommits.org/",
     ),
     Check(
         id="changelog", label="CHANGELOG automated", group=_G,

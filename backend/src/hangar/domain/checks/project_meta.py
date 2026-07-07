@@ -13,6 +13,7 @@ CHECKS: list[Check] = [
         id="license", label="LICENSE present", group=_G,
         tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
         evidence_fail="No LICENSE file at repo root",
+        doc_url="https://choosealicense.com/",
     ),
     Check(
         id="readme", label="README present", group=_G,
@@ -30,5 +31,6 @@ CHECKS: list[Check] = [
         id="templates", label="Issue / PR templates", group=_G,
         tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
         evidence_fail=".github/ISSUE_TEMPLATE absent",
+        doc_url="https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests",
     ),
 ]

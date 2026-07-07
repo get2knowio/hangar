@@ -1242,6 +1242,11 @@ export interface components {
             target?: number | null;
             pass_count?: number;
             repo_count?: number;
+            /**
+             * @description Canonical reference for the rule (tool/spec/docs), or null when it has no external reference.
+             * @example https://github.com/googleapis/release-please
+             */
+            doc_url?: string | null;
         };
         Policy: {
             id?: string;

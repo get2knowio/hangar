@@ -93,12 +93,12 @@ platform without that setting).
 ### Supply chain
 | Check | Tier | Passes when |
 |-------|------|-------------|
-| **Dependabot alerts enabled** | `API` | Vulnerability alerts are turned on for the repo. |
-| **Version updates configured** | `API · PR` | A [**Dependabot**](https://docs.github.com/en/code-security/dependabot) (`.github/dependabot.yml`) *or* [**Renovate**](https://docs.renovatebot.com/) (`renovate.json`, `.renovaterc`, …) update config is present. |
+| **Dependabot alerts enabled** | `API` | [Dependabot alerts](https://docs.github.com/en/code-security/dependabot/dependabot-alerts) are turned on for the repo. |
+| **Version updates configured** | `API · PR` | A [**Dependabot**](https://docs.github.com/en/code-security/dependabot/dependabot-version-updates) (`.github/dependabot.yml`) *or* [**Renovate**](https://docs.renovatebot.com/) (`renovate.json`, `.renovaterc`, …) update config is present. |
 | **Update cooldown ≥ target** | `API · PR` | An update cooldown is configured to the target (default **7 days**) — Dependabot `cooldown` or Renovate `minimumReleaseAge`. |
 | **Lockfile present** | `Report` | A dependency lockfile is committed. |
 | **Dependency review enabled** | `Deep-link` | The [dependency-review action](https://github.com/actions/dependency-review-action) is wired into CI. |
-| **Actions pinned to SHA** | `Deep-link` | Workflows pin actions to immutable commit SHAs, not mutable tags. |
+| **Actions pinned to SHA** | `Deep-link` | Workflows [pin actions to immutable commit SHAs](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions), not mutable tags. |
 
 ### Release
 | Check | Tier | Passes when |
@@ -112,26 +112,26 @@ platform without that setting).
 ### Governance
 | Check | Tier | Passes when |
 |-------|------|-------------|
-| **Branch protection on default** | `Deep-link` | A protection ruleset guards the default branch. |
+| **Branch protection on default** | `Deep-link` | A [protection ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches) guards the default branch. |
 | **CODEOWNERS present** | `API · PR` | A [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners) file exists. |
 | **Default branch = main** | `Report` | The default branch is `main`. |
 
 ### Security
 | Check | Tier | Passes when |
 |-------|------|-------------|
-| **SECURITY.md present** | `API · PR` | A SECURITY.md policy exists. |
+| **SECURITY.md present** | `API · PR` | A [SECURITY.md](https://docs.github.com/en/code-security/getting-started/adding-a-security-policy-to-your-repository) policy exists. |
 | **Secret scanning + push protection** | `Deep-link` | [Secret scanning](https://docs.github.com/en/code-security/secret-scanning) and push protection are enabled. |
 | **Code scanning (CodeQL)** | `Deep-link` | A [CodeQL](https://codeql.github.com/) / code-scanning workflow is configured. |
-| **Org 2FA required** | `Deep-link` | The owning org enforces two-factor auth. |
-| **Workflow permissions least-privilege** | `Deep-link` | `GITHUB_TOKEN` isn't left at write-all; a least-privilege permissions block is set. |
+| **Org 2FA required** | `Deep-link` | The owning org [enforces two-factor auth](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization). |
+| **Workflow permissions least-privilege** | `Deep-link` | [`GITHUB_TOKEN`](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication) isn't left at write-all; a least-privilege permissions block is set. |
 
 ### Project meta
 | Check | Tier | Passes when |
 |-------|------|-------------|
-| **LICENSE present** | `API · PR` | A LICENSE file is at the repo root. |
+| **LICENSE present** | `API · PR` | A [LICENSE](https://choosealicense.com/) file is at the repo root. |
 | **README present** | `Report` | A README exists. |
 | **Description & topics set** | `Deep-link` | The repo has a description and topics. |
-| **Issue / PR templates** | `API · PR` | `.github/ISSUE_TEMPLATE` (and/or PR template) exists. |
+| **Issue / PR templates** | `API · PR` | [`.github/ISSUE_TEMPLATE`](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests) (and/or PR template) exists. |
 
 > **Checks are data.** The catalog lives in `backend/src/hangar/domain/checks/` — adding or
 > changing a rule is a data edit there, never dashboard code. **Detection** (which repos

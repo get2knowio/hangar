@@ -46,6 +46,7 @@ async def catalog(session: AsyncSession = Depends(session_dep)) -> dict:
                 "target": policy.target(c.id),
                 "pass_count": passes,
                 "repo_count": total_repos,
+                "doc_url": c.doc_url,
             })
         groups.append({"group": g, "checks": checks})
 

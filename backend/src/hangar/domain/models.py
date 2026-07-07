@@ -121,6 +121,11 @@ class Check(BaseModel):
     has_target: bool = False
     default_target: int | None = None
     evidence_fail: str = ""
+    # Canonical reference explaining the rule (the tool/spec/docs it validates). Surfaced as a
+    # deep-link on the catalog & policy page. None when the rule has no external reference (a
+    # Hangar-specific concept). This is the single source of truth — the README mirrors it, and
+    # a test (tests/unit/test_catalog_doc_urls.py) fails if the two drift.
+    doc_url: str | None = None
 
     def tier_for(self, granted: set[Capability]) -> RemediationTier:
         """Resolve the effective tier for a connection's granted capabilities (FR-010).
