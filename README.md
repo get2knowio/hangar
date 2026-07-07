@@ -82,17 +82,17 @@ platform without that setting).
 | Check | Tier | Passes when |
 |-------|------|-------------|
 | **Dependabot alerts enabled** | `API` | Vulnerability alerts are turned on for the repo. |
-| **Version updates configured** | `API · PR` | A **Dependabot** (`.github/dependabot.yml`) *or* **Renovate** (`renovate.json`, `.renovaterc`, …) update config is present. |
+| **Version updates configured** | `API · PR` | A [**Dependabot**](https://docs.github.com/en/code-security/dependabot) (`.github/dependabot.yml`) *or* [**Renovate**](https://docs.renovatebot.com/) (`renovate.json`, `.renovaterc`, …) update config is present. |
 | **Update cooldown ≥ target** | `API · PR` | An update cooldown is configured to the target (default **7 days**) — Dependabot `cooldown` or Renovate `minimumReleaseAge`. |
 | **Lockfile present** | `Report` | A dependency lockfile is committed. |
-| **Dependency review enabled** | `Deep-link` | The dependency-review action is wired into CI. |
+| **Dependency review enabled** | `Deep-link` | The [dependency-review action](https://github.com/actions/dependency-review-action) is wired into CI. |
 | **Actions pinned to SHA** | `Deep-link` | Workflows pin actions to immutable commit SHAs, not mutable tags. |
 
 ### Release
 | Check | Tier | Passes when |
 |-------|------|-------------|
-| **release-please configured** | `API · PR` | A release-please manifest/config is present. |
-| **Conventional commits enforced** | `Deep-link` | A commitlint config or PR-title-lint workflow enforces conventional commits. |
+| **release-please configured** | `API · PR` | A [release-please](https://github.com/googleapis/release-please) manifest/config is present. |
+| **Conventional commits enforced** | `Deep-link` | A [commitlint](https://commitlint.js.org/) config or PR-title-lint workflow enforces [conventional commits](https://www.conventionalcommits.org/). |
 | **CHANGELOG automated** | `Report` | A CHANGELOG / automated release notes exist. |
 | **Release health / commit age** | `Report` | The latest release isn't lagging too far behind `main`. |
 | **CI workflow green on default** | `Report` | Default-branch CI is configured and passing. |
@@ -101,15 +101,15 @@ platform without that setting).
 | Check | Tier | Passes when |
 |-------|------|-------------|
 | **Branch protection on default** | `Deep-link` | A protection ruleset guards the default branch. |
-| **CODEOWNERS present** | `API · PR` | A CODEOWNERS file exists. |
+| **CODEOWNERS present** | `API · PR` | A [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repos-settings-and-features/customizing-your-repository/about-code-owners) file exists. |
 | **Default branch = main** | `Report` | The default branch is `main`. |
 
 ### Security
 | Check | Tier | Passes when |
 |-------|------|-------------|
 | **SECURITY.md present** | `API · PR` | A SECURITY.md policy exists. |
-| **Secret scanning + push protection** | `Deep-link` | Secret scanning and push protection are enabled. |
-| **Code scanning (CodeQL)** | `Deep-link` | A CodeQL / code-scanning workflow is configured. |
+| **Secret scanning + push protection** | `Deep-link` | [Secret scanning](https://docs.github.com/en/code-security/secret-scanning) and push protection are enabled. |
+| **Code scanning (CodeQL)** | `Deep-link` | A [CodeQL](https://codeql.github.com/) / code-scanning workflow is configured. |
 | **Org 2FA required** | `Deep-link` | The owning org enforces two-factor auth. |
 | **Workflow permissions least-privilege** | `Deep-link` | `GITHUB_TOKEN` isn't left at write-all; a least-privilege permissions block is set. |
 
@@ -166,7 +166,7 @@ to a given repo, per repo, in version control — not a blanket global waiver.
 - **GitHub** — the live adapter. Connect in two clicks with the built-in **Connect with
   GitHub** flow (Hangar creates *your own* least-privilege GitHub App — no tokens to paste),
   or bring your own App / PAT. GitHub Enterprise (GHES and GHEC data-residency) is supported.
-- **Gitea** — a first-class provider; because Gitea's REST API is GitHub-shaped, the same
+- **[Gitea](https://about.gitea.com/)** — a first-class provider; because Gitea's REST API is GitHub-shaped, the same
   23-check catalog, scorecard, and PR-first remediation apply. Signals OSS Gitea has no
   equivalent for (alerts, secret/code scanning, workflow-permissions, org 2FA) honestly report
   `unknown` rather than a fabricated result.
@@ -182,7 +182,7 @@ Setup for both — including least-privilege scopes, webhooks, and Enterprise ho
   receivers refuse deliveries when no HMAC secret is set; credential paths refuse to act
   anonymously or half-configured.
 - **Identity is decoupled from your provider credentials.** Access is enforced at the homelab
-  edge via **forward-auth** (Traefik + Authentik reference) or by Hangar acting as an **OIDC**
+  edge via **forward-auth** ([Traefik](https://traefik.io/traefik/) + [Authentik](https://goauthentik.io/) reference) or by Hangar acting as an **OIDC**
   client against your own IdP. A git provider is never the login.
 - **Least-privilege, encrypted at rest.** Write scopes are requested only for writable
   connections; stored credentials (App keys, tokens, webhook secrets) are Fernet-encrypted with
