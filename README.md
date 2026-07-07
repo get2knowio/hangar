@@ -1,409 +1,148 @@
 # Hangar
 
-**Hangar** is a self-hosted, single-operator *fleet control plane*. It aggregates the
-repositories across one or more provider connections (GitHub today, Gitea designed-for)
-into one dashboard, scores each repo against a declarative best-practice **policy**, and
-lets you remediate hygiene drift in place — every content change delivered as a **pull
-request, never a push**. It is provider-agnostic at its core, fail-closed behind a
-reverse-proxy SSO layer, and built to run as a single Docker Compose stack on a modest
-homelab host.
+**Hangar** is a self-hosted, single-operator *fleet control plane* for your repositories.
+It aggregates every repo across one or more provider connections (GitHub today, Gitea
+designed-for) into one dashboard, scores each repo against a declarative best-practice
+**policy**, and lets you remediate hygiene drift in place — every content change delivered
+as a **pull request, never a push**.
 
-> Design & scope live under [`specs/001-fleet-control-plane/`](specs/001-fleet-control-plane/):
-> [spec](specs/001-fleet-control-plane/spec.md) ·
-> [plan](specs/001-fleet-control-plane/plan.md) ·
-> [research](specs/001-fleet-control-plane/research.md) ·
-> [data model](specs/001-fleet-control-plane/data-model.md) ·
-> [OpenAPI contract](specs/001-fleet-control-plane/contracts/openapi.yaml) ·
-> [UI contract](specs/001-fleet-control-plane/contracts/ui-spec.md) ·
-> [quickstart](specs/001-fleet-control-plane/quickstart.md). Governance:
-> [constitution](.specify/memory/constitution.md).
+It is provider-agnostic at its core, fail-closed behind a reverse-proxy SSO layer, and
+built to run as a single Docker Compose stack on a modest homelab host.
+
+> **Just want to run it?** → [**CONTRIBUTING.md**](CONTRIBUTING.md) has quickstart, the full
+> configuration reference, GitHub-App / Gitea setup, access modes, and deployment.
 
 ---
 
-## Architecture
+## Why Hangar
 
-| Layer        | What it is | Where |
-|--------------|-----------|-------|
-| **Backend**  | Python 3.12 + FastAPI. Provider-neutral domain core, a `RepoProvider` interface (GitHub adapter via `githubkit`, GitHub App + webhooks), an APScheduler per-connection poller, SQLAlchemy + Alembic persistence, and Fernet credential encryption. Serves `/api/v1/*` and `/health`. | `backend/` (package `hangar`, entrypoint `hangar.main:app`) |
-| **Frontend** | React + TypeScript + Vite SPA on shadcn/ui + Tailwind + TanStack Query. Types are generated from the OpenAPI contract (`gen:api`), so there are no hand-drifted types. Builds to `frontend/dist`. | `frontend/` |
-| **Deploy**   | A single Docker Compose stack: the `hangar` app behind Traefik (`ForwardAuth` SSO, TLS), SQLite by default, optional Postgres profile, `homepage.*` + `hola-*` labels, internal bind. | `deploy/` |
+A maintainer running a portfolio of repos has no standing, fleet-level answer to two
+recurring questions:
 
-The backend serves the API; the built SPA is served as static assets by the same process.
-Access control is **not** Hangar's job — it sits behind a forward-auth reverse proxy
-(Traefik + Authentik reference) and trusts an identity header only from the proxy.
+1. **What needs my attention right now?** Open PRs piling up, dependency-bot PRs waiting to
+   merge, failing CI on `main`, security alerts by severity, repos with unreleased commits
+   sitting too long. Today that's *N* browser tabs and tribal memory.
+2. **Is the fleet configured the way I want it to be?** Is Dependabot on everywhere? Is the
+   update cooldown set? Is release-please wired up? Is branch protection on `main`? Is there
+   a LICENSE, a SECURITY.md, CODEOWNERS? These best practices are decided once and then
+   **drift silently** as repos are created and forgotten.
 
----
+You can answer (2) for a *moment in time* with a one-shot script that configures cooldowns
+and Dependabot across an org. That's the right *action* but the wrong *lifecycle*: a one-shot
+run doesn't persist, doesn't re-check, and doesn't catch the next repo. **Hangar turns that
+one-shot into a standing control plane** — continuous visibility, a declarative definition of
+"good," and a path to fix what's drifted.
 
-## Prerequisites
+### What Hangar is *not*
 
-Either:
-
-- **Docker** + **Docker Compose v2** (the quickest path), or
-- **Local toolchains**: Python **3.12** and Node **20**.
-
-For production-like runs you also want:
-
-- A **GitHub App** (App id + private key + webhook secret) installed on the org/user you
-  want to watch (least-privilege scopes — see below), and/or a **scoped Gitea token** for a
-  self-hosted Gitea instance (see *Gitea setup*). At least one provider connection.
-- A **reverse proxy doing forward-auth** (Traefik + Authentik reference). For local dev you
-  can skip this with `HANGAR_FORWARD_AUTH=disabled`.
-
----
-
-## Run it locally
-
-Hangar is **fail-closed**: it refuses to start unless `HANGAR_FORWARD_AUTH` is set. For
-local work use `HANGAR_FORWARD_AUTH=disabled` (no SSO gate — you'll see a loud startup
-warning; fine on your own machine).
-
-### Fastest: demo mode, no GitHub App needed
-
-The quickest way to "fire it up and click around." `HANGAR_SEED_DEMO_DATA=true` loads the
-prototype's sample fleet on first boot, so every screen is populated without configuring a
-real provider. Run the backend and frontend in two terminals.
-
-**Terminal 1 — backend** (from `backend/`):
-
-```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate      # first time only
-pip install -e '.[dev]'                                # first time only
-
-export HANGAR_FORWARD_AUTH=disabled
-export HANGAR_SEED_DEMO_DATA=true
-export HANGAR_SECRET_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
-uvicorn hangar.main:app --reload                       # API + /health on http://127.0.0.1:8000
-```
-
-**Terminal 2 — frontend** (from `frontend/`):
-
-```bash
-cd frontend
-npm install            # first time only
-npm run gen:api        # generate TS types from the OpenAPI contract (first time / after contract edits)
-npm run dev            # SPA on http://127.0.0.1:5173, proxies /api -> :8000
-```
-
-Open **http://127.0.0.1:5173**. You should land on a populated overview; the scorecard,
-repo detail, and providers screens all work against the seeded fleet. The SQLite db is
-written to `backend/hangar.db` — delete it to reset (the seed reloads on next boot).
-
-> Demo connections have no real credential, so remediations are *simulated* (no live PRs).
-> To exercise real detection/remediation, add a real GitHub connection (see below) and run
-> with `HANGAR_SEED_DEMO_DATA=false`.
-
-### Whole app in one process (built SPA served by the backend)
-
-Mirrors production wiring (one Uvicorn process serves the API **and** the built SPA) without
-Docker:
-
-```bash
-cd frontend && npm install && npm run gen:api && npm run build   # produces frontend/dist
-cd ../backend && pip install -e '.[dev]'
-export HANGAR_FORWARD_AUTH=disabled HANGAR_SEED_DEMO_DATA=true
-export HANGAR_SECRET_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
-export HANGAR_STATIC_DIR="$(pwd)/../frontend/dist"
-uvicorn hangar.main:app                                          # full app on http://127.0.0.1:8000
-```
-
-### Run the published image (adopters)
-
-The fastest way to try Hangar — pulls the prebuilt multi-arch image from GHCR
-(`ghcr.io/get2knowio/hangar`), no source checkout or build required. Uses the
-self-contained [`deploy/docker-compose.example.yml`](deploy/docker-compose.example.yml)
-(no Traefik, no external network):
-
-```bash
-cp deploy/.env.example deploy/.env        # then edit deploy/.env (optional for a first look)
-docker compose -f deploy/docker-compose.example.yml up -d
-# open http://127.0.0.1:8000
-```
-
-It boots in `disabled` access mode on the loopback interface — fine for kicking the
-tyres locally. **Before exposing Hangar to a network, set `HANGAR_ACCESS_MODE` to
-`forward-auth` or `oidc`** (`disabled` means no auth). Set `HANGAR_SECRET_KEY` (generate
-it with the command [below](#generate-the-credential-encryption-key)) before adding a real
-GitHub connection, and `HANGAR_SEED_DEMO_DATA=true` to explore with offline sample data.
-Pin a release in production via `HANGAR_IMAGE=ghcr.io/get2knowio/hangar:0.1.0`. To add
-Postgres, uncomment `HANGAR_POSTGRES_*` in `deploy/.env` and run with `--profile postgres`.
-
-### Full container stack (Docker Compose, build from source)
-
-Builds the SPA + backend into one image and runs it the way it deploys behind Traefik +
-forward-auth (the homelab reference). One-time setup:
-
-```bash
-cp deploy/.env.example deploy/.env
-# In deploy/.env set at minimum:
-#   HANGAR_FORWARD_AUTH=disabled
-#   HANGAR_SEED_DEMO_DATA=true            # for a populated demo; false for real connections
-#   HANGAR_SECRET_KEY=<paste the output of the command below>
-python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-
-# The compose file attaches to a shared Traefik network named `proxy`. Create it once
-# (harmless locally even without Traefik running):
-docker network create proxy
-```
-
-Then:
-
-```bash
-docker compose -f deploy/docker-compose.yml up --build
-```
-
-The app is published on `127.0.0.1:8000` only (internal bind) — open
-**http://127.0.0.1:8000**. Real external access is meant to come through Traefik + SSO;
-the Traefik/`homepage`/`hola` labels in the compose file are inert until that proxy exists.
-To use Postgres instead of SQLite:
-
-```bash
-# in deploy/.env: HANGAR_POSTGRES_HOST=postgres and HANGAR_POSTGRES_PASSWORD=hangar
-docker compose -f deploy/docker-compose.yml --profile postgres up --build
-```
+- **Not a hosted SaaS.** Single-operator, self-hosted only — no multi-tenancy, no sign-up.
+- **Not an autonomous agent.** Hangar never silently mutates a repo; every correction is
+  operator-triggered, and every code change ships as a pull request.
+- **Not an identity provider.** Access is delegated to your homelab edge (forward-auth) or an
+  OIDC IdP — Hangar never treats a git provider as its login.
+- **Not a CI system, code-review tool, or secrets vault.** It *observes and nudges*; it
+  doesn't replace the platform's own primitives.
 
 ---
 
-## Configuration (environment / secrets)
+## How it works
 
-All settings use the `HANGAR_` prefix and are read from the environment (no in-app config
-UI). Full list with comments lives in [`deploy/.env.example`](deploy/.env.example).
-
-| Variable | Required | Default | Purpose |
-|----------|----------|---------|---------|
-| `HANGAR_ACCESS_MODE` | **yes**¹ | — | `forward-auth` \| `oidc` \| `disabled`. The canonical access-mode selector. |
-| `HANGAR_FORWARD_AUTH` | **yes**¹ | — | Legacy selector: `enabled` (=forward-auth) or `disabled`. Honored when `HANGAR_ACCESS_MODE` is unset. |
-| `HANGAR_FORWARD_AUTH_USER_HEADER` | no | `Remote-User` | Identity header the proxy injects. Authentik: `X-authentik-username`. |
-| `HANGAR_FORWARD_AUTH_ALLOWED_USER` | no | — | Optional single-identity pin: admit only this user. |
-| `HANGAR_TRUSTED_PROXY_CIDR` | recommended | — | Identity header trusted only from this CIDR, e.g. `172.16.0.0/12` (FR-030). |
-| `HANGAR_TRUSTED_PROXY_SECRET` | no | — | Optional shared secret; proxy sends it as `X-Hangar-Proxy-Secret`. |
-| `HANGAR_OIDC_ISSUER` | oidc | — | OIDC issuer base URL (discovery `…/.well-known/openid-configuration`). |
-| `HANGAR_OIDC_CLIENT_ID` / `HANGAR_OIDC_CLIENT_SECRET` | oidc | — | Confidential-client credentials registered at your IdP. |
-| `HANGAR_OIDC_REDIRECT_URL` | recommended (oidc) | derived | e.g. `https://hangar.<domain>/auth/callback`. Set it (or run uvicorn `--proxy-headers`) behind TLS. |
-| `HANGAR_OIDC_SCOPES` | no | `openid email profile` | Scopes requested at login. |
-| `HANGAR_OIDC_USERNAME_CLAIM` | no | `email` | ID-token claim used as the audit actor. |
-| `HANGAR_OIDC_ALLOWED_USERS` / `HANGAR_OIDC_ALLOWED_GROUPS` | no | — | Optional allowlist (email/sub, or group via `HANGAR_OIDC_GROUPS_CLAIM`). Empty ⇒ admit any authenticated user. |
-| `HANGAR_OIDC_POST_LOGOUT_REDIRECT_URL` | no | — | Optional RP-initiated logout target at the IdP. |
-| `HANGAR_SESSION_SECRET` | oidc² | — | Signs the session cookie; falls back to `HANGAR_SECRET_KEY`. |
-| `HANGAR_SESSION_MAX_AGE_SECONDS` / `HANGAR_SESSION_COOKIE_SECURE` | no | `28800` / `true` | Session lifetime; set `_SECURE=false` only for local http dev. |
-| `HANGAR_SESSION_COOKIE_NAME` | no | `hangar_session` | Name of the OIDC session cookie (rarely changed). |
-| `HANGAR_ALLOW_PUBLIC_BIND` | no | unset | Must be set to bind a non-private/public interface; otherwise refused. |
-| `HANGAR_OPERATOR` | no | `local-operator` | Audit actor used in `disabled` mode. |
-| `HANGAR_SECRET_KEY` | **yes** (real providers) | — | Fernet key; encrypts provider credentials at rest (FR-032). |
-| `HANGAR_BASE_URL` | recommended (Connect with GitHub) | derived | Instance browser URL for the GitHub App manifest callbacks. LAN/VPN URLs are valid (browser redirects; no inbound). |
-| `HANGAR_GITHUB_APP_PUBLIC` | no | `false` | Register the Connect-with-GitHub App as **public** so it can be installed on your orgs, not just your personal account (one connection per org). "Public" ≠ Marketplace-listed; Hangar still solely holds the key. Applies to newly created Apps only. |
-| `HANGAR_HOST` / `HANGAR_PORT` | no | `127.0.0.1` / `8000` | Bind host/port for startup safety checks. |
-| `HANGAR_POSTGRES_HOST` | no | unset | Set to switch to Postgres (takes precedence over `HANGAR_DATABASE_URL`). |
-| `HANGAR_POSTGRES_PASSWORD` | with `_HOST` | — | Postgres password; required when `HANGAR_POSTGRES_HOST` is set (fail-closed). |
-| `HANGAR_POSTGRES_PORT` / `_DB` / `_USER` | no | `5432` / `hangar` / `hangar` | Remaining Postgres connection parts. |
-| `HANGAR_POSTGRES_SSLMODE` | no | unset | libpq sslmode (`require`/`verify-full`/…), forwarded to asyncpg's `ssl` arg. |
-| `HANGAR_DATABASE_URL` | no | `sqlite+aiosqlite:///./hangar.db` | Full SQLAlchemy URL escape hatch (used only when no `HANGAR_POSTGRES_HOST`). |
-| `HANGAR_POLL_INTERVAL_SECONDS` | no | `300` | Per-connection poll ceiling (ETag/webhook-driven). |
-| `HANGAR_STALE_AFTER_SECONDS` | no | `900` | Age after which a cached snapshot is flagged "stale" in the UI. |
-| `HANGAR_GITHUB_HTTP_TIMEOUT_SECONDS` | no | `30` | Per-request timeout for provider calls, so one hung request can't stall the poll cycle. |
-| `HANGAR_GITHUB_MAX_CONCURRENCY` | no | `8` | Max concurrent provider sub-requests per repo interrogation (lower it if you hit GitHub's secondary rate limit). |
-| `HANGAR_WEBHOOK_SECRET` | no | — | HMAC secret for inbound provider webhooks; webhooks are refused (fail-closed) when unset. |
-| `HANGAR_SEED_DEMO_DATA` | no | `false` | Load sample fixtures on first boot (offline demo). Production runs against real connections. |
-| `HANGAR_STATIC_DIR` | no³ | — (image: `/app/static`) | Directory of the built SPA served at `/`. Set by the container image; don't override in a container. |
-| `HANGAR_DOMAIN` | compose | `example.com` | Base domain for the Traefik router rule; used by `docker-compose.yml` only. |
-| `HANGAR_IMAGE` | compose | `ghcr.io/get2knowio/hangar:latest` | Published image tag; used by `docker-compose.example.yml` only. |
-
-¹ Exactly one access mode must be chosen — set `HANGAR_ACCESS_MODE` **or** the legacy
-`HANGAR_FORWARD_AUTH`. If neither is set, Hangar refuses to start (fail-closed, FR-029).
-² `oidc` mode also requires a session-signing secret — a dedicated `HANGAR_SESSION_SECRET`,
-or it reuses `HANGAR_SECRET_KEY`.
-³ Required only when running the backend **outside** a container (it must point at the built
-SPA, e.g. `frontend/dist`); the container image sets it for you.
-
-### Generate the credential-encryption key
-
-```bash
-python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+```
+ connect a provider ──▶ poll & interrogate ──▶ score against policy ──▶ remediate (PR-first)
+ (GitHub App / token)   (background, cached,    (23-check catalog,       (operator-triggered,
+                         ETag-conditional)       pass/fail/unknown)        audit-logged)
 ```
 
-Put the output in `HANGAR_SECRET_KEY`. Keep it stable: rotating it invalidates stored
-provider credentials.
+- **Reads never hit the provider live.** A background poller interrogates each repo with
+  conditional (ETag) requests and stores a normalized snapshot; page loads read the cache and
+  evaluate the catalog. A poll that finds nothing changed costs no API quota.
+- **Every connection is scoped and attributed.** Repos, findings, and remediations always
+  carry their originating provider connection — two same-named repos across connections never
+  collide.
+- **Honest state.** A signal Hangar can't determine (missing scope, or a platform that has no
+  equivalent) is reported as `unknown` — never a fabricated pass or fail.
+
+The **core concepts** are deliberately platform-neutral so GitHub and Gitea map onto the same
+vocabulary: a **Fleet** is the union of watched repos; a **Provider connection** is one
+configured credential + scope; a **Check** is one evaluable rule; a **Policy** is an ordered
+set of checks; a **Finding** is one check evaluated against one repo; a **Remediation** is the
+action that resolves it.
 
 ---
 
-## GitHub App setup
+## What Hangar validates — the check catalog
 
-Hangar uses a **GitHub App** (not a personal token) so it can hold least-privilege,
-per-connection scopes and receive webhooks.
+Hangar evaluates a fleet-wide **policy** of **23 checks**, grouped into five areas. Each check
+declares a **remediation tier** — how far Hangar can go toward fixing it — evaluated *per
+connection*, since a provider may support auto-correction on one platform and only a deep-link
+on another:
 
-### One-click: Connect with GitHub (recommended)
+| Tier | Badge | What Hangar does |
+|------|-------|------------------|
+| **Report** | `Report` | Surfaces the finding and its evidence. No action to take on Hangar's side. |
+| **Deep-link** | `Deep-link` | Sends you straight to the exact settings page to fix it — used when Hangar can't safely synthesize the change. |
+| **PR** | `API · PR` | Opens a fix **pull request** (adds a config/file). Human-triggered, idempotent, never a push. |
+| **API** | `API` | Applies a **scoped settings change** via the provider API (e.g. toggling a repo setting). |
 
-Open **Providers → Add connection → Connect with GitHub**. Hangar creates *your own*
-GitHub App via the App-manifest flow, then sends you to GitHub's install screen to pick the
-org and repos — no App ID, installation ID, or PEM to copy. It captures the credentials
-automatically and starts watching the selected repos.
+Write tiers always **degrade gracefully**: a check whose native tier is PR or API collapses to
+deep-link, then report, when a connection lacks the capability (a read-only connection, or a
+platform without that setting).
 
-- Set **`HANGAR_BASE_URL`** to your instance's browser URL (e.g. `https://hangar.lan`). It's
-  only used to build the manifest's callback URLs. These are **browser redirects** — GitHub
-  never connects inbound — so a **LAN/VPN-only** Hangar works fine (no public ingress needed).
-  When unset it's derived from the request.
-- **GitHub Enterprise** is supported: in the dialog set **GitHub host** to your GHES instance
-  (`https://ghe.example.com`) or GHEC data-residency tenant (`https://acme.ghe.com`). Hangar
-  derives the right API host (`…/api/v3` for GHES, `api.<tenant>.ghe.com` for GHEC) and install
-  URL automatically. github.com is the default.
-- The App is created under your user; it requests write permissions so it can open fix PRs.
-  Re-connecting another org reuses the same App. Webhooks ship **off**; the poller keeps
-  snapshots fresh.
-- **Installing on organizations:** a GitHub App is **private** by default, so GitHub's install
-  screen offers only your personal account. To install it on your orgs (one Hangar connection
-  per org), either set **`HANGAR_GITHUB_APP_PUBLIC=true`** *before* connecting so the App is
-  registered public, or flip an already-created App to public under **GitHub → Settings →
-  Developer settings → GitHub Apps → Hangar → Make this GitHub App public**. "Public" only means
-  installable beyond your own account — it does **not** list the App on the Marketplace, and
-  Hangar still holds the sole copy of its private key.
-- **Removing a connection / retiring an App:** each connection row is one org. **Remove** on a
-  row drops that connection and, for a GitHub App, uninstalls that org's installation on GitHub.
-  Removing the App's **last** org additionally forgets its stored credentials and hands you a
-  deep link to finish deleting the App on GitHub itself (there is no delete-App API, so that last
-  click is manual). To re-provision an App as public, remove its last org here, then re-connect.
+### Supply chain
+| Check | Tier | Passes when |
+|-------|------|-------------|
+| **Dependabot alerts enabled** | `API` | Vulnerability alerts are turned on for the repo. |
+| **Version updates configured** | `API · PR` | A **Dependabot** (`.github/dependabot.yml`) *or* **Renovate** (`renovate.json`, `.renovaterc`, …) update config is present. |
+| **Update cooldown ≥ target** | `API · PR` | An update cooldown is configured to the target (default **7 days**) — Dependabot `cooldown` or Renovate `minimumReleaseAge`. |
+| **Lockfile present** | `Report` | A dependency lockfile is committed. |
+| **Dependency review enabled** | `Deep-link` | The dependency-review action is wired into CI. |
+| **Actions pinned to SHA** | `Deep-link` | Workflows pin actions to immutable commit SHAs, not mutable tags. |
 
-The manual paths below remain available (e.g. to reuse an App you already manage, or a PAT).
+### Release
+| Check | Tier | Passes when |
+|-------|------|-------------|
+| **release-please configured** | `API · PR` | A release-please manifest/config is present. |
+| **Conventional commits enforced** | `Deep-link` | A commitlint config or PR-title-lint workflow enforces conventional commits. |
+| **CHANGELOG automated** | `Report` | A CHANGELOG / automated release notes exist. |
+| **Release health / commit age** | `Report` | The latest release isn't lagging too far behind `main`. |
+| **CI workflow green on default** | `Report` | Default-branch CI is configured and passing. |
 
-### Manual: bring your own App or token
+### Governance
+| Check | Tier | Passes when |
+|-------|------|-------------|
+| **Branch protection on default** | `Deep-link` | A protection ruleset guards the default branch. |
+| **CODEOWNERS present** | `API · PR` | A CODEOWNERS file exists. |
+| **Default branch = main** | `Report` | The default branch is `main`. |
 
-1. Create a GitHub App (org or user settings → Developer settings → GitHub Apps).
-2. Note the **App ID**, generate a **private key** (`.pem`), and set a **webhook secret**.
-3. Set the webhook URL to `https://hangar.<your-domain>/api/v1/webhooks/<connection_id>`.
-4. Grant **least-privilege** repository permissions for the remediations you intend to
-   enable — e.g. *Contents: Read & write* (to open fix PRs), *Pull requests: Read & write*,
-   *Administration / Repository settings: Read & write* only where settings-tier corrections
-   are used, and read access to *Metadata*, *Actions*, *Dependabot* for detection. Subscribe
-   to the repository / push / pull-request events you want to drive freshness.
-5. **Install** the App on the org/user whose repos you want in the fleet, and note the
-   **installation ID** (in the installation's settings URL).
-6. Add the connection. Hangar mints short-lived installation tokens from the App key via
-   `githubkit` (real GitHub App auth — no PAT). `POST /api/v1/providers` with:
+### Security
+| Check | Tier | Passes when |
+|-------|------|-------------|
+| **SECURITY.md present** | `API · PR` | A SECURITY.md policy exists. |
+| **Secret scanning + push protection** | `Deep-link` | Secret scanning and push protection are enabled. |
+| **Code scanning (CodeQL)** | `Deep-link` | A CodeQL / code-scanning workflow is configured. |
+| **Org 2FA required** | `Deep-link` | The owning org enforces two-factor auth. |
+| **Workflow permissions least-privilege** | `Deep-link` | `GITHUB_TOKEN` isn't left at write-all; a least-privilege permissions block is set. |
 
-   ```json
-   {
-     "provider_type": "github",
-     "label": "gh:your-org",
-     "scope": "org · N repos",
-     "app_id": "123456",
-     "installation_id": 7654321,
-     "credential": "<contents of the .pem private key>",
-     "writable": true
-   }
-   ```
+### Project meta
+| Check | Tier | Passes when |
+|-------|------|-------------|
+| **LICENSE present** | `API · PR` | A LICENSE file is at the repo root. |
+| **README present** | `Report` | A README exists. |
+| **Description & topics set** | `Deep-link` | The repo has a description and topics. |
+| **Issue / PR templates** | `API · PR` | `.github/ISSUE_TEMPLATE` (and/or PR template) exists. |
 
-   `credential` (the private-key PEM) is encrypted at rest with `HANGAR_SECRET_KEY`.
-   Omit `writable` (or set `false`) for a read-only connection — write tiers are granted
-   only when you opt in (least-privilege). Set `HANGAR_WEBHOOK_SECRET` to enable inbound
-   webhooks (verified by HMAC; refused when unset).
-
-Reads use conditional requests (`If-None-Match`/ETag), so a poll that finds nothing
-changed costs no quota. Content changes are always delivered as pull requests; Hangar
-never pushes or force-pushes.
-
-**Dependency bots — Dependabot and Renovate.** Hangar recognizes both. Open PRs from
-`dependabot[bot]` or `renovate[bot]` are counted as bot PRs (and labelled with their real
-source in the repo's PR list), and the *Version updates configured* check passes for either
-a Dependabot config (`.github/dependabot.yml`) or a Renovate config (`renovate.json`,
-`.github/renovate.json`, `.renovaterc`, …). The *Update cooldown* check reads whichever is
-present — Dependabot's `cooldown` block or Renovate's `minimumReleaseAge`.
-
-## Gitea setup
-
-Gitea is a first-class provider alongside GitHub. Because Gitea's REST API is
-GitHub-shaped, the same 23-check catalog, scorecard, and PR-first remediation apply — the
-adapter just talks to your self-hosted instance.
-
-1. In Gitea, create a **scoped access token** (Settings → Applications → *Generate New
-   Token*). Grant `read:repository` and `read:organization` for detection; add
-   `write:repository` if you want Hangar to open fix PRs.
-2. Open **Providers → Add connection → Provider: Gitea**. Enter your **instance URL**
-   (e.g. `https://gitea.example.com`), the **owner** (org or user), and the **access
-   token**. Tick **Writable** only if the token can write. Or `POST /api/v1/providers`:
-
-   ```json
-   {
-     "provider_type": "gitea",
-     "label": "gitea:your-org",
-     "base_url": "https://gitea.example.com",
-     "owner": "your-org",
-     "credential": "<scoped access token>",
-     "writable": true
-   }
-   ```
-
-   `base_url` is the instance's browser URL; the adapter derives the API base
-   (`{base_url}/api/v1`) and all deep-links/PR URLs from it. `credential` is encrypted at
-   rest with `HANGAR_SECRET_KEY`. Remediation writes a **`renovate.json`** for the update-bot
-   check (Gitea runs Renovate, not Dependabot).
-
-**What reads as `unknown` on Gitea.** OSS Gitea has no equivalent for several GitHub
-signals, so those checks honestly report `unknown` rather than a fabricated pass/fail:
-Dependabot/vulnerability **alerts**, **secret scanning**, **code scanning (CodeQL)**, the
-Actions **workflow-permissions** model, and **org-wide 2FA enforcement**. Everything else
-(files, branch protection, workflows, releases, CI via commit status, pull requests) is
-evaluated against live Gitea data.
-
-**Webhooks (optional).** Point a Gitea repo/org webhook at
-`https://hangar.<your-domain>/api/v1/webhooks/<connection_id>`, content type
-`application/json`, with a **secret** matching `HANGAR_WEBHOOK_SECRET`. Gitea signs the body
-with HMAC-SHA256 in the `X-Gitea-Signature` header (raw hex); Hangar verifies it and refuses
-unsigned/forged deliveries (fail-closed). Without webhooks the poller keeps snapshots fresh.
+> **Checks are data.** The catalog lives in `backend/src/hangar/domain/checks/` — adding or
+> changing a rule is a data edit there, never dashboard code. **Detection** (which repos
+> pass / fail / unknown) is done by the provider adapters from read-only interrogation.
 
 ---
 
-## Choosing an access mode
+## Repo-level overrides — `.hangar.json`
 
-Hangar gates access one of three ways — pick with `HANGAR_ACCESS_MODE`
-(`forward-auth` | `oidc` | `disabled`); the legacy `HANGAR_FORWARD_AUTH` (`enabled`/`disabled`)
-still works when `HANGAR_ACCESS_MODE` is unset. Either way, **identity is decoupled from your
-provider credentials** — Hangar never uses GitHub/Gitea as the login.
-
-### OIDC login
-
-Use `HANGAR_ACCESS_MODE=oidc` when you want Hangar to handle login itself (no forward-auth
-proxy). Hangar is a confidential OpenID Connect client (Authorization Code + PKCE) against
-your own IdP — Authentik, Keycloak, etc. — and keeps the session in a signed, httpOnly cookie.
-
-1. At your IdP, register Hangar as a **confidential** application; redirect URI
-   `https://hangar.<domain>/auth/callback`. Note the issuer URL, client id, and client secret.
-2. Set `HANGAR_ACCESS_MODE=oidc`, `HANGAR_OIDC_ISSUER`, `HANGAR_OIDC_CLIENT_ID`,
-   `HANGAR_OIDC_CLIENT_SECRET`, a `HANGAR_SESSION_SECRET` (or reuse `HANGAR_SECRET_KEY`), and —
-   behind a TLS proxy — `HANGAR_OIDC_REDIRECT_URL` (or run uvicorn with `--proxy-headers`).
-3. Optionally restrict who may sign in with `HANGAR_OIDC_ALLOWED_USERS` /
-   `HANGAR_OIDC_ALLOWED_GROUPS` (empty ⇒ any user your IdP authenticates).
-
-OIDC still wants **TLS at the proxy**, but does **not** need a Traefik `ForwardAuth`
-middleware — Hangar is the auth gate. The SPA shows a sign-in screen until you authenticate;
-the sidebar gets a **Sign out** control. For local http dev set `HANGAR_SESSION_COOKIE_SECURE=false`.
-
-### Forward-auth / Traefik notes
-
-Hangar is meant to run behind a reverse proxy that authenticates the user and injects an
-identity header. The reference is **Traefik + Authentik**:
-
-- Set `HANGAR_ACCESS_MODE=forward-auth` (or legacy `HANGAR_FORWARD_AUTH=enabled`) and attach
-  Traefik's forward-auth middleware to the
-  Hangar router (see the commented label block in
-  [`deploy/docker-compose.yml`](deploy/docker-compose.yml)).
-- Hangar reads the username from `HANGAR_FORWARD_AUTH_USER_HEADER` (Authentik:
-  `X-authentik-username`) and trusts it **only** when the request comes from
-  `HANGAR_TRUSTED_PROXY_CIDR` (and/or carries `HANGAR_TRUSTED_PROXY_SECRET`). A forged header
-  sent directly to the app is rejected.
-- The published port is bound to `127.0.0.1` so the app is reachable only through the proxy.
-  Set `HANGAR_ALLOW_PUBLIC_BIND` only if you deliberately expose a public interface.
-- `disabled` mode (no auth gate) is homelab/network-trust only and emits a prominent startup
-  warning; it refuses a public bind without `HANGAR_ALLOW_PUBLIC_BIND`.
-
-You'll need a Traefik `proxy` network and an `authentik@docker` middleware already running;
-create the shared network once with `docker network create proxy`.
-
----
-
-## Repo-level config (`.hangar.json`)
-
-A watched repo can carry its own `.hangar.json` at the **default branch** to tell Hangar how
-to treat it. Today it supports one thing — **ignoring checks** the repo intentionally doesn't
-satisfy, so a deliberate gap stops dragging the repo's score.
+Not every check applies to every repo, and a deliberate gap shouldn't drag a repo's score
+forever. A watched repo can carry a `.hangar.json` at the **root of its default branch** to
+tell Hangar how to treat it. Today it supports one thing: **ignoring checks** the repo
+intentionally doesn't satisfy.
 
 ```json
 {
@@ -416,46 +155,67 @@ satisfy, so a deliberate gap stops dragging the repo's score.
 ```
 
 - Each `ignore` entry is either an object `{ "check": "<id>", "reason": "<optional>" }` or a
-  bare `"<id>"` string. `check` must be a catalog check id (see the Scorecard column headers);
-  unknown ids are ignored.
+  bare `"<id>"` string. `check` must be a catalog check **id** (the `id="…"` in the catalog,
+  e.g. `dependabot_alerts`, `cooldown`, `branch_protection`); unknown ids are ignored.
 - A suppressed check is shown **honestly** — it renders as `⊘ Suppressed` (with your reason as
   its evidence), offers no remediation, and is **excluded from the score denominator**: it
-  neither passes nor fails, so the repo isn't penalized *or* credited for it. Repo detail reads
-  e.g. `18/20 scored · 2 suppressed`.
+  neither passes nor fails, so the repo is neither penalized *nor* credited for it. Repo detail
+  reads e.g. `18/20 scored · 2 suppressed`.
 - Reading the file needs the connection's **file-read** capability; a connection without it
-  simply sees no suppressions (nothing is guessed). Malformed JSON is ignored safely — the
-  repo is still interrogated. Suppressions are picked up on the **next sync** after you commit
-  the file (and re-scored when you remove it).
+  simply sees no suppressions (nothing is guessed). Malformed JSON is ignored safely — the repo
+  is still interrogated. Suppressions are picked up on the **next sync** after you commit the
+  file, and the check is re-scored when you remove it.
+
+This keeps the score meaningful: it reflects the checks you've actually decided *should* apply
+to a given repo, per repo, in version control — not a blanket global waiver.
 
 ---
 
-## Persistence: SQLite default, Postgres upgrade
+## Providers
 
-- **SQLite** is the zero-ops default. In Docker the DB lives on the `hangar-data` named
-  volume at `/data/hangar.db`.
-- **Postgres** is a documented, non-default upgrade path. Run the optional `postgres`
-  compose profile and set the discrete vars in `deploy/.env`: `HANGAR_POSTGRES_HOST=postgres`
-  plus `HANGAR_POSTGRES_PASSWORD` (the `_PORT`/`_DB`/`_USER` parts default to the bundled
-  service). Setting `HANGAR_POSTGRES_HOST` switches Hangar to Postgres and **takes precedence
-  over** `HANGAR_DATABASE_URL` (which is why the image's SQLite default doesn't get in the
-  way). `HANGAR_DATABASE_URL` remains a full-URL escape hatch for non-standard setups. The
-  `asyncpg` driver ships in the image, so no rebuild is needed; the same SQLAlchemy models and
-  Alembic migrations target both engines. (For local Postgres testing outside Docker, install
-  the driver with `pip install -e '.[dev,postgres]'`.)
+- **GitHub** — the live adapter. Connect in two clicks with the built-in **Connect with
+  GitHub** flow (Hangar creates *your own* least-privilege GitHub App — no tokens to paste),
+  or bring your own App / PAT. GitHub Enterprise (GHES and GHEC data-residency) is supported.
+- **Gitea** — a first-class provider; because Gitea's REST API is GitHub-shaped, the same
+  23-check catalog, scorecard, and PR-first remediation apply. Signals OSS Gitea has no
+  equivalent for (alerts, secret/code scanning, workflow-permissions, org 2FA) honestly report
+  `unknown` rather than a fabricated result.
+
+Setup for both — including least-privilege scopes, webhooks, and Enterprise hosts — is in
+[**CONTRIBUTING.md**](CONTRIBUTING.md#github-app-setup).
 
 ---
 
-## Tests
+## Security posture
 
-```bash
-cd backend && pytest        # provider-contract, remediation idempotency/PR-not-push,
-                            # auth-mode (fail-closed/header-trust), check-evaluation suites
-cd frontend && npm test     # Vitest units
-cd frontend && npm run lint && npm run build
-```
+- **Fail-closed by default.** Hangar refuses to start unless an access mode is chosen; webhook
+  receivers refuse deliveries when no HMAC secret is set; credential paths refuse to act
+  anonymously or half-configured.
+- **Identity is decoupled from your provider credentials.** Access is enforced at the homelab
+  edge via **forward-auth** (Traefik + Authentik reference) or by Hangar acting as an **OIDC**
+  client against your own IdP. A git provider is never the login.
+- **Least-privilege, encrypted at rest.** Write scopes are requested only for writable
+  connections; stored credentials (App keys, tokens, webhook secrets) are Fernet-encrypted with
+  `HANGAR_SECRET_KEY`.
+- **Remediation is PR-first.** Content changes are always pull requests — Hangar never pushes
+  or force-pushes — and every correction is operator-triggered and written to an audit log.
 
-CI runs the same checks on every push/PR — see
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Details and configuration: [**CONTRIBUTING.md → Choosing an access mode**](CONTRIBUTING.md#choosing-an-access-mode).
+
+---
+
+## Documentation
+
+- [**CONTRIBUTING.md**](CONTRIBUTING.md) — run, configure, develop, and deploy Hangar.
+- Design & scope under [`specs/001-fleet-control-plane/`](specs/001-fleet-control-plane/):
+  [spec](specs/001-fleet-control-plane/spec.md) ·
+  [plan](specs/001-fleet-control-plane/plan.md) ·
+  [research](specs/001-fleet-control-plane/research.md) ·
+  [data model](specs/001-fleet-control-plane/data-model.md) ·
+  [OpenAPI contract](specs/001-fleet-control-plane/contracts/openapi.yaml) ·
+  [UI contract](specs/001-fleet-control-plane/contracts/ui-spec.md) ·
+  [quickstart](specs/001-fleet-control-plane/quickstart.md).
+- [Product requirements](prd.md) · Governance: [constitution](.specify/memory/constitution.md).
 
 ---
 
