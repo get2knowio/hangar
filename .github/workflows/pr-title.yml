@@ -1,0 +1,21 @@
+name: PR title
+
+# This repo squash-merges, so a PR's title becomes the commit subject on main — which is
+# exactly what release-please reads to infer the next version and build the CHANGELOG. Lint
+# the title as a Conventional Commit so that inference stays correct (and so Hangar's own
+# "Conventional commits enforced" check passes for this repo — dogfooding).
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    name: Conventional PR title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

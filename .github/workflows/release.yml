@@ -1,27 +1,51 @@
 name: Release
 
-# Build and publish the Hangar container image to GHCR when a version tag is
-# pushed (e.g. `v0.1.0`) or a GitHub Release is published. No image is built or
-# published on ordinary pushes/PRs — that stays in ci.yml.
+# release-please drives releases. On every push to main it maintains a "release PR" that
+# bumps the version (backend/pyproject.toml + frontend/package.json via extra-files) and the
+# CHANGELOG from Conventional Commit history. Merging that PR is the release action: it
+# creates the git tag AND the GitHub Release — so the Releases page always tracks what ships,
+# instead of drifting behind the container image.
+#
+# The image is built in THIS SAME workflow, gated on release-please's `release_created`
+# output. That's deliberate: a tag/Release created by the workflow's GITHUB_TOKEN cannot
+# trigger another workflow (GitHub's anti-recursion rule), so a separate on-tag build would
+# silently never fire. Building here keeps "cut a Release" and "publish the image" in lockstep.
 on:
   push:
-    tags:
-      - "v*"
-  release:
-    types: [published]
+    branches: [main]
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  release-please:
+    name: Release PR / GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release PR, the tag, and the GitHub Release
+      pull-requests: write # open/update the release PR
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   image:
     name: Build & publish image (GHCR)
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write          # push to ghcr.io
+      packages: write # push to ghcr.io
     steps:
+      # Checks out the just-tagged release commit (the push SHA release-please tagged), so the
+      # image is built from the sources whose versions the release PR bumped.
       - uses: actions/checkout@v4
 
       - name: Set up QEMU (multi-arch)
@@ -43,12 +67,14 @@ jobs:
         with:
           # ghcr.io/<owner>/<repo>, lowercased automatically.
           images: ghcr.io/${{ github.repository }}
+          # The push event isn't a tag ref, so feed release-please's tag_name to the semver
+          # parser explicitly (e.g. v0.3.12 -> 0.3.12, 0.3, 0).
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag_name }}
             # Mark the newest release as :latest (skipped for pre-releases like v1.0.0-rc1).
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ !contains(needs.release-please.outputs.tag_name, '-') }}
 
       - name: Build & push
         uses: docker/build-push-action@v6
