@@ -9,8 +9,20 @@ as a **pull request, never a push**.
 It is provider-agnostic at its core, fail-closed behind a reverse-proxy SSO layer, and
 built to run as a single Docker Compose stack on a modest homelab host.
 
-> **Just want to run it?** → [**CONTRIBUTING.md**](CONTRIBUTING.md) has quickstart, the full
-> configuration reference, GitHub-App / Gitea setup, access modes, and deployment.
+## Running Hangar
+
+Hangar ships as a prebuilt multi-arch **Docker image** on GHCR —
+[`ghcr.io/get2knowio/hangar`](https://github.com/get2knowio/hangar/pkgs/container/hangar) — and
+runs as a single Docker Compose stack. The fastest look, no source checkout:
+
+```bash
+docker compose -f deploy/docker-compose.example.yml up -d   # then open http://127.0.0.1:8000
+```
+
+That boots a no-auth instance bound to loopback — fine for kicking the tyres. **Before exposing
+it to a network, set an access mode and a secret key.** The full run modes (local dev, the
+Traefik + SSO stack, Postgres) and the complete configuration reference live in
+[**CONTRIBUTING.md**](CONTRIBUTING.md).
 
 ---
 
@@ -101,7 +113,7 @@ platform without that setting).
 | Check | Tier | Passes when |
 |-------|------|-------------|
 | **Branch protection on default** | `Deep-link` | A protection ruleset guards the default branch. |
-| **CODEOWNERS present** | `API · PR` | A [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repos-settings-and-features/customizing-your-repository/about-code-owners) file exists. |
+| **CODEOWNERS present** | `API · PR` | A [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners) file exists. |
 | **Default branch = main** | `Report` | The default branch is `main`. |
 
 ### Security
