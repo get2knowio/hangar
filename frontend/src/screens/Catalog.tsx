@@ -75,6 +75,26 @@ export function Catalog() {
                   <div style={{ flex: 1, minWidth: 0, opacity: c.enabled ? 1 : 0.45 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>{c.label}</span>
+                      {c.doc_url && (
+                        <a
+                          href={c.doc_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`About the ${c.label} rule (opens documentation)`}
+                          title={`About “${c.label}” — opens documentation`}
+                          style={{ display: "inline-flex", color: "var(--muted)", flex: "none" }}
+                        >
+                          <svg
+                            width="12" height="12" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                            strokeLinejoin="round" aria-hidden="true"
+                          >
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                            <polyline points="15 3 21 3 21 9" />
+                            <line x1="10" y1="14" x2="21" y2="3" />
+                          </svg>
+                        </a>
+                      )}
                       <span
                         className="mono"
                         style={{

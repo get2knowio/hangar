@@ -616,6 +616,11 @@ components:
         target: { type: integer, nullable: true }
         pass_count: { type: integer }
         repo_count: { type: integer }
+        doc_url:
+          type: string
+          nullable: true
+          description: Canonical reference for the rule (tool/spec/docs), or null when it has no external reference.
+          example: "https://github.com/googleapis/release-please"
     Policy:
       type: object
       properties:

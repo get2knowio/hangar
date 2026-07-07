@@ -13,11 +13,13 @@ CHECKS: list[Check] = [
         id="branch_protection", label="Branch protection on default", group=_G,
         tier=RemediationTier.link, required_capabilities=caps_for_tier(RemediationTier.link),
         evidence_fail="No ruleset on `main`",
+        doc_url="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches",
     ),
     Check(
         id="codeowners", label="CODEOWNERS present", group=_G,
         tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
         evidence_fail="CODEOWNERS missing",
+        doc_url="https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners",
     ),
     Check(
         id="default_branch", label="Default branch = main", group=_G,
