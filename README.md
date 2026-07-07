@@ -33,16 +33,6 @@ run doesn't persist, doesn't re-check, and doesn't catch the next repo. **Hangar
 one-shot into a standing control plane** — continuous visibility, a declarative definition of
 "good," and a path to fix what's drifted.
 
-### What Hangar is *not*
-
-- **Not a hosted SaaS.** Single-operator, self-hosted only — no multi-tenancy, no sign-up.
-- **Not an autonomous agent.** Hangar never silently mutates a repo; every correction is
-  operator-triggered, and every code change ships as a pull request.
-- **Not an identity provider.** Access is delegated to your homelab edge (forward-auth) or an
-  OIDC IdP — Hangar never treats a git provider as its login.
-- **Not a CI system, code-review tool, or secrets vault.** It *observes and nudges*; it
-  doesn't replace the platform's own primitives.
-
 ---
 
 ## How it works
