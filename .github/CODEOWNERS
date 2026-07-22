@@ -1,0 +1,9 @@
+# Code owners for Hangar.
+#
+# These owners are automatically requested for review on any pull request that
+# touches matching paths. See:
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Hangar is a single-operator project; the owner reviews all changes by default.
+
+* @pofallon

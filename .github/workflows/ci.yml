@@ -5,6 +5,11 @@ on:
     branches: ["**"]
   pull_request:
 
+# Least-privilege default token: CI only reads the repo. Any job needing more
+# must opt in explicitly with its own `permissions:` block.
+permissions:
+  contents: read
+
 # Cancel superseded runs on the same ref.
 concurrency:
   group: ci-${{ github.ref }}
