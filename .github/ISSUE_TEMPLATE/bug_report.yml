@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in Hangar isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please do **not** report security issues here —
+        use [private vulnerability reporting](https://github.com/get2knowio/hangar/security/advisories/new).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: Steps to reproduce, expected vs. actual behaviour.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Hangar version / image digest
+      placeholder: "e.g. v0.3.11 or ghcr.io/get2knowio/hangar@sha256:…"
+    validations:
+      required: true
+  - type: dropdown
+    id: run-mode
+    attributes:
+      label: Run mode
+      options:
+        - Local dev
+        - Docker Compose (no-auth loopback)
+        - Traefik + SSO stack
+        - Other (describe above)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any relevant log output. This will be rendered as code.
+      render: shell
