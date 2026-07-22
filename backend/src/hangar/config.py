@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ipaddress
 from enum import StrEnum
+from pathlib import Path
 from urllib.parse import quote
 
 from pydantic import Field, ValidationInfo, field_validator
@@ -70,6 +71,16 @@ class Settings(BaseSettings):
     oidc_allowed_groups: str | None = Field(default=None, description="CSV of allowed groups")
     oidc_groups_claim: str = Field(default="groups")
     oidc_post_logout_redirect_url: str | None = Field(default=None)
+    # TLS trust for the IdP calls (discovery / JWKS / token). Both default to "use the
+    # system/certifi trust store" — so a public CA (e.g. Let's Encrypt via Traefik) verifies
+    # unchanged. Set a CA bundle for an internal CA; the verify=false escape hatch is for
+    # local/homelab self-signed setups only and warns loudly at startup.
+    oidc_ca_bundle: str | None = Field(
+        default=None, description="path to a PEM CA bundle to trust for OIDC IdP TLS"
+    )
+    oidc_verify_ssl: bool = Field(
+        default=True, description="set false to disable OIDC IdP TLS verification (insecure)"
+    )
 
     # --- session cookie (OIDC mode) ---
     session_secret: str | None = Field(default=None, description="signing key; else reuses secret_key")
@@ -242,6 +253,20 @@ class Settings(BaseSettings):
         return f"{self.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
 
     @property
+    def oidc_tls_verify(self) -> bool | str | None:
+        """httpx ``verify`` override for the IdP TLS calls, or ``None`` to keep the default.
+
+        ``None`` means "don't override" — Authlib/httpx use their default certifi trust store,
+        so a public CA (Let's Encrypt via Traefik, etc.) verifies exactly as before. Returns a
+        CA-bundle path for an internal CA, or ``False`` for the insecure escape hatch.
+        """
+        if not self.oidc_verify_ssl:
+            return False
+        if self.oidc_ca_bundle:
+            return self.oidc_ca_bundle
+        return None
+
+    @property
     def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
         if not self.trusted_proxy_cidr:
             return []
@@ -314,6 +339,17 @@ def validate_startup(settings: Settings) -> list[str]:
                 "HANGAR_OIDC_REDIRECT_URL is unset — the redirect_uri will be derived from "
                 "request headers. Set it explicitly (or run uvicorn with --proxy-headers) "
                 "when Hangar sits behind a TLS-terminating proxy."
+            )
+        if not settings.oidc_verify_ssl:
+            warnings.append(
+                "⚠ HANGAR_OIDC_VERIFY_SSL=false — OIDC IdP TLS verification is DISABLED "
+                "(vulnerable to MITM). Use only for local/self-signed testing; prefer "
+                "HANGAR_OIDC_CA_BUNDLE to trust an internal CA instead."
+            )
+        elif settings.oidc_ca_bundle and not Path(settings.oidc_ca_bundle).is_file():
+            raise StartupError(
+                f"HANGAR_OIDC_CA_BUNDLE points to a missing file: {settings.oidc_ca_bundle}. "
+                "Provide a readable PEM CA bundle, or unset it to use the default trust store."
             )
 
     if settings.access_mode is AccessMode.disabled:

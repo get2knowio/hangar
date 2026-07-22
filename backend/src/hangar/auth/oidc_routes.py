@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 
+import httpx
 import structlog
 from authlib.integrations.starlette_client import OAuthError
 from fastapi import APIRouter, Depends, Request
@@ -66,7 +67,20 @@ async def auth_login(request: Request, settings: Settings = Depends(settings_dep
         return JSONResponse({"detail": "OIDC is not the active access mode"}, status_code=404)
     oauth = get_oauth(settings)
     # Authlib stashes state + nonce + PKCE verifier in request.session and 302s to the IdP.
-    return await oauth.hangar.authorize_redirect(request, _redirect_uri(request, settings))
+    # The first login lazily fetches OIDC discovery over TLS; surface an unreachable/untrusted
+    # IdP as a clear 502 rather than an unhandled 500 stack trace (e.g. a self-signed cert
+    # without HANGAR_OIDC_CA_BUNDLE set).
+    try:
+        return await oauth.hangar.authorize_redirect(request, _redirect_uri(request, settings))
+    except httpx.HTTPError as exc:
+        log.error("auth.oidc_provider_unreachable", phase="discovery", error=str(exc))
+        return JSONResponse(
+            {
+                "detail": "Could not reach the identity provider. Verify the OIDC issuer URL "
+                "and its TLS certificate — set HANGAR_OIDC_CA_BUNDLE to trust an internal CA."
+            },
+            status_code=502,
+        )
 
 
 @router.get("/callback", name="auth_callback", include_in_schema=False)
@@ -81,6 +95,12 @@ async def auth_callback(request: Request, settings: Settings = Depends(settings_
     except OAuthError as exc:
         log.warning("auth.oidc_callback_failed", error=str(exc))
         return JSONResponse({"detail": "authentication failed"}, status_code=401)
+    except httpx.HTTPError as exc:
+        # JWKS / token-endpoint fetch failed (unreachable or untrusted IdP TLS).
+        log.error("auth.oidc_provider_unreachable", phase="token", error=str(exc))
+        return JSONResponse(
+            {"detail": "Could not reach the identity provider."}, status_code=502
+        )
 
     claims = token.get("userinfo") or {}
     if not claims:
