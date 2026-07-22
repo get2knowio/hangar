@@ -456,7 +456,7 @@ wheels = [
 
 [[package]]
 name = "hangar"
-version = "0.3.6"
+version = "0.3.11"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -496,7 +496,7 @@ requires-dist = [
     { name = "authlib", specifier = ">=1.3" },
     { name = "cryptography", specifier = ">=43.0" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "githubkit", extras = ["auth-app"], specifier = ">=0.11" },
+    { name = "githubkit", extras = ["auth-app"], specifier = ">=0.16.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "itsdangerous", specifier = ">=2.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
