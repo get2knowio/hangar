@@ -29,16 +29,26 @@ def build_oauth(settings: Settings) -> OAuth:
     (signature, ``iss``/``aud``/``exp``/``nonce``) are all handled by Authlib on top of the
     already-present httpx.
     """
+    client_kwargs: dict[str, Any] = {
+        "scope": settings.oidc_scopes,
+        "code_challenge_method": "S256",  # PKCE
+    }
+    # TLS trust for every IdP call Authlib makes (discovery / JWKS / token). Only override
+    # httpx's `verify` when the operator opted in — a CA-bundle path for an internal CA, or
+    # False for the insecure escape hatch. When unset this key is absent, so httpx keeps its
+    # default certifi trust store and a public CA (Let's Encrypt via Traefik, …) verifies
+    # exactly as before.
+    verify = settings.oidc_tls_verify
+    if verify is not None:
+        client_kwargs["verify"] = verify
+
     oauth = OAuth()
     oauth.register(
         name=CLIENT_NAME,
         client_id=settings.oidc_client_id,
         client_secret=settings.oidc_client_secret,
         server_metadata_url=settings.discovery_url,
-        client_kwargs={
-            "scope": settings.oidc_scopes,
-            "code_challenge_method": "S256",  # PKCE
-        },
+        client_kwargs=client_kwargs,
     )
     return oauth
 

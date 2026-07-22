@@ -188,6 +188,44 @@ async def test_workflow_parsing_resolves_dep_review_conventional_and_pinned_sha(
     assert "actions_pinned_sha" in repo.fails
 
 
+@pytest.mark.parametrize("lockfile", ["bun.lock", "bun.lockb", "yarn.lock"])
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_lockfile_detection_recognizes_bun_and_yarn(respx_mock, lockfile: str) -> None:
+    """A committed Bun (or Yarn) lockfile satisfies the lockfile check (issue #58).
+
+    Regression: these JS package managers were absent from the candidate list, so a repo
+    that commits only `bun.lock`/`bun.lockb`/`yarn.lock` was falsely reported as having no
+    lockfile. The contents catch-all in ``_routes`` returns 404 for every other candidate,
+    so this proves detection matched *this* file specifically.
+    """
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    # Register the present lockfile BEFORE the catch-all (respx is first-match-wins).
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/{lockfile}").mock(
+        return_value=httpx.Response(200, json={"name": lockfile, "path": lockfile, "type": "file"})
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"lf1"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "lockfile" not in repo.fails and "lockfile" not in repo.unknowns
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_lockfile_detection_fails_when_no_lockfile_present(respx_mock) -> None:
+    """Control for issue #58: with no lockfile candidate present, the check still fails."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+
+    # No contents route registered → every candidate 404s via the catch-all.
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"lf0"'}, json=_REPO_JSON))
+
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "lockfile" in repo.fails
+
+
 @respx.mock(base_url=API, assert_all_called=False)
 async def test_release_health_from_release_and_head_dates(respx_mock) -> None:
     """release_pending_days = HEAD commit date − latest release date; release_health
