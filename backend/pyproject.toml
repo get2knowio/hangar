@@ -1,6 +1,6 @@
 [project]
 name = "hangar"
-version = "0.3.11"
+version = "0.3.11" # x-release-please-version
 description = "Hangar — self-hosted fleet control plane (provider-agnostic core)"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"

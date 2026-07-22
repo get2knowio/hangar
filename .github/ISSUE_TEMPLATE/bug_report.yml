@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a defect in Hangar
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. For **security vulnerabilities**, do not
+        use this form — open a private [security advisory](https://github.com/get2knowio/hangar/security/advisories/new) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, config, or a repro that triggers the issue.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Hangar version / commit
+      placeholder: "0.3.11 or a commit SHA"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Deployment details
+      description: Forward-auth mode, provider connection type, Docker/Compose vs. local, etc.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any relevant log output. This will be rendered as code, so no backticks needed.
+      render: shell
+    validations:
+      required: false

@@ -1,0 +1,48 @@
+# Dependabot version updates.
+#
+# Each ecosystem declares a `cooldown` so freshly published releases age before a
+# PR is opened (supply-chain hardening; matches Hangar's own `cooldown` check).
+# Updates are grouped so a solo operator reviews one PR per ecosystem per week, and
+# commit messages use a conventional-commit `chore(deps)` prefix so they flow through
+# release-please and the PR-title lint cleanly.
+version: 2
+updates:
+  - package-ecosystem: "pip" # backend/pyproject.toml (uv-managed project)
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      backend:
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      frontend:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore"
+    groups:
+      actions:
+        patterns: ["*"]
