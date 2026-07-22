@@ -1,0 +1,21 @@
+name: PR title
+
+# Enforce Conventional Commits on pull-request titles (the repo squash-merges,
+# so the PR title becomes the commit subject on main). (Hangar policy check:
+# conventional.)
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Conventional Commits format
+        uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825 # v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,8 @@
+# Code owners for Hangar.
+#
+# Hangar is a single-operator project; the maintainer owns the whole tree by
+# default. Add more specific rules below the catch-all as the project grows.
+#
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @pofallon
