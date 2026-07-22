@@ -19,7 +19,7 @@
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: build the SPA ------------------------------------------------
-FROM node:20-slim AS frontend
+FROM node:26-slim AS frontend
 WORKDIR /frontend
 
 # Install deps first for layer caching. `npm ci` requires a lockfile; if the
