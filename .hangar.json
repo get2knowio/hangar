@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "ignore": [
+    {
+      "check": "lockfile",
+      "reason": "Monorepo: lockfiles are committed per-package (backend/uv.lock, frontend/package-lock.json), not at the repo root where the root-only lockfile check looks."
+    }
+  ]
+}

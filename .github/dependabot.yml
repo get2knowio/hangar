@@ -1,0 +1,49 @@
+# Dependabot version updates for the Hangar monorepo.
+#
+# Each ecosystem carries a `cooldown:` block so freshly-published releases age
+# before Dependabot opens a PR — this is what Hangar's own `cooldown` policy
+# check looks for (default target: 7 days).
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  # Backend — Python (uv), pyproject.toml + uv.lock under backend/.
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      backend-dev:
+        dependency-type: "development"
+
+  # Frontend — npm, package-lock.json under frontend/.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      frontend-dev:
+        dependency-type: "development"
+
+  # GitHub Actions used by the workflows in .github/workflows/.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+
+  # Base image for the published container (deploy/Dockerfile).
+  - package-ecosystem: "docker"
+    directory: "/deploy"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
