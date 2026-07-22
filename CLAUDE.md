@@ -69,7 +69,8 @@ platform.
   read services (`overview`, `scorecard`, `repo_detail`) evaluate the catalog against the
   **cached** snapshot; `connections`, `webhooks`, `audit` round it out.
 - **`persistence/`** — async SQLAlchemy (`db.py`, `models.py`, `repositories.py`), Fernet
-  credential encryption (`crypto.py`), `seed.py`. Alembic migrations in `backend/alembic/`.
+  credential encryption (`crypto.py`), `seed.py`. Alembic migrations are packaged inside the
+  app at `backend/src/hangar/migrations/` (applied on startup by `db.apply_migrations`).
 - **`auth/forward_auth.py`** — the outermost security middleware. **`config.py`** —
   settings + `validate_startup` (the fail-closed gate). **`main.py`** — app factory: startup
   gate → seed → scheduler lifespan, the HMAC-verified webhook receiver, and the SPA mount.
