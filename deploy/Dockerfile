@@ -35,7 +35,7 @@ RUN if [ -f package.json ]; then npm run build; fi; \
     mkdir -p /frontend/dist
 
 # ---- Stage 2: backend runtime ---------------------------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # Predictable, unbuffered Python; no .pyc clutter; pip without a cache layer.
 ENV PYTHONUNBUFFERED=1 \
