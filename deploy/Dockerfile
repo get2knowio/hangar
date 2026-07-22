@@ -52,10 +52,11 @@ RUN apt-get update \
 
 # Install the backend. Copy the package metadata + source, then `pip install`.
 # Include the optional `postgres` extra so the same image can target Postgres
-# via HANGAR_DATABASE_URL without a rebuild.
+# via HANGAR_DATABASE_URL without a rebuild. The Alembic migrations live inside
+# the package (backend/src/hangar/migrations), so they install with it and the
+# app applies them on startup (hangar.persistence.db.apply_migrations).
 COPY backend/pyproject.toml ./backend/pyproject.toml
 COPY backend/src ./backend/src
-COPY backend/alembic ./backend/alembic
 RUN pip install "./backend[postgres]"
 
 # Copy the built SPA into a static dir the app can serve. Always present
