@@ -22,9 +22,9 @@ def _repo(fails=None, unknowns=None, suppressions=None) -> Repo:
     )
 
 
-def test_catalog_has_exactly_23_checks() -> None:
-    assert len(CATALOG) == 23
-    assert len(all_checks()) == 23
+def test_catalog_has_exactly_31_checks() -> None:
+    assert len(CATALOG) == 31
+    assert len(all_checks()) == 31
 
 
 def test_groups_are_five_and_cover_all_checks() -> None:
@@ -60,7 +60,7 @@ def test_remediation_overlay_changes_status() -> None:
 def test_hygiene_rollup_math() -> None:
     policy = default_policy()
     total = len(enabled_checks(policy))
-    assert total == 23
+    assert total == 31
 
     clean = _repo()
     assert hygiene(clean, policy) == 100

@@ -40,4 +40,12 @@ CHECKS: list[Check] = [
         evidence_fail="GITHUB_TOKEN defaults to write-all; no least-privilege block",
         doc_url="https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication",
     ),
+    Check(
+        # Report-tier: fixing an injectable/pwn-request workflow is a hand edit of the YAML,
+        # not something Hangar can safely synthesize — surface it with evidence.
+        id="dangerous_workflow", label="No dangerous workflow patterns", group=_G,
+        tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
+        evidence_fail="Workflow has a script-injection or untrusted-checkout (pwn-request) pattern",
+        doc_url="https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/",
+    ),
 ]
