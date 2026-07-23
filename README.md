@@ -51,7 +51,7 @@ one-shot into a standing control plane** — continuous visibility, a declarativ
 
 ```
  connect a provider ──▶ poll & interrogate ──▶ score against policy ──▶ remediate (PR-first)
- (GitHub App / token)   (background, cached,    (23-check catalog,       (operator-triggered,
+ (GitHub App / token)   (background, cached,    (31-check catalog,       (operator-triggered,
                          ETag-conditional)       pass/fail/unknown)        audit-logged)
 ```
 
@@ -74,7 +74,7 @@ action that resolves it.
 
 ## What Hangar validates — the check catalog
 
-Hangar evaluates a fleet-wide **policy** of **23 checks**, grouped into five areas. Each check
+Hangar evaluates a fleet-wide **policy** of **31 checks**, grouped into five areas. Each check
 declares a **remediation tier** — how far Hangar can go toward fixing it — evaluated *per
 connection*, since a provider may support auto-correction on one platform and only a deep-link
 on another:
@@ -99,6 +99,9 @@ platform without that setting).
 | **Lockfile present** | `Report` | A dependency lockfile is committed. |
 | **Dependency review enabled** | `Deep-link` | The [dependency-review action](https://github.com/actions/dependency-review-action) is wired into CI. |
 | **Actions pinned to SHA** | `Deep-link` | Workflows [pin actions to immutable commit SHAs](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions), not mutable tags. |
+| **SBOM generated** | `Report` | A [software bill of materials](https://www.cisa.gov/sbom) is committed or emitted by a workflow (CycloneDX/SPDX/syft). |
+| **No committed binaries** | `Report` | No executable/compiled [binary artifacts](https://github.com/ossf/scorecard/blob/main/docs/checks.md#binary-artifacts) are committed to the repo. |
+| **Docker base images pinned** | `Report` | Dockerfile `FROM` lines pin base images by `@sha256` digest, not a mutable tag ([best practices](https://docs.docker.com/build/building/best-practices/)). |
 
 ### Release
 | Check | Tier | Passes when |
@@ -108,6 +111,8 @@ platform without that setting).
 | **CHANGELOG automated** | `Report` | A CHANGELOG / automated release notes exist. |
 | **Release health / commit age** | `Report` | The latest release isn't lagging too far behind `main`. |
 | **CI workflow green on default** | `Report` | Default-branch CI is configured and passing. |
+| **CI runs on pull requests** | `Report` | At least one workflow is triggered [on `pull_request`](https://github.com/ossf/scorecard/blob/main/docs/checks.md#ci-tests) so CI gates PRs. |
+| **Releases signed / provenance** | `Report` | Releases are signed or carry build provenance ([SLSA](https://slsa.dev/), cosign/sigstore). |
 
 ### Governance
 | Check | Tier | Passes when |
@@ -115,6 +120,7 @@ platform without that setting).
 | **Branch protection on default** | `Deep-link` | A [protection ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches) guards the default branch. |
 | **CODEOWNERS present** | `API · PR` | A [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners) file exists. |
 | **Default branch = main** | `Report` | The default branch is `main`. |
+| **Signed commits required** | `Deep-link` | The default branch requires [signed commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification). |
 
 ### Security
 | Check | Tier | Passes when |
@@ -124,6 +130,7 @@ platform without that setting).
 | **Code scanning (CodeQL)** | `Deep-link` | A [CodeQL](https://codeql.github.com/) / code-scanning workflow is configured. |
 | **Org 2FA required** | `Deep-link` | The owning org [enforces two-factor auth](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization). |
 | **Workflow permissions least-privilege** | `Deep-link` | [`GITHUB_TOKEN`](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication) isn't left at write-all; a least-privilege permissions block is set. |
+| **No dangerous workflow patterns** | `Report` | No workflow has a script-injection or untrusted-checkout ([pwn-request](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)) pattern. |
 
 ### Project meta
 | Check | Tier | Passes when |
@@ -132,6 +139,7 @@ platform without that setting).
 | **README present** | `Report` | A README exists. |
 | **Description & topics set** | `Deep-link` | The repo has a description and topics. |
 | **Issue / PR templates** | `API · PR` | [`.github/ISSUE_TEMPLATE`](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests) (and/or PR template) exists. |
+| **CONTRIBUTING present** | `API · PR` | A [CONTRIBUTING](https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/setting-guidelines-for-repository-contributors) guide exists (root, `.github/`, or `docs/`). |
 
 > **Checks are data.** The catalog lives in `backend/src/hangar/domain/checks/` — adding or
 > changing a rule is a data edit there, never dashboard code. **Detection** (which repos
@@ -179,7 +187,7 @@ to a given repo, per repo, in version control — not a blanket global waiver.
   GitHub** flow (Hangar creates *your own* least-privilege GitHub App — no tokens to paste),
   or bring your own App / PAT. GitHub Enterprise (GHES and GHEC data-residency) is supported.
 - **[Gitea](https://about.gitea.com/)** — a first-class provider; because Gitea's REST API is GitHub-shaped, the same
-  23-check catalog, scorecard, and PR-first remediation apply. Signals OSS Gitea has no
+  31-check catalog, scorecard, and PR-first remediation apply. Signals OSS Gitea has no
   equivalent for (alerts, secret/code scanning, workflow-permissions, org 2FA) honestly report
   `unknown` rather than a fabricated result.
 

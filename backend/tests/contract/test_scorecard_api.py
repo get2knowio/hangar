@@ -5,7 +5,7 @@ from __future__ import annotations
 
 def test_scorecard_dimensions(client) -> None:
     body = client.get("/api/v1/fleet/scorecard").json()
-    assert len(body["checks"]) == 23
+    assert len(body["checks"]) == 31
     assert len(body["rows"]) == 14
     assert body["repo_count"] == 14
     assert "compliance_pct" in body
@@ -34,4 +34,4 @@ def test_scorecard_failing_only_still_returns_rows(client) -> None:
     body = client.get("/api/v1/fleet/scorecard?failing_only=true").json()
     assert body["failing_only"] is True
     assert len(body["rows"]) == 14
-    assert len(body["checks"]) == 23
+    assert len(body["checks"]) == 31
