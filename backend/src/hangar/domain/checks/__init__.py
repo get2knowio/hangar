@@ -2,9 +2,11 @@
 
 A *check* is pure data: an id, a human label, a group, a native remediation tier, the
 capabilities each tier requires, and the evidence shown when it fails. Adding or
-changing a check is a data edit here — never dashboard code. The catalog is the full
-FR-009 set of **23**: the prototype's 20 seed checks plus three added as definitions
-(CI-workflow-green, Actions-pinned-to-SHA, workflow-permissions-least-privilege).
+changing a check is a data edit here — never dashboard code. The catalog is the FR-009
+baseline of 23 (the prototype's 20 seed checks plus CI-workflow-green, Actions-pinned-to-SHA
+and workflow-permissions-least-privilege) extended to **31** with eight best-practice
+additions: CONTRIBUTING, dangerous-workflow, SBOM, signed-releases, binary-artifacts,
+signed-commits, Docker-base-image-pinning and CI-runs-on-PR.
 
 Detection (which repos pass/fail/unknown) is performed by the provider adapters, which
 populate ``Repo.fails`` / ``Repo.unknowns`` from read-only interrogation; a check that

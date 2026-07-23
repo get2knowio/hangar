@@ -72,7 +72,7 @@ def _instance_base_url(request: Request, settings: Settings) -> str:
 def _manifest_permissions(writable: bool) -> dict[str, str]:
     """GitHub App permissions for the checks Hangar evaluates (provider-owned mapping).
 
-    Reads cover the 23-check catalog (repo settings, security alerts, org 2FA); write tiers
+    Reads cover the 31-check catalog (repo settings, security alerts, org 2FA); write tiers
     (contents/pull_requests) are requested ONLY for a writable connection so Hangar can open
     fix PRs — least-privilege otherwise (FR-026).
     """

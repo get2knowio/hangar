@@ -337,6 +337,265 @@ def test_has_unpinned_action_logic() -> None:
     assert _has_unpinned_action(["owner/wf/.github/workflows/x.yml@v1"]) is True
 
 
+# --- pure content heuristics for the added checks (provider-neutral, no I/O) ---
+def test_workflow_is_dangerous_logic() -> None:
+    from hangar.providers.github.detection import workflow_is_dangerous
+
+    safe = "on: [pull_request]\njobs:\n  b:\n    steps:\n      - run: echo hi\n"
+    assert workflow_is_dangerous([safe]) is False
+    # script injection: an attacker-controlled context interpolated into a step
+    injection = (
+        "on: issues\njobs:\n  b:\n    steps:\n"
+        "      - run: echo ${{ github.event.issue.title }}\n"
+    )
+    assert workflow_is_dangerous([injection]) is True
+    # pwn request: pull_request_target trigger that checks out the untrusted PR head
+    pwn = (
+        "on:\n  pull_request_target:\njobs:\n  b:\n    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+        "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
+    )
+    assert workflow_is_dangerous([pwn]) is True
+    # pull_request_target WITHOUT an untrusted checkout is not flagged
+    safe_target = "on:\n  pull_request_target:\njobs:\n  b:\n    steps:\n      - run: echo ok\n"
+    assert workflow_is_dangerous([safe_target]) is False
+
+
+def test_workflow_triggers_on_pr_logic() -> None:
+    from hangar.providers.github.detection import workflow_triggers_on_pr
+
+    assert workflow_triggers_on_pr(["on: [push, pull_request]\n"]) is True
+    assert workflow_triggers_on_pr(["on:\n  pull_request:\n    branches: [main]\n"]) is True
+    assert workflow_triggers_on_pr(["on: push\n"]) is False
+    # pull_request_target alone does NOT count as gating normal PRs
+    assert workflow_triggers_on_pr(["on: pull_request_target\n"]) is False
+    # a pull_request mention inside a job step (not the on: block) is not a trigger
+    assert workflow_triggers_on_pr(
+        ["on: push\njobs:\n  b:\n    steps:\n      - run: echo ${{ github.event.pull_request.number }}\n"]
+    ) is False
+
+
+def test_sbom_and_signing_ref_markers() -> None:
+    from hangar.providers.github.detection import (
+        refs_generate_sbom,
+        refs_sign_releases,
+        release_assets_signed,
+    )
+
+    assert refs_generate_sbom(["anchore/sbom-action@v0"]) is True
+    assert refs_generate_sbom(["CycloneDX/gh-python-generate-sbom@v1"]) is True
+    assert refs_generate_sbom(["actions/checkout@v4"]) is False
+    assert refs_sign_releases(["sigstore/cosign-installer@v3"]) is True
+    assert refs_sign_releases(["slsa-framework/slsa-github-generator@v2"]) is True
+    assert refs_sign_releases(["actions/checkout@v4"]) is False
+    assert release_assets_signed([{"name": "app.tar.gz"}, {"name": "app.tar.gz.sig"}]) is True
+    assert release_assets_signed([{"name": "app.intoto.jsonl"}]) is True
+    assert release_assets_signed([{"name": "app.tar.gz"}]) is False
+
+
+def test_dockerfile_pin_and_binary_tree_logic() -> None:
+    from hangar.providers.github.detection import (
+        dockerfile_has_unpinned_base,
+        tree_has_binaries,
+    )
+
+    assert dockerfile_has_unpinned_base("FROM python:3.12\n") is True
+    assert dockerfile_has_unpinned_base("FROM python@sha256:" + "a" * 64 + "\n") is False
+    assert dockerfile_has_unpinned_base("FROM scratch\n") is False
+    # a multi-stage alias reference is not a registry pull
+    multi = "FROM python@sha256:" + "a" * 64 + " AS build\nFROM build\n"
+    assert dockerfile_has_unpinned_base(multi) is False
+
+    assert tree_has_binaries([{"path": "bin/tool.exe", "type": "blob"}]) is True
+    assert tree_has_binaries([{"path": "lib/x.so", "type": "blob"}]) is True
+    assert tree_has_binaries([{"path": "src/main.py", "type": "blob"}]) is False
+    assert tree_has_binaries([{"path": "vendor", "type": "tree"}]) is False
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_contributing_file_presence(respx_mock) -> None:
+    """CONTRIBUTING.md present passes; absent (catch-all 404) fails."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/CONTRIBUTING.md").mock(
+        return_value=httpx.Response(200, json={"name": "CONTRIBUTING.md", "type": "file"}))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"c1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "contributing" not in repo.fails and "contributing" not in repo.unknowns
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_contributing_absent_fails(respx_mock) -> None:
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"c0"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "contributing" in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_signed_commits_required_passes(respx_mock) -> None:
+    """required_signatures {enabled:true} → signed_commits passes."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(
+        f"{API}/repos/acme/hangar/branches/main/protection/required_signatures"
+    ).mock(return_value=httpx.Response(200, json={"enabled": True}))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"sc1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "signed_commits" not in repo.fails and "signed_commits" not in repo.unknowns
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_signed_commits_unenforced_fails(respx_mock) -> None:
+    """A 404 on required_signatures (branch unprotected) → signed_commits fails."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    # No specific route → the catch-all 404s the required_signatures endpoint.
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"sc0"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "signed_commits" in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_binary_artifacts_from_git_tree(respx_mock) -> None:
+    """A committed .exe in the recursive tree fails; a source-only tree passes."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(url__regex=r".*/repos/acme/hangar/git/trees/main(\?.*)?$").mock(
+        return_value=httpx.Response(200, json={"tree": [
+            {"path": "src/main.py", "type": "blob"},
+            {"path": "dist/app.exe", "type": "blob"},
+        ]}))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"bt1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "binary_artifacts" in repo.fails
+
+    adapter2 = GitHubAdapter()
+    respx_mock.get(url__regex=r".*/repos/acme/hangar/git/trees/main(\?.*)?$").mock(
+        return_value=httpx.Response(200, json={"tree": [{"path": "src/main.py", "type": "blob"}]}))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"bt0"'}, json=_REPO_JSON))
+    repo2 = await adapter2.interrogate(conn, "hangar")
+    assert repo2 is not None
+    assert "binary_artifacts" not in repo2.fails and "binary_artifacts" not in repo2.unknowns
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_pinned_deps_from_dockerfile(respx_mock) -> None:
+    """An unpinned Dockerfile FROM fails; a digest-pinned one passes."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/Dockerfile").mock(
+        return_value=httpx.Response(200, json=_b64("FROM python:3.12\nRUN echo hi\n")))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"pd1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "pinned_deps" in repo.fails
+
+    adapter2 = GitHubAdapter()
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/Dockerfile").mock(
+        return_value=httpx.Response(200, json=_b64("FROM python@sha256:" + "a" * 64 + "\n")))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"pd0"'}, json=_REPO_JSON))
+    repo2 = await adapter2.interrogate(conn, "hangar")
+    assert repo2 is not None
+    assert "pinned_deps" not in repo2.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_workflow_derived_checks_pass_on_a_hardened_workflow(respx_mock) -> None:
+    """A safe, PR-triggered workflow with SBOM + signing actions satisfies
+    dangerous_workflow, ci_tests_on_pr, sbom, and signed_releases together."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    workflow = (
+        "name: release\n"
+        "on: [pull_request, push]\n"
+        "jobs:\n  build:\n    steps:\n"
+        "      - uses: anchore/sbom-action@v0\n"
+        "      - uses: sigstore/cosign-installer@v3\n"
+        "      - run: make build\n"
+    )
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows").mock(
+        return_value=httpx.Response(200, json=[
+            {"name": "release.yml", "path": ".github/workflows/release.yml", "type": "file"},
+        ]))
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows/release.yml").mock(
+        return_value=httpx.Response(200, json=_b64(workflow)))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"wf1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    for cid in ("dangerous_workflow", "ci_tests_on_pr", "sbom", "signed_releases"):
+        assert cid not in repo.fails and cid not in repo.unknowns, cid
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_dangerous_workflow_flagged_and_pr_and_sbom_gaps(respx_mock) -> None:
+    """A pwn-request workflow trips dangerous_workflow; with no SBOM/signing/PR trigger the
+    other workflow-derived checks fail."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    workflow = (
+        "on:\n  pull_request_target:\n"
+        "jobs:\n  build:\n    steps:\n"
+        "      - uses: actions/checkout@" + "a" * 40 + "\n"
+        "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
+    )
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows").mock(
+        return_value=httpx.Response(200, json=[
+            {"name": "ci.yml", "path": ".github/workflows/ci.yml", "type": "file"},
+        ]))
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows/ci.yml").mock(
+        return_value=httpx.Response(200, json=_b64(workflow)))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"wf2"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dangerous_workflow" in repo.fails
+    assert "ci_tests_on_pr" in repo.fails  # only pull_request_target, no pull_request
+    assert "sbom" in repo.fails and "signed_releases" in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_signed_releases_from_release_signature_assets(respx_mock) -> None:
+    """A signature asset on the latest release satisfies signed_releases even with no
+    signing action in a workflow."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/releases/latest").mock(
+        return_value=httpx.Response(200, json={
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [{"name": "hangar.tar.gz"}, {"name": "hangar.tar.gz.sig"}],
+        }))
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"sr1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "signed_releases" not in repo.fails and "signed_releases" not in repo.unknowns
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_added_checks_unknown_without_read_capabilities(respx_mock) -> None:
+    """A connection with no read_files/read_settings degrades the added checks to unknown,
+    never a fabricated pass/fail (capability-gated honest state)."""
+    adapter = GitHubAdapter()
+    conn = ProviderConnection(
+        id="gh-narrow", label="gh:acme", provider_type="github", scope="org",
+        auth_mode="App", app_id="123", installation_id=456,
+        granted_capabilities={Capability.read_alerts},  # no read_files / read_settings
+        has_credential=True, token=_rsa_pem(),
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"nu1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    for cid in ("contributing", "pinned_deps", "sbom", "signed_releases",
+                "dangerous_workflow", "ci_tests_on_pr", "binary_artifacts", "signed_commits"):
+        assert cid in repo.unknowns, cid
+        assert cid not in repo.fails, cid
+
+
 async def test_adapter_refuses_without_credential() -> None:
     adapter = GitHubAdapter()
     conn = ProviderConnection(

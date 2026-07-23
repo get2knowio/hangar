@@ -67,6 +67,7 @@ _RENOVATE_CONFIG_FILES = [
 _FILE_CHECKS = {
     "readme": ["README.md", "README.rst", "README"],
     "security_md": ["SECURITY.md", ".github/SECURITY.md"],
+    "contributing": ["CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"],
     "codeowners": ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
     "changelog": ["CHANGELOG.md", "CHANGELOG"],
     "lockfile": ["poetry.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
@@ -76,6 +77,152 @@ _FILE_CHECKS = {
                   ".github/PULL_REQUEST_TEMPLATE.md"],
     "dependabot_updates": _DEPENDABOT_CONFIG_FILES + _RENOVATE_CONFIG_FILES,
 }
+
+# --------------------------------------------------------------------------------------
+# Provider-neutral content heuristics (shared with the Gitea adapter, which imports them).
+# Each is a pure function over already-fetched text/refs so both adapters detect the same
+# way; the platform reads that feed them live in the adapter-specific groups below.
+# --------------------------------------------------------------------------------------
+
+# Attacker-controllable GitHub Actions contexts whose raw interpolation into a step is a
+# script-injection vector (Scorecard "Dangerous-Workflow").
+_INJECTABLE_RE = re.compile(
+    r"\$\{\{\s*github\.(?:"
+    r"event\.(?:issue|pull_request|comment|review|discussion|commits|head_commit|"
+    r"workflow_run)[\w.\[\]]*\.(?:title|body|message|name|email|label|ref)"
+    r"|event\.pages[\w.\[\]]*\.page_name"
+    r"|head_ref)\b"
+)
+# A checkout that pulls the untrusted PR head (dangerous under pull_request_target/workflow_run).
+_UNTRUSTED_CHECKOUT_RE = re.compile(
+    r"ref:\s*\$\{\{\s*github\.(?:event\.pull_request\.head\.(?:sha|ref)|head_ref)"
+)
+# A pull_request trigger (excluding pull_request_target, which does NOT gate normal PRs the
+# same way and is itself a dangerous-workflow signal).
+_PR_TRIGGER_RE = re.compile(r"\bpull_request\b(?!_target)")
+
+_SBOM_ACTION_MARKERS = ("sbom", "cyclonedx", "cdxgen", "syft")
+_SBOM_FILE_CANDIDATES = [
+    "sbom.json", "sbom.spdx.json", "sbom.cdx.json", "sbom.xml",
+    "bom.json", "bom.xml", ".sbom/bom.json",
+]
+_SIGNING_ACTION_MARKERS = ("cosign", "sigstore", "slsa-github-generator", "slsa-framework")
+_SIGNATURE_ASSET_SUFFIXES = (".sig", ".asc", ".intoto.jsonl", ".sigstore", ".pem.sig")
+
+# Committed executable/compiled outputs that can't be audited from source (Scorecard
+# "Binary-Artifacts"). Fonts/images are intentionally excluded — they are not build outputs.
+_BINARY_EXTENSIONS = (
+    ".exe", ".dll", ".so", ".dylib", ".a", ".o", ".class", ".jar", ".war", ".ear",
+    ".pyc", ".pyo", ".wasm", ".node", ".msi", ".deb", ".rpm", ".apk", ".dmg", ".pkg",
+)
+
+_FROM_RE = re.compile(r"^\s*FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
+
+
+def _extract_refs(text: str) -> list[str]:
+    """All ``uses:`` action references in one workflow file's text (comments stripped)."""
+    refs: list[str] = []
+    for line in text.splitlines():
+        m = _USES_RE.match(line.split("#", 1)[0])
+        if m:
+            refs.append(m.group(1))
+    return refs
+
+
+def _on_block(text: str) -> str:
+    """The body of a workflow's top-level ``on:`` block (inline and nested forms).
+
+    Returns just the trigger section so a ``pull_request`` mention inside a job step
+    (e.g. ``github.event.pull_request.number``) isn't mistaken for a trigger.
+    """
+    out: list[str] = []
+    capturing = False
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line:
+            continue
+        m = re.match(r"^on\s*:(.*)$", line)  # top-level key (no indentation)
+        if m:
+            capturing = True
+            out.append(m.group(1))
+            continue
+        if capturing:
+            if re.match(r"^\S", line):  # next top-level key ends the on: block
+                break
+            out.append(line)
+    return "\n".join(out)
+
+
+def workflow_is_dangerous(texts: list[str]) -> bool:
+    """True if any workflow shows a Scorecard 'dangerous workflow' pattern.
+
+    (1) an attacker-controlled context interpolated into a step (script injection), or
+    (2) a ``pull_request_target`` / ``workflow_run`` trigger that checks out the PR head
+    ref — running untrusted code with the base repo's write token/secrets ("pwn request").
+    """
+    for text in texts:
+        if _INJECTABLE_RE.search(text):
+            return True
+        on = _on_block(text)
+        if ("pull_request_target" in on or "workflow_run" in on) and _UNTRUSTED_CHECKOUT_RE.search(text):
+            return True
+    return False
+
+
+def workflow_triggers_on_pr(texts: list[str]) -> bool:
+    """True if any workflow is triggered by ``pull_request`` (CI gates PRs — Scorecard CI-Tests)."""
+    return any(_PR_TRIGGER_RE.search(_on_block(t)) for t in texts)
+
+
+def refs_generate_sbom(refs: list[str]) -> bool:
+    """True if a workflow references an SBOM-generating action/tool."""
+    return any(any(m in r.lower() for m in _SBOM_ACTION_MARKERS) for r in refs)
+
+
+def refs_sign_releases(refs: list[str]) -> bool:
+    """True if a workflow references release-signing / provenance tooling."""
+    return any(any(m in r.lower() for m in _SIGNING_ACTION_MARKERS) for r in refs)
+
+
+def release_assets_signed(assets: list) -> bool:
+    """True if a release carries signature/provenance assets (``.sig``/``.asc``/in-toto)."""
+    for a in assets:
+        name = (a.get("name") or "").lower() if isinstance(a, dict) else ""
+        if name.endswith(_SIGNATURE_ASSET_SUFFIXES) or "provenance" in name or "intoto" in name:
+            return True
+    return False
+
+
+def dockerfile_has_unpinned_base(text: str) -> bool:
+    """True if any Dockerfile ``FROM`` pulls a registry image without a ``@sha256:`` digest.
+
+    Multi-stage aliases (``FROM builder``), ``scratch``, and build-arg images (``FROM $BASE``)
+    are not registry pulls and are skipped.
+    """
+    stages: set[str] = set()
+    unpinned = False
+    for raw in text.splitlines():
+        m = _FROM_RE.match(raw.split("#", 1)[0])
+        if not m:
+            continue
+        image, alias = m.group(1), m.group(2)
+        if alias:
+            stages.add(alias.lower())
+        low = image.lower()
+        if low == "scratch" or low in stages or image.startswith("$"):
+            continue
+        if "@sha256:" not in image:
+            unpinned = True
+    return unpinned
+
+
+def tree_has_binaries(tree_items: list) -> bool:
+    """True if any blob in a recursive git tree is a committed executable/compiled binary."""
+    for it in tree_items:
+        if isinstance(it, dict) and it.get("type") == "blob":
+            if (it.get("path") or "").lower().endswith(_BINARY_EXTENSIONS):
+                return True
+    return False
 
 
 async def interrogate_repo(
@@ -226,6 +373,9 @@ async def _dynamic_checks(
     ci = CIStatus.none
     alerts = AlertCounts()
     release_pending: int | None = None
+    # Signals for checks whose outcome combines a workflow read with a file/release read
+    # (sbom, signed_releases). Set by the groups; combined once, race-free, after the gather.
+    sbom_wf = signing_wf = sbom_file = release_signed = False
 
     async def _probe(path: str) -> object:
         return await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/contents/{path}")
@@ -242,9 +392,10 @@ async def _dynamic_checks(
 
     async def _files_group() -> None:
         # file-presence checks (contents API; 404 = absent, 403 = unknown) + cooldown
+        nonlocal sbom_file
         if not can_files:
             unknowns.extend(_FILE_CHECKS)
-            unknowns.append("cooldown")
+            unknowns.extend(["cooldown", "pinned_deps"])
             return
 
         async def _one(check_id: str, candidates: list[str]) -> tuple[str, str]:
@@ -274,16 +425,40 @@ async def _dynamic_checks(
         elif not await _has_cooldown(cget, gh, connection.id, owner, repo_ref):
             fails.append("cooldown")
 
+        # pinned_deps: a committed Dockerfile must pin its base image(s) by @sha256 digest.
+        # No Dockerfile → nothing of this kind to pin → passes (no entry).
+        docker = await _read_text(cget, gh, connection.id, owner, repo_ref, "Dockerfile")
+        if docker is not None and dockerfile_has_unpinned_base(docker):
+            fails.append("pinned_deps")
+
+        # sbom: a committed SBOM file satisfies half of the check (workflow marker is the other).
+        for cand in _SBOM_FILE_CANDIDATES:
+            if await _present(cand):
+                sbom_file = True
+                break
+
     async def _settings_group() -> None:
         # settings/ruleset checks (403 = unknown, 404 = not configured = fail)
         if not can_settings:
-            unknowns.extend(["branch_protection", "workflow_permissions", "code_scanning"])
+            unknowns.extend(["branch_protection", "workflow_permissions", "code_scanning",
+                             "signed_commits"])
             return
-        prot, wf_perms, cs = await asyncio.gather(
+        prot, wf_perms, cs, sigs = await asyncio.gather(
             cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection"),
             cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/actions/permissions/workflow"),
             cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/code-scanning/analyses"),
+            cget(gh, connection.id,
+                 f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection/required_signatures"),
         )
+        # signed_commits: the required_signatures endpoint 404s when the branch is unprotected
+        # (→ not enforced = fail); 403 → unknown; 200 carries {"enabled": bool}.
+        if sigs is _FORBIDDEN:
+            unknowns.append("signed_commits")
+        elif isinstance(sigs, dict):
+            if not sigs.get("enabled"):
+                fails.append("signed_commits")
+        else:
+            fails.append("signed_commits")
         if prot is _FORBIDDEN:
             unknowns.append("branch_protection")
         elif prot is _NOT_FOUND:
@@ -312,11 +487,16 @@ async def _dynamic_checks(
             unknowns.append("two_fa")
 
     async def _workflows_group() -> None:
-        # dep_review / conventional / actions_pinned_sha require parsing the workflow files.
+        # Everything derived from parsing .github/workflows/*: dep_review / conventional /
+        # actions_pinned_sha / dangerous_workflow / ci_tests_on_pr, plus the workflow-side
+        # signals for sbom and signed_releases.
+        nonlocal sbom_wf, signing_wf
         if not can_files:
-            unknowns.extend(["dep_review", "conventional", "actions_pinned_sha"])
+            unknowns.extend(["dep_review", "conventional", "actions_pinned_sha",
+                             "dangerous_workflow", "ci_tests_on_pr"])
             return
-        refs = await _workflow_action_refs(cget, gh, connection.id, owner, repo_ref)
+        texts = await _read_workflow_texts(cget, gh, connection.id, owner, repo_ref)
+        refs = [r for t in texts for r in _extract_refs(t)]
         if not any("dependency-review-action" in r for r in refs):
             fails.append("dep_review")
         has_conv = any(any(a in r for a in _CONVENTIONAL_ACTIONS) for r in refs)
@@ -329,15 +509,44 @@ async def _dynamic_checks(
             fails.append("conventional")
         if _has_unpinned_action(refs):
             fails.append("actions_pinned_sha")
+        if workflow_is_dangerous(texts):
+            fails.append("dangerous_workflow")
+        if not workflow_triggers_on_pr(texts):
+            fails.append("ci_tests_on_pr")
+        sbom_wf = refs_generate_sbom(refs)
+        signing_wf = refs_sign_releases(refs)
 
     async def _release_group() -> None:
         # release_health: age of unreleased commits = default-branch HEAD date − last release.
-        nonlocal release_pending
+        # signed_releases (workflow-independent side): the latest release's signature assets.
+        nonlocal release_pending, release_signed
+        rel = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/releases/latest")
+        if isinstance(rel, dict):
+            release_signed = release_assets_signed(rel.get("assets") or [])
         release_pending = await _release_pending_days(
-            cget, gh, connection.id, owner, repo_ref, default_branch
+            cget, gh, connection.id, owner, repo_ref, default_branch, rel
         )
         if release_pending is not None and release_pending >= _RELEASE_STALE_DAYS:
             fails.append("release_health")
+
+    async def _tree_group() -> None:
+        # binary_artifacts: recursive git-tree scan for committed executables/compiled output.
+        if not can_files:
+            unknowns.append("binary_artifacts")
+            return
+        tree = await cget(
+            gh, connection.id, f"/repos/{owner}/{repo_ref}/git/trees/{default_branch}",
+            {"recursive": "1"},
+        )
+        if isinstance(tree, dict):
+            if tree_has_binaries(tree.get("tree") or []):
+                fails.append("binary_artifacts")
+            elif tree.get("truncated"):
+                # GitHub caps a tree at ~100k entries; a truncated listing we didn't find a
+                # binary in is not a clean pass — report it honestly as unknown.
+                unknowns.append("binary_artifacts")
+        else:  # 403/404/other → undeterminable, honestly unknown (never a fabricated pass)
+            unknowns.append("binary_artifacts")
 
     async def _pulls_group() -> None:
         nonlocal open_prs, bot_prs, pull_details
@@ -375,41 +584,54 @@ async def _dynamic_checks(
         _org_group(),
         _workflows_group(),
         _release_group(),
+        _tree_group(),
         _pulls_group(),
         _ci_group(),
         _alerts_group(),
         _dependabot_alerts_group(),
     )
 
+    # Combine the multi-read checks once, after the gather (race-free): sbom passes on a
+    # committed SBOM file OR an SBOM-generating workflow; signed_releases passes on signing
+    # tooling in a workflow OR signature assets on the latest release. Both depend on file
+    # reads, so they are honestly `unknown` when the file capability is absent.
+    if can_files:
+        if not (sbom_file or sbom_wf):
+            fails.append("sbom")
+    else:
+        unknowns.append("sbom")
+    if signing_wf or release_signed:
+        pass
+    elif can_files:
+        fails.append("signed_releases")
+    else:
+        unknowns.append("signed_releases")
+
     return fails, unknowns, open_prs, bot_prs, ci, alerts, release_pending, pull_details
 
 
-async def _workflow_action_refs(
+async def _read_workflow_texts(
     cget: Any, gh: GitHub, cid: str, owner: str, repo: str
 ) -> list[str]:
-    """All ``uses:`` action references across ``.github/workflows/*.yml``.
+    """The text of every ``.github/workflows/*.yml`` file (comments intact).
 
-    Lists the workflows directory, reads each YAML file, and extracts the action refs
-    (comments stripped). Returns [] when there is no workflows directory (cget yields a
-    NOT_FOUND/FORBIDDEN sentinel, not a list).
+    Lists the workflows directory and reads each YAML file. Returns [] when there is no
+    workflows directory (cget yields a NOT_FOUND/FORBIDDEN sentinel, not a list). Callers
+    derive action refs (``_extract_refs``) and the content heuristics (dangerous-workflow,
+    PR trigger, SBOM/signing action markers) from these texts.
     """
     listing = await cget(gh, cid, f"/repos/{owner}/{repo}/contents/.github/workflows")
     if not isinstance(listing, list):
         return []
-    refs: list[str] = []
+    texts: list[str] = []
     for item in listing:
         name = item.get("name", "")
         if item.get("type") != "file" or not name.endswith((".yml", ".yaml")):
             continue
         text = await _read_text(cget, gh, cid, owner, repo, item["path"])
-        if not text:
-            continue
-        for line in text.splitlines():
-            stripped = line.split("#", 1)[0]  # drop trailing comments
-            m = _USES_RE.match(stripped)
-            if m:
-                refs.append(m.group(1))
-    return refs
+        if text:
+            texts.append(text)
+    return texts
 
 
 def _has_unpinned_action(refs: list[str]) -> bool:
@@ -439,14 +661,17 @@ def _parse_dt(value: object) -> datetime | None:
 
 
 async def _release_pending_days(
-    cget: Any, gh: GitHub, cid: str, owner: str, repo: str, branch: str
+    cget: Any, gh: GitHub, cid: str, owner: str, repo: str, branch: str,
+    rel: object = None,
 ) -> int | None:
     """Days of unreleased commits = default-branch HEAD commit date − latest release date.
 
     None when there is no release (nothing to be behind) or HEAD is not ahead of the
-    release. Fetched unconditionally so the value is always fresh.
+    release. ``rel`` may be the already-fetched ``releases/latest`` body (the release group
+    reads it once for both this and the signed-releases signal); when omitted it is fetched.
     """
-    rel = await cget(gh, cid, f"/repos/{owner}/{repo}/releases/latest")
+    if rel is None:
+        rel = await cget(gh, cid, f"/repos/{owner}/{repo}/releases/latest")
     if not isinstance(rel, dict):
         return None  # 404 (no releases) → no baseline
     rel_dt = _parse_dt(rel.get("published_at"))
