@@ -33,4 +33,10 @@ CHECKS: list[Check] = [
         evidence_fail=".github/ISSUE_TEMPLATE absent",
         doc_url="https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests",
     ),
+    Check(
+        id="contributing", label="CONTRIBUTING present", group=_G,
+        tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
+        evidence_fail="CONTRIBUTING.md missing",
+        doc_url="https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/setting-guidelines-for-repository-contributors",
+    ),
 ]

@@ -99,6 +99,7 @@ class GiteaAdapter:
         anchor = {
             "branch_protection": "/settings/branches",
             "conventional": "/settings/branches",
+            "signed_commits": "/settings/branches",
         }.get(check_id, "")
         return f"{gitea_web_base(connection.base_url)}/{connection.owner}/{repo.id}{anchor}"
 

@@ -35,9 +35,15 @@ from hangar.providers.github.detection import (
     _PR_DETAIL_CAP,
     _RELEASE_STALE_DAYS,
     _RENOVATE_CONFIG_FILES,
-    _USES_RE,
+    _SBOM_FILE_CANDIDATES,
+    _extract_refs,
     _has_unpinned_action,
     _parse_dt,
+    dockerfile_has_unpinned_base,
+    refs_generate_sbom,
+    refs_sign_releases,
+    workflow_is_dangerous,
+    workflow_triggers_on_pr,
 )
 
 # Signals GitHub exposes but OSS Gitea has no API for. Always reported as ``unknown`` —
@@ -50,6 +56,15 @@ _GITHUB_ONLY_UNKNOWN = (
     "two_fa",                # no org-wide 2FA-required enforcement flag
 )
 
+# Determinable on Gitea in principle, but not yet wired in this designed-for adapter: the
+# recursive git-tree read (binary_artifacts) and the branch signed-commit requirement
+# (signed_commits). Reported honestly as ``unknown`` rather than a fabricated pass, until
+# the Gitea adapter grows those reads (Constitution VIII).
+_UNIMPLEMENTED_UNKNOWN = (
+    "binary_artifacts",
+    "signed_commits",
+)
+
 # Candidate paths whose presence satisfies a file-based check. Unlike GitHub (whose own
 # license detection drives the ``license`` check from repo metadata), Gitea has no reliable
 # SPDX field, so ``license`` is a file-presence check here — honest, if without an SPDX id.
@@ -57,6 +72,8 @@ _FILE_CHECKS = {
     "readme": ["README.md", "README.rst", "README"],
     "license": ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"],
     "security_md": ["SECURITY.md", ".github/SECURITY.md"],
+    "contributing": ["CONTRIBUTING.md", ".gitea/CONTRIBUTING.md",
+                     ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"],
     "codeowners": ["CODEOWNERS", ".gitea/CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
     "changelog": ["CHANGELOG.md", "CHANGELOG"],
     "lockfile": ["poetry.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
@@ -94,7 +111,7 @@ async def interrogate_repo(
     description = repo_data.get("description") or ""
 
     fails: list[str] = []
-    unknowns: list[str] = list(_GITHUB_ONLY_UNKNOWN)
+    unknowns: list[str] = list(_GITHUB_ONLY_UNKNOWN) + list(_UNIMPLEMENTED_UNKNOWN)
     if default_branch != "main":
         fails.append("default_branch")
 
@@ -150,15 +167,18 @@ async def _dynamic_checks(
     ci = CIStatus.none
     release_pending: int | None = None
     has_topics = False
+    # Workflow/file signals for the multi-read checks, combined once after the gather.
+    sbom_wf = signing_wf = sbom_file = False
 
     async def _present(path: str) -> bool:
         r = await client.get(f"/repos/{owner}/{repo_ref}/contents/{path}")
         return r is not _NOT_FOUND and r is not _FORBIDDEN
 
     async def _files_group() -> None:
+        nonlocal sbom_file
         if not can_files:
             unknowns.extend(_FILE_CHECKS)
-            unknowns.append("cooldown")
+            unknowns.extend(["cooldown", "pinned_deps"])
             return
 
         async def _one(check_id: str, candidates: list[str]) -> tuple[str, str]:
@@ -185,6 +205,17 @@ async def _dynamic_checks(
         elif not await _has_cooldown(client, owner, repo_ref):
             fails.append("cooldown")
 
+        # pinned_deps: committed Dockerfile base image(s) pinned by @sha256 digest.
+        docker = await _read_text(client, owner, repo_ref, "Dockerfile")
+        if docker is not None and dockerfile_has_unpinned_base(docker):
+            fails.append("pinned_deps")
+
+        # sbom: a committed SBOM file (workflow marker is the other half, combined below).
+        for cand in _SBOM_FILE_CANDIDATES:
+            if await _present(cand):
+                sbom_file = True
+                break
+
     async def _branch_protection_group() -> None:
         if not can_settings:
             unknowns.append("branch_protection")
@@ -204,10 +235,13 @@ async def _dynamic_checks(
             has_topics = bool(data.get("topics"))
 
     async def _workflows_group() -> None:
+        nonlocal sbom_wf, signing_wf
         if not can_files:
-            unknowns.extend(["dep_review", "conventional", "actions_pinned_sha"])
+            unknowns.extend(["dep_review", "conventional", "actions_pinned_sha",
+                             "dangerous_workflow", "ci_tests_on_pr"])
             return
-        refs = await _workflow_action_refs(client, owner, repo_ref)
+        texts = await _workflow_texts(client, owner, repo_ref)
+        refs = [r for t in texts for r in _extract_refs(t)]
         if not any("dependency-review-action" in r for r in refs):
             fails.append("dep_review")
         has_conv = any(any(a in r for a in _CONVENTIONAL_ACTIONS) for r in refs)
@@ -220,6 +254,12 @@ async def _dynamic_checks(
             fails.append("conventional")
         if _has_unpinned_action(refs):
             fails.append("actions_pinned_sha")
+        if workflow_is_dangerous(texts):
+            fails.append("dangerous_workflow")
+        if not workflow_triggers_on_pr(texts):
+            fails.append("ci_tests_on_pr")
+        sbom_wf = refs_generate_sbom(refs)
+        signing_wf = refs_sign_releases(refs)
 
     async def _release_group() -> None:
         nonlocal release_pending
@@ -248,6 +288,17 @@ async def _dynamic_checks(
         _pulls_group(),
         _ci_group(),
     )
+
+    # Combine multi-read checks once, after the gather (race-free). Gitea has no
+    # signature-asset feed, so signed_releases rides on the workflow signing signal only.
+    if can_files:
+        if not (sbom_file or sbom_wf):
+            fails.append("sbom")
+        if not signing_wf:
+            fails.append("signed_releases")
+    else:
+        unknowns.extend(["sbom", "signed_releases"])
+
     return fails, unknowns, open_prs, bot_prs, ci, release_pending, pull_details, has_topics
 
 
@@ -292,9 +343,13 @@ async def _has_cooldown(client: GiteaClient, owner: str, repo: str) -> bool:
     return False
 
 
-async def _workflow_action_refs(client: GiteaClient, owner: str, repo: str) -> list[str]:
-    """All ``uses:`` action references across the workflow directories (.gitea + .github)."""
-    refs: list[str] = []
+async def _workflow_texts(client: GiteaClient, owner: str, repo: str) -> list[str]:
+    """The text of every workflow file across the workflow directories (.gitea + .github).
+
+    Callers derive action refs (``_extract_refs``) and the shared content heuristics
+    (dangerous-workflow, PR trigger, SBOM/signing markers) from these texts.
+    """
+    texts: list[str] = []
     for wf_dir in _WORKFLOW_DIRS:
         listing = await client.get(f"/repos/{owner}/{repo}/contents/{wf_dir}")
         if not isinstance(listing, list):
@@ -304,14 +359,9 @@ async def _workflow_action_refs(client: GiteaClient, owner: str, repo: str) -> l
             if item.get("type") != "file" or not name.endswith((".yml", ".yaml")):
                 continue
             text = await _read_text(client, owner, repo, item["path"])
-            if not text:
-                continue
-            for line in text.splitlines():
-                stripped = line.split("#", 1)[0]
-                m = _USES_RE.match(stripped)
-                if m:
-                    refs.append(m.group(1))
-    return refs
+            if text:
+                texts.append(text)
+    return texts
 
 
 async def _release_pending_days(

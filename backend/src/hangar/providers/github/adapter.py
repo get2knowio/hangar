@@ -113,6 +113,7 @@ _PR_FILES = {
     "security_md": "SECURITY.md",
     "codeowners": ".github/CODEOWNERS",
     "templates": ".github/ISSUE_TEMPLATE/bug_report.md",
+    "contributing": "CONTRIBUTING.md",
     "dependabot_updates": ".github/dependabot.yml",
     "cooldown": ".github/dependabot.yml",
     "release_please": "release-please-config.json",
@@ -304,6 +305,7 @@ class GitHubAdapter:
         anchor = {
             "two_fa": "/settings/security",
             "branch_protection": "/settings/branches",
+            "signed_commits": "/settings/branches",
             "secret_scanning": "/settings/security_analysis",
             "code_scanning": "/security/code-scanning",
             "dep_review": "/settings/security_analysis",
