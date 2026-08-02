@@ -27,6 +27,14 @@
         "ghcr.io/get2knowio/devcontainer-features/github-actions-tools:2": {}
         // install/omit: act, actionlint
     },
+    "mounts": [
+        // Shared Claude Code + gh CLI credentials from the host, so auth survives
+        // container rebuilds and is consistent across every devcontainer on this
+        // machine. Both are read-WRITE: token refresh writes .credentials.json
+        // and hosts.yml respectively.
+        "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+        "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached"
+    ],
     "customizations": {
         "vscode": {
             "settings": {
