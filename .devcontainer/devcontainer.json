@@ -27,6 +27,16 @@
         "ghcr.io/get2knowio/devcontainer-features/github-actions-tools:2": {}
         // install/omit: act, actionlint
     },
+    "containerEnv": {
+        // Put Claude Code's config INSIDE the mounted ~/.claude directory.
+        // By default the config lives at ~/.claude.json, OUTSIDE that mount, so
+        // every container starts unauthenticated even though .credentials.json is
+        // shared. Bind-mounting the file directly does not work: a file bind pins
+        // to the inode, so the first atomic rewrite orphans the container's view
+        // and silently discards writes. Relocating into the directory mount avoids
+        // that entirely and shares auth across every devcontainer on the host.
+        "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+    },
     "mounts": [
         // Shared Claude Code + gh CLI credentials from the host, so auth survives
         // container rebuilds and is consistent across every devcontainer on this
