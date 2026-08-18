@@ -578,6 +578,24 @@ async def _dynamic_checks(
             unknowns.append("dependabot_alerts")
         # _NO_CONTENT (204) → alerts enabled → passing (no entry)
 
+    async def _security_updates_group() -> None:
+        # automated-security-fixes returns 200 {"enabled": bool, "paused": bool}. A *paused*
+        # config is not raising fix PRs either, so it fails alongside an outright-disabled
+        # one. 404 means the repo cannot have them (dependency graph/alerts off) → fail;
+        # 403 or an unexpected body → honestly `unknown` rather than a guessed pass/fail.
+        # Gated on read_alerts to mirror the sibling `dependabot_alerts` toggle read.
+        if not can_alerts:
+            unknowns.append("dependabot_security_updates")
+            return
+        asf = await cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/automated-security-fixes")
+        if asf is _NOT_FOUND:
+            fails.append("dependabot_security_updates")
+        elif isinstance(asf, dict):
+            if not asf.get("enabled") or asf.get("paused"):
+                fails.append("dependabot_security_updates")
+        else:
+            unknowns.append("dependabot_security_updates")
+
     await asyncio.gather(
         _files_group(),
         _settings_group(),
@@ -589,6 +607,7 @@ async def _dynamic_checks(
         _ci_group(),
         _alerts_group(),
         _dependabot_alerts_group(),
+        _security_updates_group(),
     )
 
     # Combine the multi-read checks once, after the gather (race-free): sbom passes on a

@@ -29,7 +29,8 @@ API = f"{WEB}/api/v1"
 
 # Signals OSS Gitea has no API for — must be unknown, never fail (Constitution VIII).
 _GITHUB_ONLY = {
-    "dependabot_alerts", "secret_scanning", "code_scanning", "workflow_permissions", "two_fa",
+    "dependabot_alerts", "dependabot_security_updates", "secret_scanning", "code_scanning",
+    "workflow_permissions", "two_fa",
 }
 
 

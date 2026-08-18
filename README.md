@@ -94,6 +94,7 @@ platform without that setting).
 | Check | Tier | Passes when |
 |-------|------|-------------|
 | **Dependabot alerts enabled** | `API` | [Dependabot alerts](https://docs.github.com/en/code-security/dependabot/dependabot-alerts) are turned on for the repo. |
+| **Dependabot security updates enabled** | `API` | [Security updates](https://docs.github.com/en/code-security/dependabot/dependabot-security-updates) are on and not paused, so a vulnerable dependency gets a fix PR rather than just an alert. |
 | **Version updates configured** | `API · PR` | A [**Dependabot**](https://docs.github.com/en/code-security/dependabot/dependabot-version-updates) (`.github/dependabot.yml`) *or* [**Renovate**](https://docs.renovatebot.com/) (`renovate.json`, `.renovaterc`, …) update config is present. |
 | **Update cooldown ≥ target** | `API · PR` | An update cooldown is configured to the target (default **7 days**) — Dependabot `cooldown` or Renovate `minimumReleaseAge`. |
 | **Lockfile present** | `Report` | A dependency lockfile is committed. |

@@ -160,3 +160,64 @@ def test_idle_hangar_makes_no_mutations(client) -> None:
     for failing in ("license", "cooldown", "branch_protection", "code_scanning", "conventional"):
         assert statuses[failing] == "fail", failing
     assert statuses["two_fa"] == "unknown"
+
+
+class _SettingsRecorder:
+    """Fake githubkit client recording only the repo-settings mutations."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def _make(self, name):
+        async def _call(**kwargs):
+            self.calls.append(name)
+            return SimpleNamespace(parsed_data=None)
+        return _call
+
+    @property
+    def rest(self):
+        return SimpleNamespace(
+            repos=SimpleNamespace(
+                async_enable_vulnerability_alerts=self._make("enable_vulnerability_alerts"),
+                async_enable_automated_security_fixes=self._make("enable_automated_security_fixes"),
+            ),
+        )
+
+
+def _settings_conn() -> ProviderConnection:
+    return ProviderConnection(
+        id="gh", label="gh:acme", provider_type="github", scope="org", auth_mode="App",
+        granted_capabilities={Capability.write_settings, Capability.deep_link},
+        has_credential=True, token="t",
+    )
+
+
+def _settings_req(check: str) -> CorrectionRequest:
+    repo = Repo(id="r", connection_id="gh", default_branch="main")
+    return CorrectionRequest(repo=repo, check_id=check, check_label=check,
+                             kind=RemediationKind.settings_patch)
+
+
+async def test_security_updates_patch_enables_alerts_first(monkeypatch) -> None:
+    """GitHub gates security updates on alerts, so the patch must enable alerts first —
+    otherwise it reports success without converging on an alerts-off repo."""
+    adapter = GitHubAdapter()
+    rec = _SettingsRecorder()
+    monkeypatch.setattr(adapter, "_client", lambda conn: rec)
+
+    result = await adapter.correct(_settings_conn(), _settings_req("dependabot_security_updates"))
+
+    assert result.applied
+    assert rec.calls == ["enable_vulnerability_alerts", "enable_automated_security_fixes"]
+
+
+async def test_unhandled_settings_patch_refuses_rather_than_faking_success(monkeypatch) -> None:
+    """A settings_patch with no implementation must raise, never return a silent no-op
+    that the audit log would record as a fix (Constitution: honest state, no fakes)."""
+    adapter = GitHubAdapter()
+    rec = _SettingsRecorder()
+    monkeypatch.setattr(adapter, "_client", lambda conn: rec)
+
+    with pytest.raises(ValueError, match="no settings-patch remediation"):
+        await adapter.correct(_settings_conn(), _settings_req("secret_scanning"))
+    assert rec.calls == []
