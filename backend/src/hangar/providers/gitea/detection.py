@@ -50,6 +50,7 @@ from hangar.providers.github.detection import (
 # Hangar cannot determine them on Gitea, so it must not guess (Constitution VIII).
 _GITHUB_ONLY_UNKNOWN = (
     "dependabot_alerts",     # no Dependabot / vulnerability-alerts service
+    "dependabot_security_updates",  # no Dependabot security-update service
     "secret_scanning",       # GitHub Advanced Security only
     "code_scanning",         # CodeQL / code-scanning analyses only
     "workflow_permissions",  # no GITHUB_TOKEN least-privilege model

@@ -666,6 +666,82 @@ async def test_dependabot_alerts_unknown_without_read_alerts(respx_mock) -> None
     assert "dependabot_alerts" not in repo.fails
 
 
+# --- dependabot_security_updates is evaluated independently of dependabot_alerts ---
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_security_updates_enabled_passes(respx_mock) -> None:
+    """automated-security-fixes → 200 {enabled: true} ⇒ neither fails nor unknown."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/automated-security-fixes").mock(
+        return_value=httpx.Response(200, json={"enabled": True, "paused": False})
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"s1"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_security_updates" not in repo.fails
+    assert "dependabot_security_updates" not in repo.unknowns
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_security_updates_disabled_fails(respx_mock) -> None:
+    """automated-security-fixes → 200 {enabled: false} ⇒ a real fail."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/automated-security-fixes").mock(
+        return_value=httpx.Response(200, json={"enabled": False, "paused": False})
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"s2"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_security_updates" in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_security_updates_paused_fails(respx_mock) -> None:
+    """enabled-but-paused raises no fix PRs either, so it must not read as a pass."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/automated-security-fixes").mock(
+        return_value=httpx.Response(200, json={"enabled": True, "paused": True})
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"s3"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_security_updates" in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_security_updates_forbidden_is_unknown(respx_mock) -> None:
+    """automated-security-fixes → 403 ⇒ unknown (undeterminable), never fail/pass."""
+    adapter = GitHubAdapter()
+    conn = _app_connection(_rsa_pem())
+    respx_mock.get(f"{API}/repos/acme/hangar/automated-security-fixes").mock(
+        return_value=httpx.Response(403, json={"message": "Forbidden"})
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"s4"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_security_updates" in repo.unknowns
+    assert "dependabot_security_updates" not in repo.fails
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_security_updates_unknown_without_read_alerts(respx_mock) -> None:
+    """No read_alerts capability ⇒ capability-gated unknown, not a guessed fail."""
+    adapter = GitHubAdapter()
+    conn = ProviderConnection(
+        id="gh-narrow", label="gh:acme", provider_type="github", scope="org",
+        auth_mode="App", app_id="123", installation_id=456,
+        granted_capabilities={Capability.read_files},  # no read_alerts
+        has_credential=True, token=_rsa_pem(),
+    )
+    _routes(respx_mock, httpx.Response(200, headers={"ETag": '"s5"'}, json=_REPO_JSON))
+    repo = await adapter.interrogate(conn, "hangar")
+    assert repo is not None
+    assert "dependabot_security_updates" in repo.unknowns
+    assert "dependabot_security_updates" not in repo.fails
+
+
 # --- list_repos degrades honestly on a forbidden listing (code-review fix) ---
 def _pat_conn() -> ProviderConnection:
     return ProviderConnection(
