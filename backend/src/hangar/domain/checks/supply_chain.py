@@ -16,6 +16,17 @@ CHECKS: list[Check] = [
         doc_url="https://docs.github.com/en/code-security/dependabot/dependabot-alerts",
     ),
     Check(
+        # Distinct from `dependabot_alerts`: alerts only *tell* you a vulnerable dependency
+        # is present, security updates are what open the fixing PR. A repo can sit with
+        # alerts on and updates off, accruing known-vulnerable deps that nothing acts on.
+        # GitHub gates this on the dependency graph + alerts, so this check failing while
+        # `dependabot_alerts` also fails is expected — fix alerts first.
+        id="dependabot_security_updates", label="Dependabot security updates enabled", group=_G,
+        tier=RemediationTier.patch, required_capabilities=caps_for_tier(RemediationTier.patch),
+        evidence_fail="Security updates disabled — alerts are raised but no fix PR is opened",
+        doc_url="https://docs.github.com/en/code-security/dependabot/dependabot-security-updates",
+    ),
+    Check(
         # Passes when Dependabot OR Renovate version updates are configured (id kept stable).
         id="dependabot_updates", label="Version updates configured", group=_G,
         tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
@@ -45,5 +56,27 @@ CHECKS: list[Check] = [
         tier=RemediationTier.link, required_capabilities=caps_for_tier(RemediationTier.link),
         evidence_fail="Workflow uses mutable action tags, not pinned SHAs",
         doc_url="https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions",
+    ),
+    Check(
+        # Report-tier: producing/publishing an SBOM is a release-workflow change the operator
+        # authors; Hangar surfaces the gap rather than committing a non-functional stub.
+        id="sbom", label="SBOM generated", group=_G,
+        tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
+        evidence_fail="No SBOM file committed and no SBOM-generating workflow",
+        doc_url="https://www.cisa.gov/sbom",
+    ),
+    Check(
+        # Report-tier: removing committed binaries is a hand cleanup, not a synthesizable PR.
+        id="binary_artifacts", label="No committed binaries", group=_G,
+        tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
+        evidence_fail="Executable/compiled binary artifacts committed to the repo",
+        doc_url="https://github.com/ossf/scorecard/blob/main/docs/checks.md#binary-artifacts",
+    ),
+    Check(
+        # Report-tier: pinning Docker base images by digest is a hand edit across Dockerfiles.
+        id="pinned_deps", label="Docker base images pinned", group=_G,
+        tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
+        evidence_fail="Dockerfile FROM uses a mutable tag, not a @sha256 digest",
+        doc_url="https://docs.docker.com/build/building/best-practices/",
     ),
 ]

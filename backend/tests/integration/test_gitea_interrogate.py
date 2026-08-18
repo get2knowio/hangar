@@ -29,7 +29,8 @@ API = f"{WEB}/api/v1"
 
 # Signals OSS Gitea has no API for — must be unknown, never fail (Constitution VIII).
 _GITHUB_ONLY = {
-    "dependabot_alerts", "secret_scanning", "code_scanning", "workflow_permissions", "two_fa",
+    "dependabot_alerts", "dependabot_security_updates", "secret_scanning", "code_scanning",
+    "workflow_permissions", "two_fa",
 }
 
 
@@ -110,6 +111,38 @@ async def test_interrogate_builds_real_snapshot_and_marks_github_only_unknown(re
     # Every GitHub-only signal is unknown, and none of them leaked into fails.
     assert _GITHUB_ONLY <= set(repo.unknowns)
     assert _GITHUB_ONLY.isdisjoint(repo.fails)
+
+
+@respx.mock(base_url=API, assert_all_called=False)
+async def test_added_checks_detected_cheaply_or_honest_unknown(respx_mock) -> None:
+    """The best-practice additions are detected on Gitea where the reads are already made
+    (contributing, dangerous_workflow, ci_tests_on_pr, sbom, signed_releases, pinned_deps),
+    and honestly ``unknown`` where the deferred adapter doesn't wire the read yet
+    (binary_artifacts, signed_commits) — never a fabricated pass."""
+    workflow = (
+        "on: [pull_request]\njobs:\n  b:\n    steps:\n"
+        "      - uses: anchore/sbom-action@v0\n"
+        "      - uses: sigstore/cosign-installer@v3\n"
+        "      - run: echo ok\n"
+    )
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.gitea/workflows").mock(
+        return_value=httpx.Response(200, json=[
+            {"name": "ci.yml", "path": ".gitea/workflows/ci.yml", "type": "file"}]))
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/.gitea/workflows/ci.yml").mock(
+        return_value=_contents_b64(workflow))
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/CONTRIBUTING.md").mock(
+        return_value=httpx.Response(200, json={"name": "CONTRIBUTING.md", "type": "file"}))
+    respx_mock.get(f"{API}/repos/acme/hangar/contents/Dockerfile").mock(
+        return_value=_contents_b64("FROM python@sha256:" + "a" * 64 + "\n"))
+    _routes(respx_mock, protection=httpx.Response(200, json={"branch_name": "main"}))
+
+    repo = await GiteaAdapter().interrogate(_connection(), "hangar")
+    assert repo is not None
+    for cid in ("contributing", "dangerous_workflow", "ci_tests_on_pr",
+                "sbom", "signed_releases", "pinned_deps"):
+        assert cid not in repo.fails and cid not in repo.unknowns, cid
+    for cid in ("binary_artifacts", "signed_commits"):
+        assert cid in repo.unknowns and cid not in repo.fails, cid
 
 
 @respx.mock(base_url=API, assert_all_called=False)

@@ -26,4 +26,12 @@ CHECKS: list[Check] = [
         tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
         evidence_fail="Default branch not main",
     ),
+    Check(
+        # Link-tier: enforcing signed commits is a branch-protection setting Hangar can't
+        # safely synthesize as a file, so it deep-links to the branch settings.
+        id="signed_commits", label="Signed commits required", group=_G,
+        tier=RemediationTier.link, required_capabilities=caps_for_tier(RemediationTier.link),
+        evidence_fail="Default branch does not require signed commits",
+        doc_url="https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification",
+    ),
 ]

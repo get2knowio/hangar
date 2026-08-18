@@ -37,4 +37,18 @@ CHECKS: list[Check] = [
         tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
         evidence_fail="Default-branch CI is failing or not configured",
     ),
+    Check(
+        # Report-tier: adding a pull_request-triggered CI job is an operator workflow edit.
+        id="ci_tests_on_pr", label="CI runs on pull requests", group=_G,
+        tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
+        evidence_fail="No workflow is triggered on pull_request",
+        doc_url="https://github.com/ossf/scorecard/blob/main/docs/checks.md#ci-tests",
+    ),
+    Check(
+        # Report-tier: signing releases / emitting provenance is a release-workflow change.
+        id="signed_releases", label="Releases signed / provenance", group=_G,
+        tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
+        evidence_fail="No release signing / provenance (cosign, sigstore, SLSA) detected",
+        doc_url="https://slsa.dev/",
+    ),
 ]

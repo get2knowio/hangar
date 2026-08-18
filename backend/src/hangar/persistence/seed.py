@@ -77,19 +77,19 @@ CONNECTIONS: list[_Conn] = [
 
 REPOS: list[_Repo] = [
     dict(id="hola", conn="gh-main", desc="Homelab Compose deployer CLI", openPRs=4, depPRs=2, ci="pass", alerts=dict(c=0, h=0, m=1, l=2), rel=None, fails=["two_fa"], unknowns=[]),
-    dict(id="hangar", conn="gh-main", desc="Fleet control plane (this app)", openPRs=6, depPRs=3, ci="fail", alerts=dict(c=1, h=1, m=0, l=0), rel=9, fails=["cooldown", "license", "branch_protection", "code_scanning", "conventional"], unknowns=["two_fa"]),
+    dict(id="hangar", conn="gh-main", desc="Fleet control plane (this app)", openPRs=6, depPRs=3, ci="fail", alerts=dict(c=1, h=1, m=0, l=0), rel=9, fails=["cooldown", "license", "branch_protection", "code_scanning", "conventional", "sbom", "signed_releases"], unknowns=["two_fa"]),
     dict(id="get2know-web", conn="gh-main", desc="Marketing & docs site", openPRs=2, depPRs=1, ci="pass", alerts=dict(c=0, h=0, m=0, l=1), rel=3, fails=["security_md", "templates"], unknowns=["two_fa"]),
     dict(id="conventional-bot", conn="gh-main", desc="Commit-lint GitHub App", openPRs=1, depPRs=0, ci="pass", alerts=dict(c=0, h=1, m=0, l=0), rel=None, fails=["license", "changelog"], unknowns=["dep_review"]),
-    dict(id="homelab-compose", conn="gh-main", desc="Traefik + services stack", openPRs=3, depPRs=2, ci="fail", alerts=dict(c=0, h=0, m=2, l=1), rel=21, fails=["cooldown", "dependabot_updates", "branch_protection"], unknowns=[]),
+    dict(id="homelab-compose", conn="gh-main", desc="Traefik + services stack", openPRs=3, depPRs=2, ci="fail", alerts=dict(c=0, h=0, m=2, l=1), rel=21, fails=["cooldown", "dependabot_updates", "branch_protection", "pinned_deps", "signed_releases"], unknowns=[]),
     dict(id="release-please-config", conn="gh-main", desc="Shared release config", openPRs=0, depPRs=0, ci="pass", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["two_fa"], unknowns=[]),
-    dict(id="dotfiles", conn="gh-main", desc="Personal shell + editor config", openPRs=0, depPRs=0, ci="none", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["license", "security_md", "codeowners", "dependabot_updates", "branch_protection"], unknowns=["code_scanning", "secret_scanning"]),
+    dict(id="dotfiles", conn="gh-main", desc="Personal shell + editor config", openPRs=0, depPRs=0, ci="none", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["license", "security_md", "codeowners", "dependabot_updates", "branch_protection", "contributing", "sbom", "signed_releases", "signed_commits", "ci_tests_on_pr"], unknowns=["code_scanning", "secret_scanning"]),
     dict(id="ntfy-bridge", conn="gh-main", desc="Notification fan-out worker", openPRs=2, depPRs=1, ci="pass", alerts=dict(c=0, h=0, m=1, l=0), rel=5, fails=["cooldown", "changelog"], unknowns=["two_fa"]),
     dict(id="traefik-conf", conn="gh-main", desc="Edge routing rules", openPRs=1, depPRs=0, ci="none", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["license", "readme", "description"], unknowns=[]),
-    dict(id="scorecard-exp", conn="gh-labs", desc="OSSF Scorecard spike", openPRs=1, depPRs=1, ci="pass", alerts=dict(c=0, h=0, m=1, l=0), rel=None, fails=["license", "security_md", "codeowners", "branch_protection"], unknowns=["two_fa"]),
+    dict(id="scorecard-exp", conn="gh-labs", desc="OSSF Scorecard spike", openPRs=1, depPRs=1, ci="pass", alerts=dict(c=0, h=0, m=1, l=0), rel=None, fails=["license", "security_md", "codeowners", "branch_protection", "binary_artifacts", "dangerous_workflow"], unknowns=["two_fa"]),
     dict(id="webhook-lab", conn="gh-labs", desc="Webhook receiver experiments", openPRs=2, depPRs=1, ci="fail", alerts=dict(c=0, h=1, m=0, l=0), rel=14, fails=["cooldown"], unknowns=[]),
-    dict(id="plex-grotesk", conn="gh-labs", desc="Type tokens playground", openPRs=0, depPRs=0, ci="pass", alerts=dict(c=0, h=0, m=0, l=1), rel=None, fails=["license", "description", "templates"], unknowns=[]),
-    dict(id="backup-scripts", conn="gitea", desc="Restic backup cron", openPRs=0, depPRs=0, ci="none", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["license", "branch_protection", "cooldown"], unknowns=["secret_scanning", "code_scanning", "dep_review"]),
-    dict(id="lan-dns", conn="gitea", desc="Internal DNS records", openPRs=1, depPRs=0, ci="pass", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["readme", "license"], unknowns=["secret_scanning", "code_scanning"]),
+    dict(id="plex-grotesk", conn="gh-labs", desc="Type tokens playground", openPRs=0, depPRs=0, ci="pass", alerts=dict(c=0, h=0, m=0, l=1), rel=None, fails=["license", "description", "templates", "contributing", "sbom"], unknowns=[]),
+    dict(id="backup-scripts", conn="gitea", desc="Restic backup cron", openPRs=0, depPRs=0, ci="none", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["license", "branch_protection", "cooldown", "contributing", "sbom"], unknowns=["secret_scanning", "code_scanning", "dep_review", "binary_artifacts", "signed_commits"]),
+    dict(id="lan-dns", conn="gitea", desc="Internal DNS records", openPRs=1, depPRs=0, ci="pass", alerts=dict(c=0, h=0, m=0, l=0), rel=None, fails=["readme", "license", "signed_releases", "sbom"], unknowns=["secret_scanning", "code_scanning", "binary_artifacts", "signed_commits"]),
 ]
 
 AUDIT: list[_Audit] = [

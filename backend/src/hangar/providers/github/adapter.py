@@ -113,6 +113,7 @@ _PR_FILES = {
     "security_md": "SECURITY.md",
     "codeowners": ".github/CODEOWNERS",
     "templates": ".github/ISSUE_TEMPLATE/bug_report.md",
+    "contributing": "CONTRIBUTING.md",
     "dependabot_updates": ".github/dependabot.yml",
     "cooldown": ".github/dependabot.yml",
     "release_please": "release-please-config.json",
@@ -304,6 +305,7 @@ class GitHubAdapter:
         anchor = {
             "two_fa": "/settings/security",
             "branch_protection": "/settings/branches",
+            "signed_commits": "/settings/branches",
             "secret_scanning": "/settings/security_analysis",
             "code_scanning": "/security/code-scanning",
             "dep_review": "/settings/security_analysis",
@@ -344,6 +346,13 @@ class GitHubAdapter:
         if request.check_id == "dependabot_alerts":
             await gh.rest.repos.async_enable_vulnerability_alerts(owner=owner, repo=repo)
             return CorrectionResult(applied=True, summary="Dependabot alerts enabled")
+        if request.check_id == "dependabot_security_updates":
+            # GitHub gates security updates on the dependency graph + alerts, and enabling
+            # alerts is idempotent, so do that first — otherwise this PATCH silently fails
+            # to converge on a repo that has alerts off.
+            await gh.rest.repos.async_enable_vulnerability_alerts(owner=owner, repo=repo)
+            await gh.rest.repos.async_enable_automated_security_fixes(owner=owner, repo=repo)
+            return CorrectionResult(applied=True, summary="Dependabot security updates enabled")
         # A settings PATCH must converge the finding. Anything not handled here would be a
         # silent no-op that falsely reports success, so refuse it (checks that Hangar
         # cannot auto-apply are modelled as link/report tiers, not settings_patch).
