@@ -85,15 +85,25 @@ markers = [
 
 [tool.coverage.run]
 source = ["hangar"]
-branch = true
+# branch = false is load-bearing, not an oversight. coverage's sys.monitoring core
+# ("sysmon") does not support branch coverage before Python 3.14, so with branch
+# coverage ON a 3.12 run silently falls back to the sys.settrace core. That core does
+# not see code running in the worker thread Starlette's TestClient drives the app
+# from, which makes every FastAPI BackgroundTask invisible — it under-reported
+# services/sync.py by ~15 points and the whole suite by ~7, purely as a measurement
+# artifact (the code runs identically on both interpreters; only the measurement
+# differed). With branch off and sysmon pinned, 3.12 and 3.14 report the same 338
+# uncovered statements, so one floor is meaningful on every matrix leg.
+#
+# COVERAGE_CORE=sysmon is exported from mise.toml — coverage reads the core from the
+# environment only, never from this file. Run coverage through `mise run`, not a bare
+# `pytest --cov`, or you will measure with the wrong core and see a false failure.
+branch = false
 
 [tool.coverage.report]
 # Ratchet only: raise this as coverage rises, never lower it to make a build green.
-# Set to the lowest number measured ACROSS THE CI MATRIX, not the best one: the
-# suite covers 87% on 3.14 but 80% on 3.12 (the divergence is concentrated in
-# services/sync.py and services/webhooks.py). A floor only one leg can meet is a
-# floor that gets deleted the first time the other leg goes red.
-fail_under = 80
+# Measured 89.90% on both 3.12 and 3.14 when this was set.
+fail_under = 89
 show_missing = true
 
 [tool.ruff]

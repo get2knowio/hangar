@@ -14,6 +14,14 @@
 # via PEP 735 [dependency-groups] and is deliberately NOT listed here: splitting
 # tool versions across two lockfiles is the main failure mode of this setup.
 
+[env]
+# Pin coverage's tracing core. coverage only defaults to sys.monitoring on 3.14+, and
+# the older sys.settrace core cannot see code running in the thread Starlette's
+# TestClient drives the app from — it silently hides every FastAPI BackgroundTask and
+# under-reports the suite by ~7 points on 3.12. Pinning it here makes the number the
+# same on every interpreter in the matrix. See the note in backend/pyproject.toml.
+COVERAGE_CORE = "sysmon"
+
 [tools]
 # Must stay equal to the floor of `requires-python` in backend/pyproject.toml.
 # CI additionally exercises the ceiling — see the matrix in .github/workflows/ci.yml.

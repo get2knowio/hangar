@@ -484,13 +484,40 @@ be skipped, xfailed, or made conditional to get a build green:
 | Format | `ruff format --check .` |
 | Lint | `ruff check .` over `src` **and** `tests` |
 | Types | `mypy` over the package, with every extra installed |
-| Tests | `pytest` with the coverage floor, on the floor **and** ceiling interpreter |
+| Tests | `pytest` with the coverage floor, on the floor **and** ceiling interpreter (see [Coverage](#coverage)) |
 
 The backend is exercised on both ends of its declared `requires-python` range (3.12 and
 3.14) via the matrix in `ci.yml`. The stable, version-free `Backend` job is the required
 status check; it passes only if every matrix leg passed, so bumping an interpreter never
-invalidates branch protection. **Every defect fixed in review lands
-with a regression test** (constitution): the required suites cover the `RepoProvider`
+invalidates branch protection.
+
+### Coverage
+
+There is a floor (currently **89%**, in `[tool.coverage.report] fail_under`). It is a
+**ratchet**: raise it as coverage rises, never lower it to make a build green. If your
+change drops coverage below the floor, add the test — don't move the line.
+
+> **Measure coverage through `mise run`, not a bare `pytest --cov`.**
+>
+> `mise.toml` exports `COVERAGE_CORE=sysmon`, and coverage reads its tracing core from the
+> environment only — never from `pyproject.toml`. Run `pytest --cov` directly on Python
+> 3.12 and you get the older `sys.settrace` core, which cannot see code executing in the
+> worker thread Starlette's `TestClient` drives the app from. Every FastAPI
+> `BackgroundTasks` job becomes invisible, `services/sync.py` under-reports by ~15 points
+> and the suite by ~7, and you get a **false** coverage failure on code that ran fine.
+>
+> This is also why `branch = false` is set deliberately: coverage's `sysmon` core does not
+> support branch coverage before Python 3.14, so leaving branch coverage on would silently
+> force 3.12 back onto the core that cannot see those threads. With both settings as they
+> are, 3.12 and 3.14 report the same 338 uncovered statements, so a single floor is
+> meaningful on every leg of the matrix.
+
+A corollary worth knowing when writing tests: work handed to `BackgroundTasks` **does** run
+to completion under `TestClient`, but it runs on that worker thread. If you need to assert
+on its effects, assert on observable state after the request rather than trusting a
+coverage report to tell you the path was exercised.
+
+**Every defect fixed in review lands with a regression test** (constitution): the required suites cover the `RepoProvider`
 contract, remediation idempotency / PR-not-push, forward-auth modes, check evaluation,
 cross-connection isolation, and the conditional-request / 304 path.
 
