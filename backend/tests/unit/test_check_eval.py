@@ -29,7 +29,7 @@ def test_catalog_has_exactly_31_checks() -> None:
 
 def test_groups_are_five_and_cover_all_checks() -> None:
     assert len(GROUPS) == 5
-    grouped = [c for c in all_checks()]
+    grouped = list(all_checks())
     assert {c.group for c in grouped} == set(GROUPS)
     # every catalog check belongs to one of the 5 groups
     assert all(c.group in GROUPS for c in CATALOG.values())

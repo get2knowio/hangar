@@ -9,7 +9,12 @@ def test_overview_stat_tiles_order(client) -> None:
     body = r.json()
     labels = [s["label"] for s in body["stats"]]
     assert labels == [
-        "Open PRs", "Bot PRs", "CI failing", "Sec alerts", "Release pending", "Compliance",
+        "Open PRs",
+        "Bot PRs",
+        "CI failing",
+        "Sec alerts",
+        "Release pending",
+        "Compliance",
     ]
 
 

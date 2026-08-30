@@ -26,7 +26,10 @@ RemediationMap = dict[tuple[str, str, str], RemediationState]
 
 
 def default_policy() -> Policy:
-    """All catalog checks enabled; targets seeded from each check's default (prototype ``buildPolicy``)."""
+    """All catalog checks enabled; targets seeded from each check's default.
+
+    Mirrors the prototype's ``buildPolicy``.
+    """
     entries = [
         PolicyEntry(
             check_id=c.id,

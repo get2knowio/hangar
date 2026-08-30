@@ -48,19 +48,48 @@ def build_overview(
     # `tone` colors the value; `sub_tone` colors the sub-label — both structured so the UI
     # never re-derives color by matching tile titles or parsing the value (Constitution VII).
     stats = [
-        {"label": "Open PRs", "value": str(open_prs), "sub": f"{bot_prs} from bots",
-         "tone": Tone.neutral, "sub_tone": Tone.warn},
-        {"label": "Bot PRs", "value": str(bot_prs), "sub": "awaiting merge",
-         "tone": Tone.neutral, "sub_tone": Tone.neutral},
-        {"label": "CI failing", "value": str(ci_fail), "sub": "on default",
-         "tone": Tone.fail if ci_fail else Tone.neutral, "sub_tone": Tone.neutral},
-        {"label": "Sec alerts", "value": str(alerts_total), "sub": f"{crit} critical",
-         "tone": Tone.fail if crit else Tone.neutral,
-         "sub_tone": Tone.fail if crit else Tone.neutral},
-        {"label": "Release pending", "value": str(rel_pending), "sub": "unreleased",
-         "tone": Tone.neutral, "sub_tone": Tone.neutral},
-        {"label": "Compliance", "value": f"{compliance}%", "sub": "fleet avg",
-         "tone": hygiene_tone(compliance), "sub_tone": Tone.neutral},
+        {
+            "label": "Open PRs",
+            "value": str(open_prs),
+            "sub": f"{bot_prs} from bots",
+            "tone": Tone.neutral,
+            "sub_tone": Tone.warn,
+        },
+        {
+            "label": "Bot PRs",
+            "value": str(bot_prs),
+            "sub": "awaiting merge",
+            "tone": Tone.neutral,
+            "sub_tone": Tone.neutral,
+        },
+        {
+            "label": "CI failing",
+            "value": str(ci_fail),
+            "sub": "on default",
+            "tone": Tone.fail if ci_fail else Tone.neutral,
+            "sub_tone": Tone.neutral,
+        },
+        {
+            "label": "Sec alerts",
+            "value": str(alerts_total),
+            "sub": f"{crit} critical",
+            "tone": Tone.fail if crit else Tone.neutral,
+            "sub_tone": Tone.fail if crit else Tone.neutral,
+        },
+        {
+            "label": "Release pending",
+            "value": str(rel_pending),
+            "sub": "unreleased",
+            "tone": Tone.neutral,
+            "sub_tone": Tone.neutral,
+        },
+        {
+            "label": "Compliance",
+            "value": f"{compliance}%",
+            "sub": "fleet avg",
+            "tone": hygiene_tone(compliance),
+            "sub_tone": Tone.neutral,
+        },
     ]
 
     repo_rows = []
@@ -68,20 +97,22 @@ def build_overview(
         conn = connections.get(r.connection_id)
         badge = _badge_after_colon(conn.label) if conn else r.connection_id
         a = r.alerts
-        repo_rows.append({
-            "id": r.id,
-            "connection_id": r.connection_id,
-            "connection_badge": badge,
-            "description": r.description,
-            "open_prs": r.open_prs,
-            "bot_prs": r.bot_prs,
-            "ci": r.ci_status.value,
-            "license": r.license_spdx,
-            "alerts_total": a.total,
-            "alerts_tone": Tone.fail if a.critical else (Tone.warn if a.high else Tone.neutral),
-            "release_pending_days": r.release_pending_days,
-            "hygiene_pct": hyg[r.id],
-        })
+        repo_rows.append(
+            {
+                "id": r.id,
+                "connection_id": r.connection_id,
+                "connection_badge": badge,
+                "description": r.description,
+                "open_prs": r.open_prs,
+                "bot_prs": r.bot_prs,
+                "ci": r.ci_status.value,
+                "license": r.license_spdx,
+                "alerts_total": a.total,
+                "alerts_tone": Tone.fail if a.critical else (Tone.warn if a.high else Tone.neutral),
+                "release_pending_days": r.release_pending_days,
+                "hygiene_pct": hyg[r.id],
+            }
+        )
 
     feed = _build_feed(repos)
 
@@ -107,29 +138,74 @@ def _build_feed(repos: list[Repo]) -> list[dict]:
     for r in repos:
         if r.alerts.critical > 0:
             n = r.alerts.critical
-            ranked.append((0, {"tag": "Critical", "tone": Tone.fail, "repo_id": r.id,
-                               "connection_id": r.connection_id,
-                               "title": f"{n} critical security alert{'s' if n > 1 else ''}"}))
+            ranked.append(
+                (
+                    0,
+                    {
+                        "tag": "Critical",
+                        "tone": Tone.fail,
+                        "repo_id": r.id,
+                        "connection_id": r.connection_id,
+                        "title": f"{n} critical security alert{'s' if n > 1 else ''}",
+                    },
+                )
+            )
     for r in repos:
         if r.ci_status is CIStatus.fail:
-            ranked.append((1, {"tag": "CI down", "tone": Tone.fail, "repo_id": r.id,
-                               "connection_id": r.connection_id,
-                               "title": "CI failing on default branch"}))
+            ranked.append(
+                (
+                    1,
+                    {
+                        "tag": "CI down",
+                        "tone": Tone.fail,
+                        "repo_id": r.id,
+                        "connection_id": r.connection_id,
+                        "title": "CI failing on default branch",
+                    },
+                )
+            )
     for r in repos:
         if r.release_pending_days is not None and r.release_pending_days >= 14:
-            ranked.append((2, {"tag": "Release", "tone": Tone.warn, "repo_id": r.id,
-                               "connection_id": r.connection_id,
-                               "title": f"{r.release_pending_days}d of unreleased commits"}))
+            ranked.append(
+                (
+                    2,
+                    {
+                        "tag": "Release",
+                        "tone": Tone.warn,
+                        "repo_id": r.id,
+                        "connection_id": r.connection_id,
+                        "title": f"{r.release_pending_days}d of unreleased commits",
+                    },
+                )
+            )
     for r in repos:
         if r.alerts.high > 0:
             n = r.alerts.high
-            ranked.append((3, {"tag": "High alert", "tone": Tone.warn, "repo_id": r.id,
-                               "connection_id": r.connection_id,
-                               "title": f"{n} high-severity alert{'s' if n > 1 else ''}"}))
+            ranked.append(
+                (
+                    3,
+                    {
+                        "tag": "High alert",
+                        "tone": Tone.warn,
+                        "repo_id": r.id,
+                        "connection_id": r.connection_id,
+                        "title": f"{n} high-severity alert{'s' if n > 1 else ''}",
+                    },
+                )
+            )
     for r in repos:
         if r.bot_prs >= 2:
-            ranked.append((4, {"tag": "Bot PRs", "tone": Tone.neutral, "repo_id": r.id,
-                               "connection_id": r.connection_id,
-                               "title": f"{r.bot_prs} bot dependency PRs awaiting merge"}))
+            ranked.append(
+                (
+                    4,
+                    {
+                        "tag": "Bot PRs",
+                        "tone": Tone.neutral,
+                        "repo_id": r.id,
+                        "connection_id": r.connection_id,
+                        "title": f"{r.bot_prs} bot dependency PRs awaiting merge",
+                    },
+                )
+            )
     ranked.sort(key=lambda t: t[0])
     return [item for _, item in ranked[:7]]

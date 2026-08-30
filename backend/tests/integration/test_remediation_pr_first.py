@@ -29,19 +29,28 @@ class _Recorder:
             self.last = getattr(self, "last", {})
             self.last[name] = kwargs
             return self._resp(data() if callable(data) else data)
+
         return _call
 
     @property
     def rest(self):
-        existing = [SimpleNamespace(html_url="https://github.com/o/r/pull/9", number=9)] if self._existing else []
+        existing = (
+            [SimpleNamespace(html_url="https://github.com/o/r/pull/9", number=9)]
+            if self._existing
+            else []
+        )
         return SimpleNamespace(
             pulls=SimpleNamespace(
                 async_list=self._make("pulls.async_list", existing),
-                async_create=self._make("pulls.async_create",
-                                         SimpleNamespace(html_url="https://github.com/o/r/pull/77", number=77)),
+                async_create=self._make(
+                    "pulls.async_create",
+                    SimpleNamespace(html_url="https://github.com/o/r/pull/77", number=77),
+                ),
             ),
             git=SimpleNamespace(
-                async_get_ref=self._make("git.async_get_ref", SimpleNamespace(object_=SimpleNamespace(sha="abc"))),
+                async_get_ref=self._make(
+                    "git.async_get_ref", SimpleNamespace(object_=SimpleNamespace(sha="abc"))
+                ),
                 async_create_ref=self._make("git.async_create_ref"),
             ),
             repos=SimpleNamespace(
@@ -52,15 +61,26 @@ class _Recorder:
 
 def _writable_conn() -> ProviderConnection:
     return ProviderConnection(
-        id="gh", label="gh:acme", provider_type="github", scope="org", auth_mode="App",
-        granted_capabilities={Capability.open_pull_request, Capability.read_files, Capability.deep_link},
-        has_credential=True, token="t",
+        id="gh",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
+        granted_capabilities={
+            Capability.open_pull_request,
+            Capability.read_files,
+            Capability.deep_link,
+        },
+        has_credential=True,
+        token="t",
     )
 
 
 def _req(repo_id="r", check="license"):
     repo = Repo(id=repo_id, connection_id="gh", default_branch="main")
-    return CorrectionRequest(repo=repo, check_id=check, check_label="LICENSE present", kind=RemediationKind.config_pr)
+    return CorrectionRequest(
+        repo=repo, check_id=check, check_label="LICENSE present", kind=RemediationKind.config_pr
+    )
 
 
 async def test_github_open_pr_creates_pr_and_never_writes_default_branch(monkeypatch) -> None:
@@ -108,7 +128,9 @@ async def test_github_adapter_requires_credential() -> None:
 
 
 def test_config_pr_yields_pr_url(client) -> None:
-    r = client.post("/api/v1/repos/gh-main/hangar/checks/license/remediate", json={"kind": "config_pr"})
+    r = client.post(
+        "/api/v1/repos/gh-main/hangar/checks/license/remediate", json={"kind": "config_pr"}
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["pr_url"], "a config_pr correction must surface a PR url"
@@ -122,7 +144,9 @@ def test_remediation_audit_timestamp_is_derived_not_hardcoded(client, monkeypatc
     import hangar.api.repos as repos_api
 
     monkeypatch.setattr(repos_api, "format_relative", lambda dt: "SENTINEL-REL")
-    r = client.post("/api/v1/repos/gh-main/hangar/checks/license/remediate", json={"kind": "config_pr"})
+    r = client.post(
+        "/api/v1/repos/gh-main/hangar/checks/license/remediate", json={"kind": "config_pr"}
+    )
     assert r.status_code == 200
     assert r.json()["audit"]["timestamp"] == "SENTINEL-REL"
 
@@ -135,7 +159,8 @@ def test_adapters_never_force_push() -> None:
     # The GitHub write path performs no force-push API call: scan the whole adapter
     # source for force-push invocation patterns (ignoring prose/docstrings).
     code = "".join(
-        line for line in inspect.getsource(GitHubAdapter).splitlines(keepends=True)
+        line
+        for line in inspect.getsource(GitHubAdapter).splitlines(keepends=True)
         # drop comment-only and obvious docstring prose lines
         if not line.lstrip().startswith("#")
     ).lower()
@@ -172,6 +197,7 @@ class _SettingsRecorder:
         async def _call(**kwargs):
             self.calls.append(name)
             return SimpleNamespace(parsed_data=None)
+
         return _call
 
     @property
@@ -186,16 +212,22 @@ class _SettingsRecorder:
 
 def _settings_conn() -> ProviderConnection:
     return ProviderConnection(
-        id="gh", label="gh:acme", provider_type="github", scope="org", auth_mode="App",
+        id="gh",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
         granted_capabilities={Capability.write_settings, Capability.deep_link},
-        has_credential=True, token="t",
+        has_credential=True,
+        token="t",
     )
 
 
 def _settings_req(check: str) -> CorrectionRequest:
     repo = Repo(id="r", connection_id="gh", default_branch="main")
-    return CorrectionRequest(repo=repo, check_id=check, check_label=check,
-                             kind=RemediationKind.settings_patch)
+    return CorrectionRequest(
+        repo=repo, check_id=check, check_label=check, kind=RemediationKind.settings_patch
+    )
 
 
 async def test_security_updates_patch_enables_alerts_first(monkeypatch) -> None:

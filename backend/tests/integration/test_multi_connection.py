@@ -7,12 +7,15 @@ def test_add_connection_appears_in_providers(client) -> None:
     before = client.get("/api/v1/providers").json()["connections"]
     before_ids = {c["id"] for c in before}
 
-    resp = client.post("/api/v1/providers", json={
-        "provider_type": "github",
-        "label": "gh:extra-org",
-        "scope": "org · 0 repos",
-        "auth_mode": "GitHub App #9000",
-    })
+    resp = client.post(
+        "/api/v1/providers",
+        json={
+            "provider_type": "github",
+            "label": "gh:extra-org",
+            "scope": "org · 0 repos",
+            "auth_mode": "GitHub App #9000",
+        },
+    )
     assert resp.status_code == 201
     card = resp.json()
     assert card["type"] == "GitHub"

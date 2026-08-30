@@ -47,15 +47,20 @@ def test_parse_webhook_normalizes_ci_and_pr_events() -> None:
 
     ci = _adapter.parse_webhook(
         {"X-GitHub-Event": "check_suite"},
-        json.dumps({"repository": {"name": "r"}, "check_suite": {"conclusion": "failure"}}).encode(),
+        json.dumps(
+            {"repository": {"name": "r"}, "check_suite": {"conclusion": "failure"}}
+        ).encode(),
     )
     assert ci is not None and ci.repo_name == "r" and ci.ci_status == "fail"
 
     pr = _adapter.parse_webhook(
         {"X-GitHub-Event": "pull_request"},
         json.dumps(
-            {"repository": {"name": "r"}, "action": "opened",
-             "pull_request": {"user": {"login": "dependabot[bot]"}}}
+            {
+                "repository": {"name": "r"},
+                "action": "opened",
+                "pull_request": {"user": {"login": "dependabot[bot]"}},
+            }
         ).encode(),
     )
     assert pr is not None and pr.pr_delta == 1 and pr.pr_is_bot is True
@@ -68,8 +73,11 @@ def test_parse_webhook_recognizes_renovate_and_humans() -> None:
         return _adapter.parse_webhook(
             {"X-GitHub-Event": "pull_request"},
             json.dumps(
-                {"repository": {"name": "r"}, "action": action,
-                 "pull_request": {"user": {"login": login}}}
+                {
+                    "repository": {"name": "r"},
+                    "action": action,
+                    "pull_request": {"user": {"login": login}},
+                }
             ).encode(),
         )
 

@@ -78,8 +78,9 @@ async def test_demo_interrogate_returns_repo(demo_connection) -> None:
 async def test_demo_correct_config_pr_shape(demo_connection) -> None:
     provider = DemoProvider("github")
     repo = Repo(id="widget", connection_id=demo_connection.id)
-    req = CorrectionRequest(repo=repo, check_id="license", check_label="LICENSE present",
-                            kind=RemediationKind.config_pr)
+    req = CorrectionRequest(
+        repo=repo, check_id="license", check_label="LICENSE present", kind=RemediationKind.config_pr
+    )
     result = await provider.correct(demo_connection, req)
     assert isinstance(result, CorrectionResult)
     assert result.applied is True
@@ -88,8 +89,9 @@ async def test_demo_correct_config_pr_shape(demo_connection) -> None:
 async def test_demo_deep_link_correct_shape(demo_connection) -> None:
     provider = DemoProvider("github")
     repo = Repo(id="widget", connection_id=demo_connection.id)
-    req = CorrectionRequest(repo=repo, check_id="two_fa", check_label="2FA",
-                            kind=RemediationKind.deep_link)
+    req = CorrectionRequest(
+        repo=repo, check_id="two_fa", check_label="2FA", kind=RemediationKind.deep_link
+    )
     result = await provider.correct(demo_connection, req)
     assert result.applied is True
     assert result.deep_link_url is not None

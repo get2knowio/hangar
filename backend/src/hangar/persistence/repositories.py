@@ -52,11 +52,7 @@ async def list_connection_rows_for_base_url(
     removal was the App's last org, so its stored registration is forgotten too.
     """
     return list(
-        (
-            await session.execute(
-                select(ConnectionRow).where(ConnectionRow.base_url == base_url)
-            )
-        )
+        (await session.execute(select(ConnectionRow).where(ConnectionRow.base_url == base_url)))
         .scalars()
         .all()
     )
@@ -97,12 +93,10 @@ async def repo_counts_by_connection(session: AsyncSession) -> dict[str, int]:
     rows = await session.execute(
         select(RepoRow.connection_id, func.count()).group_by(RepoRow.connection_id)
     )
-    return {cid: n for cid, n in rows.all()}
+    return dict(rows.tuples().all())
 
 
-async def get_repo(
-    session: AsyncSession, repo_id: str, connection_id: str
-) -> Repo | None:
+async def get_repo(session: AsyncSession, repo_id: str, connection_id: str) -> Repo | None:
     # Always resolved by the composite (id, connection_id) PK — never by id alone, which
     # would silently pick one of several same-named repos across connections (Constitution I).
     row = await session.get(RepoRow, (repo_id, connection_id))
@@ -162,13 +156,17 @@ async def remediation_map_and_pr_urls_for_repo(
     """State map + PR-url + PR-number overlays for ONE repo (the drill-in path) — a scoped
     query rather than scanning the whole RemediationRow table to render a single repo."""
     rows = (
-        await session.execute(
-            select(RemediationRow).where(
-                RemediationRow.connection_id == connection_id,
-                RemediationRow.repo_id == repo_id,
+        (
+            await session.execute(
+                select(RemediationRow).where(
+                    RemediationRow.connection_id == connection_id,
+                    RemediationRow.repo_id == repo_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     state = {_rem_key(r): RemediationState(r.state) for r in rows}
     pr_urls = {_rem_key(r): r.pr_url for r in rows}
     pr_numbers = {_rem_key(r): r.pr_number for r in rows}
@@ -236,8 +234,14 @@ async def get_audit(session: AsyncSession, audit_id: int) -> AuditLogEntry | Non
     if r is None:
         return None
     return AuditLogEntry(
-        id=r.id, timestamp=r.timestamp, connection_label=r.connection_label, actor=r.actor,
-        repo_id=r.repo_id, check_label=r.check_label, result=r.result, pr_url=r.pr_url,
+        id=r.id,
+        timestamp=r.timestamp,
+        connection_label=r.connection_label,
+        actor=r.actor,
+        repo_id=r.repo_id,
+        check_label=r.check_label,
+        result=r.result,
+        pr_url=r.pr_url,
     )
 
 

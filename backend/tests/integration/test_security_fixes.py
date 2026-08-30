@@ -32,8 +32,10 @@ def test_safe_static_file_blocks_traversal(tmp_path) -> None:
 def test_webhook_refused_without_secret(client) -> None:
     # Default test settings have no HANGAR_WEBHOOK_SECRET → endpoint fails closed (503),
     # never accepting an unsigned mutation.
-    r = client.post("/api/v1/webhooks/gh-main", json={"repository": {"name": "hangar"},
-                                                       "check_suite": {"conclusion": "success"}})
+    r = client.post(
+        "/api/v1/webhooks/gh-main",
+        json={"repository": {"name": "hangar"}, "check_suite": {"conclusion": "success"}},
+    )
     assert r.status_code == 503
     assert r.json()["accepted"] is False
 
@@ -44,12 +46,21 @@ def test_per_connection_webhook_secret_is_used(client) -> None:
     import hmac
     import json
 
-    client.post("/api/v1/providers", json={
-        "provider_type": "github", "label": "gh:hooks", "scope": "org · 0 repos",
-        "credential": "ghp_x", "webhook_secret": "perconn",
-    })
-    cid = next(c["id"] for c in client.get("/api/v1/providers").json()["connections"]
-               if c["label"] == "gh:hooks")
+    client.post(
+        "/api/v1/providers",
+        json={
+            "provider_type": "github",
+            "label": "gh:hooks",
+            "scope": "org · 0 repos",
+            "credential": "ghp_x",
+            "webhook_secret": "perconn",
+        },
+    )
+    cid = next(
+        c["id"]
+        for c in client.get("/api/v1/providers").json()["connections"]
+        if c["label"] == "gh:hooks"
+    )
 
     body = json.dumps(
         {"repository": {"name": "whatever"}, "check_suite": {"conclusion": "success"}}
@@ -57,11 +68,17 @@ def test_per_connection_webhook_secret_is_used(client) -> None:
     good = "sha256=" + hmac.new(b"perconn", body, hashlib.sha256).hexdigest()
     bad = "sha256=" + hmac.new(b"not-it", body, hashlib.sha256).hexdigest()
 
-    ok = client.post(f"/api/v1/webhooks/{cid}", content=body,
-                     headers={"X-Hub-Signature-256": good, "X-GitHub-Event": "check_suite"})
+    ok = client.post(
+        f"/api/v1/webhooks/{cid}",
+        content=body,
+        headers={"X-Hub-Signature-256": good, "X-GitHub-Event": "check_suite"},
+    )
     assert ok.status_code == 200, ok.text  # verified against the per-connection secret
-    nope = client.post(f"/api/v1/webhooks/{cid}", content=body,
-                       headers={"X-Hub-Signature-256": bad, "X-GitHub-Event": "check_suite"})
+    nope = client.post(
+        f"/api/v1/webhooks/{cid}",
+        content=body,
+        headers={"X-Hub-Signature-256": bad, "X-GitHub-Event": "check_suite"},
+    )
     assert nope.status_code == 401
 
 
@@ -73,14 +90,25 @@ def test_webhook_unknown_connection_is_404(client) -> None:
 def test_gitea_webhook_rejected_by_provider_seam(client) -> None:
     """Ingest routes through the connection's provider: Gitea webhooks aren't implemented
     yet, so its adapter fails the verification closed (no GitHub hardwiring in core)."""
-    client.post("/api/v1/providers", json={
-        "provider_type": "gitea", "label": "gitea:hooks", "scope": "user · 0 repos",
-        "webhook_secret": "x",
-    })
-    cid = next(c["id"] for c in client.get("/api/v1/providers").json()["connections"]
-               if c["label"] == "gitea:hooks")
-    r = client.post(f"/api/v1/webhooks/{cid}", content=b"{}",
-                    headers={"X-Gitea-Signature": "whatever", "X-Gitea-Event": "push"})
+    client.post(
+        "/api/v1/providers",
+        json={
+            "provider_type": "gitea",
+            "label": "gitea:hooks",
+            "scope": "user · 0 repos",
+            "webhook_secret": "x",
+        },
+    )
+    cid = next(
+        c["id"]
+        for c in client.get("/api/v1/providers").json()["connections"]
+        if c["label"] == "gitea:hooks"
+    )
+    r = client.post(
+        f"/api/v1/webhooks/{cid}",
+        content=b"{}",
+        headers={"X-Gitea-Signature": "whatever", "X-Gitea-Event": "push"},
+    )
     assert r.status_code == 401
 
 
@@ -95,13 +123,19 @@ def test_webhook_rejects_bad_signature(monkeypatch, client) -> None:
     try:
         body = json.dumps({"repository": {"name": "hangar"}, "pull_request": {}}).encode()
         # wrong signature → 401
-        bad = client.post("/api/v1/webhooks/gh-main", content=body,
-                          headers={"X-Hub-Signature-256": "sha256=deadbeef", "X-GitHub-Event": "pull_request"})
+        bad = client.post(
+            "/api/v1/webhooks/gh-main",
+            content=body,
+            headers={"X-Hub-Signature-256": "sha256=deadbeef", "X-GitHub-Event": "pull_request"},
+        )
         assert bad.status_code == 401
         # correct signature → accepted
         sig = "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()
-        ok = client.post("/api/v1/webhooks/gh-main", content=body,
-                         headers={"X-Hub-Signature-256": sig, "X-GitHub-Event": "pull_request"})
+        ok = client.post(
+            "/api/v1/webhooks/gh-main",
+            content=body,
+            headers={"X-Hub-Signature-256": sig, "X-GitHub-Event": "pull_request"},
+        )
         assert ok.status_code == 200
     finally:
         get_settings().webhook_secret = None
@@ -109,10 +143,15 @@ def test_webhook_rejects_bad_signature(monkeypatch, client) -> None:
 
 # --- Least-privilege capability grant on add_connection ---
 def test_added_connection_is_read_only_by_default(client) -> None:
-    client.post("/api/v1/providers", json={
-        "provider_type": "github", "label": "gh:readonly", "scope": "org · 1 repos",
-        "credential": "ghp_readonly",
-    })
+    client.post(
+        "/api/v1/providers",
+        json={
+            "provider_type": "github",
+            "label": "gh:readonly",
+            "scope": "org · 1 repos",
+            "credential": "ghp_readonly",
+        },
+    )
     cards = client.get("/api/v1/providers").json()["connections"]
     added = next(c for c in cards if c["label"] == "gh:readonly")
     assert added["writes"] is False
@@ -120,10 +159,16 @@ def test_added_connection_is_read_only_by_default(client) -> None:
 
 
 def test_added_connection_writable_only_when_declared(client) -> None:
-    client.post("/api/v1/providers", json={
-        "provider_type": "github", "label": "gh:writer", "scope": "org · 1 repos",
-        "credential": "ghp_writer", "writable": True,
-    })
+    client.post(
+        "/api/v1/providers",
+        json={
+            "provider_type": "github",
+            "label": "gh:writer",
+            "scope": "org · 1 repos",
+            "credential": "ghp_writer",
+            "writable": True,
+        },
+    )
     cards = client.get("/api/v1/providers").json()["connections"]
     added = next(c for c in cards if c["label"] == "gh:writer")
     assert added["writes"] is True
@@ -133,10 +178,15 @@ def test_writable_connection_without_credential_is_rejected(client) -> None:
     """Fail-closed: a writable connection with no credential must be refused (400), not
     created — otherwise remediation would fall back to the demo simulator and fabricate a
     'PR opened' outcome + audit entry for a write that never happened."""
-    r = client.post("/api/v1/providers", json={
-        "provider_type": "github", "label": "gh:nocreds", "scope": "org · 1 repos",
-        "writable": True,  # deliberately no credential
-    })
+    r = client.post(
+        "/api/v1/providers",
+        json={
+            "provider_type": "github",
+            "label": "gh:nocreds",
+            "scope": "org · 1 repos",
+            "writable": True,  # deliberately no credential
+        },
+    )
     assert r.status_code == 400, r.text
     cards = client.get("/api/v1/providers").json()["connections"]
     assert all(c["label"] != "gh:nocreds" for c in cards), "connection must not be created"
@@ -147,6 +197,10 @@ def test_peer_trust_requires_configured_trust() -> None:
     from starlette.requests import Request
 
     settings = Settings(forward_auth="enabled")  # no CIDR, no secret
-    scope = {"type": "http", "headers": [(b"x-hangar-proxy-secret", b"anything")], "client": ("9.9.9.9", 1)}
+    scope = {
+        "type": "http",
+        "headers": [(b"x-hangar-proxy-secret", b"anything")],
+        "client": ("9.9.9.9", 1),
+    }
     req = Request(scope)
     assert _peer_trusted(req, settings) is False  # fail closed when nothing is configured

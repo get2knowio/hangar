@@ -1,4 +1,6 @@
-.git/
+# .git is NOT ignored: hatch-vcs derives the backend version from tag history at
+# build time. It is copied only into the discarded `backend-build` stage, so no
+# git history reaches the published runtime image.
 **/__pycache__/
 **/*.pyc
 **/.venv/

@@ -10,27 +10,39 @@ _G = "Governance"
 
 CHECKS: list[Check] = [
     Check(
-        id="branch_protection", label="Branch protection on default", group=_G,
-        tier=RemediationTier.link, required_capabilities=caps_for_tier(RemediationTier.link),
+        id="branch_protection",
+        label="Branch protection on default",
+        group=_G,
+        tier=RemediationTier.link,
+        required_capabilities=caps_for_tier(RemediationTier.link),
         evidence_fail="No ruleset on `main`",
         doc_url="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches",
     ),
     Check(
-        id="codeowners", label="CODEOWNERS present", group=_G,
-        tier=RemediationTier.pr, required_capabilities=caps_for_tier(RemediationTier.pr),
+        id="codeowners",
+        label="CODEOWNERS present",
+        group=_G,
+        tier=RemediationTier.pr,
+        required_capabilities=caps_for_tier(RemediationTier.pr),
         evidence_fail="CODEOWNERS missing",
         doc_url="https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners",
     ),
     Check(
-        id="default_branch", label="Default branch = main", group=_G,
-        tier=RemediationTier.report, required_capabilities=caps_for_tier(RemediationTier.report),
+        id="default_branch",
+        label="Default branch = main",
+        group=_G,
+        tier=RemediationTier.report,
+        required_capabilities=caps_for_tier(RemediationTier.report),
         evidence_fail="Default branch not main",
     ),
     Check(
         # Link-tier: enforcing signed commits is a branch-protection setting Hangar can't
         # safely synthesize as a file, so it deep-links to the branch settings.
-        id="signed_commits", label="Signed commits required", group=_G,
-        tier=RemediationTier.link, required_capabilities=caps_for_tier(RemediationTier.link),
+        id="signed_commits",
+        label="Signed commits required",
+        group=_G,
+        tier=RemediationTier.link,
+        required_capabilities=caps_for_tier(RemediationTier.link),
         evidence_fail="Default branch does not require signed commits",
         doc_url="https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification",
     ),

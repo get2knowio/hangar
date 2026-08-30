@@ -83,10 +83,14 @@ class Settings(BaseSettings):
     )
 
     # --- session cookie (OIDC mode) ---
-    session_secret: str | None = Field(default=None, description="signing key; else reuses secret_key")
+    session_secret: str | None = Field(
+        default=None, description="signing key; else reuses secret_key"
+    )
     session_cookie_name: str = Field(default="hangar_session")
     session_max_age_seconds: int = Field(default=28800)  # 8h
-    session_cookie_secure: bool = Field(default=True, description="set false only for local http dev")
+    session_cookie_secure: bool = Field(
+        default=True, description="set false only for local http dev"
+    )
 
     # --- crypto (FR-032) ---
     secret_key: str | None = Field(default=None, description="Fernet key for credential encryption")
@@ -111,7 +115,8 @@ class Settings(BaseSettings):
 
     # --- webhooks (FR-033) ---
     webhook_secret: str | None = Field(
-        default=None, description="HMAC secret for inbound provider webhooks; required to accept them"
+        default=None,
+        description="HMAC secret for inbound provider webhooks; required to accept them",
     )
 
     # --- persistence ---
@@ -270,7 +275,10 @@ class Settings(BaseSettings):
     def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
         if not self.trusted_proxy_cidr:
             return []
-        return [ipaddress.ip_network(p.strip(), strict=False) for p in self.trusted_proxy_cidr.split(",")]
+        return [
+            ipaddress.ip_network(p.strip(), strict=False)
+            for p in self.trusted_proxy_cidr.split(",")
+        ]
 
     @property
     def binds_public(self) -> bool:

@@ -38,9 +38,7 @@ def _database_url() -> str:
         return get_settings().effective_database_url
     except Exception:  # pragma: no cover - settings unavailable
         return (
-            os.environ.get("HANGAR_DATABASE_URL")
-            or config.get_main_option("sqlalchemy.url")
-            or ""
+            os.environ.get("HANGAR_DATABASE_URL") or config.get_main_option("sqlalchemy.url") or ""
         )
 
 

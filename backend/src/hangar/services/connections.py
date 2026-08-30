@@ -162,9 +162,7 @@ async def set_repo_allowlist(
     return row.to_domain()
 
 
-async def credential_for_reuse(
-    session: AsyncSession, source_id: str, provider_type: str
-) -> str:
+async def credential_for_reuse(session: AsyncSession, source_id: str, provider_type: str) -> str:
     """Return the decrypted credential of an existing connection, for reuse on a new one.
 
     Fail-closed: the source must exist, be the **same provider type** (a GitHub PAT is
@@ -180,9 +178,7 @@ async def credential_for_reuse(
             f"connection, not {provider_type}"
         )
     if not row.credential_ciphertext:
-        raise ValueError(
-            f"cannot reuse credential from '{source_id}': it has no stored credential"
-        )
+        raise ValueError(f"cannot reuse credential from '{source_id}': it has no stored credential")
     return decrypt(row.credential_ciphertext)
 
 

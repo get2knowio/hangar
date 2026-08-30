@@ -63,13 +63,9 @@ class GiteaAdapter:
     async def _list_repo_objects(self, connection: ProviderConnection) -> list[dict]:
         """Raw repo objects in scope (org listing, falling back to the user's)."""
         async with self._client(connection) as client:
-            data = await client.get(
-                f"/orgs/{connection.owner}/repos", {"limit": 50}
-            )
+            data = await client.get(f"/orgs/{connection.owner}/repos", {"limit": 50})
             if not isinstance(data, list):
-                data = await client.get(
-                    f"/users/{connection.owner}/repos", {"limit": 50}
-                )
+                data = await client.get(f"/users/{connection.owner}/repos", {"limit": 50})
         if data is _FORBIDDEN:
             raise RuntimeError(
                 f"Gitea connection '{connection.id}' cannot list repos for owner "
@@ -127,9 +123,7 @@ class GiteaAdapter:
             # No Gitea settings-patch remediation exists (the patch-tier checks are GitHub-only),
             # and ``write_settings`` is never granted, so the service never sends this. Refuse
             # rather than fake a converged setting (fail-closed, Constitution VIII).
-            raise ValueError(
-                f"no settings-patch remediation for Gitea check '{request.check_id}'"
-            )
+            raise ValueError(f"no settings-patch remediation for Gitea check '{request.check_id}'")
         raise ValueError(f"unknown remediation kind: {request.kind}")
 
     async def _open_pr(
@@ -149,8 +143,11 @@ class GiteaAdapter:
                 for pr in existing:
                     if (pr.get("head") or {}).get("ref") == branch:
                         return CorrectionResult(
-                            applied=True, pr_url=pr.get("html_url"), pr_number=pr.get("number"),
-                            idempotent_hit=True, summary=f"PR #{pr.get('number')} already open",
+                            applied=True,
+                            pr_url=pr.get("html_url"),
+                            pr_number=pr.get("number"),
+                            idempotent_hit=True,
+                            summary=f"PR #{pr.get('number')} already open",
                         )
 
             # Create a fresh branch off the default branch and commit the remediation file
@@ -166,16 +163,25 @@ class GiteaAdapter:
             ).decode()
             await client.post(
                 f"/repos/{owner}/{repo}/contents/{path}",
-                {"content": content, "message": f"chore: {request.check_label} (via Hangar)",
-                 "branch": branch},
+                {
+                    "content": content,
+                    "message": f"chore: {request.check_label} (via Hangar)",
+                    "branch": branch,
+                },
             )
             pr = await client.post(
                 f"/repos/{owner}/{repo}/pulls",
-                {"title": f"{request.check_label} (via Hangar)", "head": branch, "base": base,
-                 "body": "Opened by Hangar — review and merge to remediate this finding."},
+                {
+                    "title": f"{request.check_label} (via Hangar)",
+                    "head": branch,
+                    "base": base,
+                    "body": "Opened by Hangar — review and merge to remediate this finding.",
+                },
             )
         return CorrectionResult(
-            applied=True, pr_url=pr.get("html_url"), pr_number=pr.get("number"),
+            applied=True,
+            pr_url=pr.get("html_url"),
+            pr_number=pr.get("number"),
             summary=f"PR #{pr.get('number')} opened",
         )
 

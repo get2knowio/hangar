@@ -26,9 +26,7 @@ def test_no_postgres_returns_database_url() -> None:
 def test_postgres_host_builds_url_with_defaults() -> None:
     settings = Settings(postgres_host="db", postgres_password="secret")
     assert settings.use_postgres is True
-    assert settings.effective_database_url == (
-        "postgresql+asyncpg://hangar:secret@db:5432/hangar"
-    )
+    assert settings.effective_database_url == ("postgresql+asyncpg://hangar:secret@db:5432/hangar")
 
 
 def test_postgres_honors_custom_port_db_user() -> None:
@@ -39,9 +37,7 @@ def test_postgres_honors_custom_port_db_user() -> None:
         postgres_user="ops",
         postgres_password="pw",
     )
-    assert settings.effective_database_url == (
-        "postgresql+asyncpg://ops:pw@pg.internal:6543/fleet"
-    )
+    assert settings.effective_database_url == ("postgresql+asyncpg://ops:pw@pg.internal:6543/fleet")
 
 
 def test_postgres_password_is_url_encoded() -> None:

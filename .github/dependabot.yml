@@ -16,10 +16,14 @@ updates:
       default-days: 7
       semver-major-days: 14
     groups:
+      # Both production and development are grouped for minor/patch. Majors are
+      # deliberately left ungrouped so each breaking bump arrives as its own
+      # individually reviewable PR, never bundled with (or blocked behind) safe ones.
+      backend-prod:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
       backend-dev:
         dependency-type: "development"
-        # Group only non-breaking updates; major bumps come as individual PRs so a
-        # breaking migration is never bundled with (and blocked behind) safe ones.
         update-types: ["minor", "patch"]
 
   # Frontend — npm, package-lock.json under frontend/.
@@ -32,12 +36,15 @@ updates:
       default-days: 7
       semver-major-days: 14
     groups:
+      # As above: minor/patch grouped for both types, majors (eslint 10,
+      # typescript 7, vite 8, vitest 4, …) stay individual so each can be
+      # evaluated deliberately — several are their own migration (e.g. ESLint
+      # flat-config; the repo uses a legacy .eslintrc on purpose).
+      frontend-prod:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
       frontend-dev:
         dependency-type: "development"
-        # Group only non-breaking updates; major bumps (eslint 10, typescript 7,
-        # vite 8, vitest 4, …) come as individual PRs to be evaluated deliberately —
-        # several are their own migration (e.g. ESLint flat-config; the repo uses a
-        # legacy .eslintrc on purpose).
         update-types: ["minor", "patch"]
 
   # GitHub Actions used by the workflows in .github/workflows/.

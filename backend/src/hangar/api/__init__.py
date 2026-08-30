@@ -1,5 +1,7 @@
 """FastAPI routers — the OpenAPI surface (one module per screen domain)."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from hangar.api import catalog, fleet, providers, repos, system

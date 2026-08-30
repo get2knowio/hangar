@@ -36,18 +36,20 @@ async def catalog(session: AsyncSession = Depends(session_dep)) -> dict:
             passes = sum(
                 1 for r in repos if effective_status(r, c.id, remediations) is FindingStatus.passing
             )
-            checks.append({
-                "id": c.id,
-                "label": c.label,
-                "tier": c.tier.value,
-                "tier_label": tier_label(c.tier),
-                "enabled": enabled,
-                "has_target": c.has_target,
-                "target": policy.target(c.id),
-                "pass_count": passes,
-                "repo_count": total_repos,
-                "doc_url": c.doc_url,
-            })
+            checks.append(
+                {
+                    "id": c.id,
+                    "label": c.label,
+                    "tier": c.tier.value,
+                    "tier_label": tier_label(c.tier),
+                    "enabled": enabled,
+                    "has_target": c.has_target,
+                    "target": policy.target(c.id),
+                    "pass_count": passes,
+                    "repo_count": total_repos,
+                    "doc_url": c.doc_url,
+                }
+            )
         groups.append({"group": g, "checks": checks})
 
     return {
@@ -70,9 +72,7 @@ class PolicyPatch(BaseModel):
 
 
 @router.patch("/policy")
-async def patch_policy(
-    patch: PolicyPatch, session: AsyncSession = Depends(session_dep)
-) -> dict:
+async def patch_policy(patch: PolicyPatch, session: AsyncSession = Depends(session_dep)) -> dict:
     policy = await repo_store.get_policy(session)
     entry = policy.entry(patch.check_id)
     if entry is None:

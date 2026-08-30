@@ -49,12 +49,12 @@ from hangar.providers.github.detection import (
 # Signals GitHub exposes but OSS Gitea has no API for. Always reported as ``unknown`` —
 # Hangar cannot determine them on Gitea, so it must not guess (Constitution VIII).
 _GITHUB_ONLY_UNKNOWN = (
-    "dependabot_alerts",     # no Dependabot / vulnerability-alerts service
+    "dependabot_alerts",  # no Dependabot / vulnerability-alerts service
     "dependabot_security_updates",  # no Dependabot security-update service
-    "secret_scanning",       # GitHub Advanced Security only
-    "code_scanning",         # CodeQL / code-scanning analyses only
+    "secret_scanning",  # GitHub Advanced Security only
+    "code_scanning",  # CodeQL / code-scanning analyses only
     "workflow_permissions",  # no GITHUB_TOKEN least-privilege model
-    "two_fa",                # no org-wide 2FA-required enforcement flag
+    "two_fa",  # no org-wide 2FA-required enforcement flag
 )
 
 # Determinable on Gitea in principle, but not yet wired in this designed-for adapter: the
@@ -73,16 +73,32 @@ _FILE_CHECKS = {
     "readme": ["README.md", "README.rst", "README"],
     "license": ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"],
     "security_md": ["SECURITY.md", ".github/SECURITY.md"],
-    "contributing": ["CONTRIBUTING.md", ".gitea/CONTRIBUTING.md",
-                     ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"],
+    "contributing": [
+        "CONTRIBUTING.md",
+        ".gitea/CONTRIBUTING.md",
+        ".github/CONTRIBUTING.md",
+        "docs/CONTRIBUTING.md",
+    ],
     "codeowners": ["CODEOWNERS", ".gitea/CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
     "changelog": ["CHANGELOG.md", "CHANGELOG"],
-    "lockfile": ["poetry.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-                 "bun.lock", "bun.lockb", "uv.lock", "Cargo.lock"],
+    "lockfile": [
+        "poetry.lock",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "bun.lock",
+        "bun.lockb",
+        "uv.lock",
+        "Cargo.lock",
+    ],
     "release_please": ["release-please-config.json", ".release-please-manifest.json"],
-    "templates": [".gitea/ISSUE_TEMPLATE/config.yml", ".gitea/ISSUE_TEMPLATE",
-                  ".gitea/PULL_REQUEST_TEMPLATE.md", ".github/ISSUE_TEMPLATE",
-                  ".github/PULL_REQUEST_TEMPLATE.md"],
+    "templates": [
+        ".gitea/ISSUE_TEMPLATE/config.yml",
+        ".gitea/ISSUE_TEMPLATE",
+        ".gitea/PULL_REQUEST_TEMPLATE.md",
+        ".github/ISSUE_TEMPLATE",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+    ],
     "dependabot_updates": _DEPENDABOT_CONFIG_FILES + _RENOVATE_CONFIG_FILES,
 }
 
@@ -116,9 +132,16 @@ async def interrogate_repo(
     if default_branch != "main":
         fails.append("default_branch")
 
-    (dyn_fails, dyn_unknowns, open_prs, bot_prs, ci, release_pending, pulls, has_topics) = (
-        await _dynamic_checks(client, owner, repo_ref, default_branch, granted)
-    )
+    (
+        dyn_fails,
+        dyn_unknowns,
+        open_prs,
+        bot_prs,
+        ci,
+        release_pending,
+        pulls,
+        has_topics,
+    ) = await _dynamic_checks(client, owner, repo_ref, default_branch, granted)
     # "Description & topics set" — both are required (matches the catalog evidence string).
     if not (description and has_topics):
         fails.append("description")
@@ -201,9 +224,9 @@ async def _dynamic_checks(
         # cooldown is keyed off the update-bot config so a repo with no bot fails once.
         if statuses.get("dependabot_updates") == "unknown":
             unknowns.append("cooldown")
-        elif statuses.get("dependabot_updates") == "absent":
-            fails.append("cooldown")
-        elif not await _has_cooldown(client, owner, repo_ref):
+        elif statuses.get("dependabot_updates") == "absent" or not await _has_cooldown(
+            client, owner, repo_ref
+        ):
             fails.append("cooldown")
 
         # pinned_deps: committed Dockerfile base image(s) pinned by @sha256 digest.
@@ -221,9 +244,7 @@ async def _dynamic_checks(
         if not can_settings:
             unknowns.append("branch_protection")
             return
-        prot = await client.get(
-            f"/repos/{owner}/{repo_ref}/branch_protections/{default_branch}"
-        )
+        prot = await client.get(f"/repos/{owner}/{repo_ref}/branch_protections/{default_branch}")
         if prot is _FORBIDDEN:
             unknowns.append("branch_protection")
         elif prot is _NOT_FOUND:
@@ -238,8 +259,15 @@ async def _dynamic_checks(
     async def _workflows_group() -> None:
         nonlocal sbom_wf, signing_wf
         if not can_files:
-            unknowns.extend(["dep_review", "conventional", "actions_pinned_sha",
-                             "dangerous_workflow", "ci_tests_on_pr"])
+            unknowns.extend(
+                [
+                    "dep_review",
+                    "conventional",
+                    "actions_pinned_sha",
+                    "dangerous_workflow",
+                    "ci_tests_on_pr",
+                ]
+            )
             return
         texts = await _workflow_texts(client, owner, repo_ref)
         refs = [r for t in texts for r in _extract_refs(t)]
@@ -410,20 +438,20 @@ async def _pull_data(client: GiteaClient, owner: str, repo: str) -> tuple[int, i
     details: list[dict] = []
     for pr in data[:_PR_DETAIL_CAP]:
         login = (pr.get("user") or {}).get("login")
-        details.append({
-            "title": pr.get("title") or "",
-            "number": pr.get("number"),
-            "url": pr.get("html_url"),
-            "kind": pr_kind(login),
-            "created_at": pr.get("created_at"),
-            "draft": bool(pr.get("draft")),
-        })
+        details.append(
+            {
+                "title": pr.get("title") or "",
+                "number": pr.get("number"),
+                "url": pr.get("html_url"),
+                "kind": pr_kind(login),
+                "created_at": pr.get("created_at"),
+                "draft": bool(pr.get("draft")),
+            }
+        )
     return len(data), bot, details
 
 
-async def _ci_status(
-    client: GiteaClient, owner: str, repo: str, branch: str
-) -> CIStatus:
+async def _ci_status(client: GiteaClient, owner: str, repo: str, branch: str) -> CIStatus:
     """Default-branch CI from Gitea's combined commit status (``state`` field)."""
     data = await client.get(f"/repos/{owner}/{repo}/commits/{branch}/status")
     if not isinstance(data, dict):

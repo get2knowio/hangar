@@ -130,7 +130,8 @@ class SyncService:
                 until = self._record_failure(connection_id)
                 log.warning(
                     "sync.connection_failed",
-                    connection=connection_id, error=str(exc),
+                    connection=connection_id,
+                    error=str(exc),
                     fail_streak=self._fail_streak[connection_id],
                     backoff_until=until.isoformat(),
                     note="serving last good snapshots; backing off",
@@ -162,8 +163,13 @@ class SyncService:
                     await session.commit()
                     updated += 1
                 except Exception as exc:  # noqa: BLE001 - resilience boundary (one repo)
-                    log.warning("sync.repo_failed", connection=connection_id, repo=ref,
-                                error=str(exc), note="keeping last good snapshot for this repo")
+                    log.warning(
+                        "sync.repo_failed",
+                        connection=connection_id,
+                        repo=ref,
+                        error=str(exc),
+                        note="keeping last good snapshot for this repo",
+                    )
                     await session.rollback()
 
             try:
@@ -190,8 +196,10 @@ class SyncService:
         row.bot_prs = snapshot.bot_prs
         row.ci_status = snapshot.ci_status.value
         row.alerts = {
-            "critical": snapshot.alerts.critical, "high": snapshot.alerts.high,
-            "moderate": snapshot.alerts.moderate, "low": snapshot.alerts.low,
+            "critical": snapshot.alerts.critical,
+            "high": snapshot.alerts.high,
+            "moderate": snapshot.alerts.moderate,
+            "low": snapshot.alerts.low,
         }
         row.release_pending_days = snapshot.release_pending_days
         row.fails = snapshot.fails
@@ -209,7 +217,8 @@ class SyncService:
             until = self._backoff_until.get(connection.id)
             if until is not None and until > now:
                 log.info(
-                    "sync.skip_backoff", connection=connection.id,
+                    "sync.skip_backoff",
+                    connection=connection.id,
                     backoff_until=until.isoformat(),
                     fail_streak=self._fail_streak.get(connection.id, 0),
                 )
@@ -227,8 +236,13 @@ class SyncService:
         # double the provider load and race on snapshot writes). A late run within one
         # interval still fires; older misfires are dropped.
         scheduler.add_job(
-            self.sync_all, "interval", seconds=interval, id="poll-all",
-            max_instances=1, coalesce=True, misfire_grace_time=interval,
+            self.sync_all,
+            "interval",
+            seconds=interval,
+            id="poll-all",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=interval,
         )
         scheduler.start()
         log.info("sync.scheduler_started", interval_seconds=interval)

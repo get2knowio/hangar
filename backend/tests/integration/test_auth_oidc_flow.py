@@ -73,8 +73,13 @@ def _jwks(key: rsa.RSAPrivateKey) -> dict:
 def _id_token(key: rsa.RSAPrivateKey, nonce: str, claims: dict | None = None) -> str:
     now = int(time.time())
     payload = {
-        "iss": ISSUER, "aud": CLIENT_ID, "sub": "user-123",
-        "email": "alice@example.com", "iat": now, "exp": now + 3600, "nonce": nonce,
+        "iss": ISSUER,
+        "aud": CLIENT_ID,
+        "sub": "user-123",
+        "email": "alice@example.com",
+        "iat": now,
+        "exp": now + 3600,
+        "nonce": nonce,
     }
     if claims:
         payload.update(claims)
@@ -105,10 +110,15 @@ def test_full_oidc_login_flow_admits_and_sets_session(oidc_app, keypair) -> None
     with respx.mock(assert_all_called=False) as router:
         state, nonce = _drive_login(oidc_app, keypair_router(router, keypair))
         router.post(f"{ISSUER}/token").mock(
-            return_value=httpx.Response(200, json={
-                "access_token": "at", "token_type": "Bearer",
-                "id_token": _id_token(keypair, nonce), "expires_in": 3600,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "access_token": "at",
+                    "token_type": "Bearer",
+                    "id_token": _id_token(keypair, nonce),
+                    "expires_in": 3600,
+                },
+            )
         )
         r = oidc_app.get(f"/auth/callback?code=abc&state={state}", follow_redirects=False)
         assert r.status_code == 303

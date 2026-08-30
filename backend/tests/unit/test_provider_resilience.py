@@ -12,9 +12,14 @@ from hangar.providers.github.adapter import GitHubAdapter
 
 def _token_connection() -> ProviderConnection:
     return ProviderConnection(
-        id="gh-main", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="token", granted_capabilities={Capability.read_files},
-        has_credential=True, token="ghp_fake_token",
+        id="gh-main",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="token",
+        granted_capabilities={Capability.read_files},
+        has_credential=True,
+        token="ghp_fake_token",
     )
 
 

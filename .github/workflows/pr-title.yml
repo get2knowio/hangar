@@ -7,6 +7,11 @@ on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened]
 
+# Re-titling a PR supersedes the in-flight check for that PR.
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: read
 

@@ -5,6 +5,7 @@ Revises: b7e1c0ffee01
 Create Date: 2026-06-23 00:10:00.000000
 
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -13,16 +14,16 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'c2d3e4f5a6b7'
-down_revision: str | None = 'b7e1c0ffee01'
+revision: str = "c2d3e4f5a6b7"
+down_revision: str | None = "b7e1c0ffee01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column('connections', sa.Column('owner', sa.String(length=128), nullable=True))
+    op.add_column("connections", sa.Column("owner", sa.String(length=128), nullable=True))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('connections') as batch_op:
-        batch_op.drop_column('owner')
+    with op.batch_alter_table("connections") as batch_op:
+        batch_op.drop_column("owner")

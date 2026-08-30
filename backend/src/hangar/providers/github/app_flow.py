@@ -122,7 +122,7 @@ def _autosubmit_form(action: str, manifest: dict) -> str:
         '<body onload="document.forms[0].submit()">'
         f'<form method="post" action="{html_escape(action, quote=True)}">'
         f'<input type="hidden" name="manifest" value="{payload}">'
-        "<noscript><button type=\"submit\">Continue to GitHub</button></noscript>"
+        '<noscript><button type="submit">Continue to GitHub</button></noscript>'
         "</form></body></html>"
     )
 
@@ -243,9 +243,7 @@ async def _resolve_installation(
             AppInstallationAuthStrategy(app_id, pem, int(installation_id)), base_url=api_base
         )
         repos = (
-            await inst_gh.arequest(
-                "GET", "/installation/repositories", params={"per_page": 100}
-            )
+            await inst_gh.arequest("GET", "/installation/repositories", params={"per_page": 100})
         ).json()
         allowlist = [r["name"] for r in (repos.get("repositories") or [])]
     return owner, allowlist
@@ -262,7 +260,11 @@ async def app_installed(
 ) -> Response:
     """App ``setup_url``: create the connection from the real installation, then return to SPA."""
     saved = request.session.get(_SESSION_KEY) or {}
-    if not saved.get("state") or not state or not secrets.compare_digest(str(saved["state"]), state):
+    if (
+        not saved.get("state")
+        or not state
+        or not secrets.compare_digest(str(saved["state"]), state)
+    ):
         return _reject("state mismatch")
     web = str(saved["base_url"])
 
@@ -327,9 +329,7 @@ async def _uninstall_one_installation(
         status = getattr(getattr(exc, "response", None), "status_code", None)
         if status == 404:  # already uninstalled — idempotent success
             return True, None
-        log.warning(
-            "github_app.uninstall_one_failed", installation=installation_id, error=str(exc)
-        )
+        log.warning("github_app.uninstall_one_failed", installation=installation_id, error=str(exc))
         return False, html_url
 
 

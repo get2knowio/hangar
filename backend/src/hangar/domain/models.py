@@ -31,10 +31,10 @@ class Capability(StrEnum):
 
 
 class RemediationTier(StrEnum):
-    patch = "patch"          # scoped settings PATCH
-    pr = "pr"                # config change delivered as a PR (never push)
-    link = "link"            # deep-link to the provider UI
-    report = "report"        # surface only
+    patch = "patch"  # scoped settings PATCH
+    pr = "pr"  # config change delivered as a PR (never push)
+    link = "link"  # deep-link to the provider UI
+    report = "report"  # surface only
 
 
 # Canonical tier → UI badge label (single source of truth; matches the prototype).
@@ -84,8 +84,8 @@ class FindingStatus(StrEnum):
     passing = "pass"
     fail = "fail"
     unknown = "unknown"
-    pending = "pending"      # a Hangar-authored PR is open for this finding
-    working = "working"      # correction submitting
+    pending = "pending"  # a Hangar-authored PR is open for this finding
+    working = "working"  # correction submitting
     suppressed = "suppressed"  # opted out for this repo via .hangar.json — not scored
 
 
@@ -298,7 +298,7 @@ class AuditLogEntry(BaseModel):
     id: int | None = None
     timestamp: datetime
     connection_label: str  # denormalized: retained after connection removal
-    actor: str             # always non-null (proxy identity or HANGAR_OPERATOR)
+    actor: str  # always non-null (proxy identity or HANGAR_OPERATOR)
     repo_id: str
     check_label: str
     result: str

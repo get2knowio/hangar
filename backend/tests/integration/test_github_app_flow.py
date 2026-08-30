@@ -201,8 +201,13 @@ def test_manifest_public_when_env_set(monkeypatch) -> None:
 def test_dotcom_flow_creates_connection(gh_client, app_pem) -> None:
     with respx.mock(assert_all_called=False) as router:
         r = _drive_flow(
-            gh_client, router, base_url="https://github.com", api="https://api.github.com",
-            pem=app_pem, owner="get2knowio", selection="all",
+            gh_client,
+            router,
+            base_url="https://github.com",
+            api="https://api.github.com",
+            pem=app_pem,
+            owner="get2knowio",
+            selection="all",
         )
     assert r.status_code == 303
     conn_id = _connected_id(r)
@@ -224,8 +229,13 @@ def test_dotcom_flow_creates_connection(gh_client, app_pem) -> None:
 def test_selected_repos_become_allowlist(gh_client, app_pem) -> None:
     with respx.mock(assert_all_called=False) as router:
         r = _drive_flow(
-            gh_client, router, base_url="https://github.com", api="https://api.github.com",
-            pem=app_pem, owner="acme", selection="selected",
+            gh_client,
+            router,
+            base_url="https://github.com",
+            api="https://api.github.com",
+            pem=app_pem,
+            owner="acme",
+            selection="selected",
         )
     assert r.status_code == 303
     conn = _card(gh_client, _connected_id(r))
@@ -271,8 +281,13 @@ def test_app_registration_stored_encrypted(gh_client, app_pem) -> None:
 
     with respx.mock(assert_all_called=False) as router:
         _drive_flow(
-            gh_client, router, base_url="https://github.com", api="https://api.github.com",
-            pem=app_pem, owner="x", selection="all",
+            gh_client,
+            router,
+            base_url="https://github.com",
+            api="https://api.github.com",
+            pem=app_pem,
+            owner="x",
+            selection="all",
         )
     import asyncio
 
@@ -293,8 +308,14 @@ def test_second_connect_reuses_existing_app(gh_client, app_pem) -> None:
     """A second Connect on the same host skips creation and jumps straight to install."""
     with respx.mock(assert_all_called=False) as router:
         _drive_flow(
-            gh_client, router, base_url="https://github.com", api="https://api.github.com",
-            pem=app_pem, owner="first", selection="all", install_id=1,
+            gh_client,
+            router,
+            base_url="https://github.com",
+            api="https://api.github.com",
+            pem=app_pem,
+            owner="first",
+            selection="all",
+            install_id=1,
         )
         # Now /new should 303 straight to the install URL (no manifest form).
         r = gh_client.get(
@@ -349,8 +370,14 @@ def test_remove_last_org_uninstalls_and_returns_delete_link(gh_client, app_pem) 
     the delete-App deep link (GitHub has no delete-App API)."""
     with respx.mock(assert_all_called=False) as router:
         r = _drive_flow(
-            gh_client, router, base_url="https://github.com", api="https://api.github.com",
-            pem=app_pem, owner="get2knowio", selection="all", install_id=42,
+            gh_client,
+            router,
+            base_url="https://github.com",
+            api="https://api.github.com",
+            pem=app_pem,
+            owner="get2knowio",
+            selection="all",
+            install_id=42,
         )
         conn_id = _connected_id(r)
         _stub_uninstall_one(router, "https://api.github.com", 42)
@@ -376,12 +403,23 @@ def test_remove_one_org_keeps_the_app_for_siblings(gh_client, app_pem) -> None:
     api = "https://api.github.com"
     with respx.mock(assert_all_called=False) as router:
         r_a = _drive_flow(
-            gh_client, router, base_url="https://github.com", api=api,
-            pem=app_pem, owner="get2knowio", selection="all", install_id=42,
+            gh_client,
+            router,
+            base_url="https://github.com",
+            api=api,
+            pem=app_pem,
+            owner="get2knowio",
+            selection="all",
+            install_id=42,
         )
         conn_a = _connected_id(r_a)
         r_b = _install_again(
-            gh_client, router, base_url="https://github.com", api=api, owner="acme", install_id=43,
+            gh_client,
+            router,
+            base_url="https://github.com",
+            api=api,
+            owner="acme",
+            install_id=43,
         )
         conn_b = _connected_id(r_b)
 
@@ -405,8 +443,14 @@ def test_remove_tolerates_already_uninstalled(gh_client, app_pem) -> None:
     """A 404 on DELETE (installation already gone) still counts as uninstalled — idempotent."""
     with respx.mock(assert_all_called=False) as router:
         r = _drive_flow(
-            gh_client, router, base_url="https://github.com", api="https://api.github.com",
-            pem=app_pem, owner="acme", selection="all", install_id=7,
+            gh_client,
+            router,
+            base_url="https://github.com",
+            api="https://api.github.com",
+            pem=app_pem,
+            owner="acme",
+            selection="all",
+            install_id=7,
         )
         conn_id = _connected_id(r)
         _stub_uninstall_one(router, "https://api.github.com", 7, delete_status=404)

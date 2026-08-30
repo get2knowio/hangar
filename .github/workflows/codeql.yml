@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: "23 6 * * 1" # weekly, Monday 06:23 UTC
 
+# One analysis per ref; a superseded push does not keep burning a runner.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

@@ -19,29 +19,46 @@ from hangar.providers.gitea.adapter import GiteaAdapter
 
 def _contents_b64(text: str) -> httpx.Response:
     """A Gitea contents-API response carrying base64 file content (as _read_text expects)."""
-    return httpx.Response(200, json={
-        "type": "file", "encoding": "base64",
-        "content": base64.b64encode(text.encode()).decode(),
-    })
+    return httpx.Response(
+        200,
+        json={
+            "type": "file",
+            "encoding": "base64",
+            "content": base64.b64encode(text.encode()).decode(),
+        },
+    )
+
 
 WEB = "https://gitea.example.com"
 API = f"{WEB}/api/v1"
 
 # Signals OSS Gitea has no API for — must be unknown, never fail (Constitution VIII).
 _GITHUB_ONLY = {
-    "dependabot_alerts", "dependabot_security_updates", "secret_scanning", "code_scanning",
-    "workflow_permissions", "two_fa",
+    "dependabot_alerts",
+    "dependabot_security_updates",
+    "secret_scanning",
+    "code_scanning",
+    "workflow_permissions",
+    "two_fa",
 }
 
 
 def _connection() -> ProviderConnection:
     return ProviderConnection(
-        id="gitea-main", label="gitea:acme", provider_type="gitea", scope="org",
-        auth_mode="Scoped token", base_url=WEB, owner="acme",
+        id="gitea-main",
+        label="gitea:acme",
+        provider_type="gitea",
+        scope="org",
+        auth_mode="Scoped token",
+        base_url=WEB,
+        owner="acme",
         granted_capabilities={
-            Capability.read_settings, Capability.read_files, Capability.deep_link,
+            Capability.read_settings,
+            Capability.read_files,
+            Capability.deep_link,
         },
-        has_credential=True, token="pat-secret",
+        has_credential=True,
+        token="pat-secret",
     )
 
 
@@ -60,18 +77,35 @@ def _routes(mock: respx.MockRouter, *, protection: httpx.Response) -> None:
     """Register Gitea endpoints (specific first, catch-all 404 last — first-match-wins)."""
     mock.get(f"{API}/repos/acme/hangar").mock(return_value=httpx.Response(200, json=_REPO_JSON))
     mock.get(f"{API}/repos/acme/hangar/topics").mock(
-        return_value=httpx.Response(200, json={"topics": ["homelab"]}))
+        return_value=httpx.Response(200, json={"topics": ["homelab"]})
+    )
     mock.get(f"{API}/repos/acme/hangar/branch_protections/main").mock(return_value=protection)
     mock.get(url__regex=r".*/repos/acme/hangar/pulls(\?.*)?$").mock(
-        return_value=httpx.Response(200, json=[
-            {"number": 7, "title": "Update deps", "html_url": f"{WEB}/acme/hangar/pulls/7",
-             "user": {"login": "renovate[bot]"}, "created_at": "2026-01-02T00:00:00Z",
-             "draft": False},
-            {"number": 6, "title": "Add feature", "html_url": f"{WEB}/acme/hangar/pulls/6",
-             "user": {"login": "octocat"}, "created_at": "2026-01-01T00:00:00Z", "draft": False},
-        ]))
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "number": 7,
+                    "title": "Update deps",
+                    "html_url": f"{WEB}/acme/hangar/pulls/7",
+                    "user": {"login": "renovate[bot]"},
+                    "created_at": "2026-01-02T00:00:00Z",
+                    "draft": False,
+                },
+                {
+                    "number": 6,
+                    "title": "Add feature",
+                    "html_url": f"{WEB}/acme/hangar/pulls/6",
+                    "user": {"login": "octocat"},
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "draft": False,
+                },
+            ],
+        )
+    )
     mock.get(f"{API}/repos/acme/hangar/commits/main/status").mock(
-        return_value=httpx.Response(200, json={"state": "success"}))
+        return_value=httpx.Response(200, json={"state": "success"})
+    )
     _present_file_routes(mock)
     # Everything else (other contents, workflows dirs, releases/latest) → 404 absent.
     mock.route().mock(return_value=httpx.Response(404, json={"message": "Not Found"}))
@@ -89,16 +123,16 @@ async def test_interrogate_builds_real_snapshot_and_marks_github_only_unknown(re
     assert repo.description == "Fleet control plane"
 
     # File-presence checks really evaluated: present passes, absent fails.
-    assert "license" not in repo.fails       # LICENSE present
-    assert "readme" not in repo.fails        # README.md present
-    assert "security_md" in repo.fails       # absent → fail
-    assert repo.license_spdx is None         # Gitea has no SPDX id to surface
+    assert "license" not in repo.fails  # LICENSE present
+    assert "readme" not in repo.fails  # README.md present
+    assert "security_md" in repo.fails  # absent → fail
+    assert repo.license_spdx is None  # Gitea has no SPDX id to surface
 
     # Settings + metadata + workflow checks.
-    assert "branch_protection" not in repo.fails     # protection present
-    assert "description" not in repo.fails            # description + topics both set
+    assert "branch_protection" not in repo.fails  # protection present
+    assert "description" not in repo.fails  # description + topics both set
     assert "dep_review" in repo.fails and "conventional" in repo.fails  # no workflows
-    assert "actions_pinned_sha" not in repo.fails     # nothing to pin → vacuously ok
+    assert "actions_pinned_sha" not in repo.fails  # nothing to pin → vacuously ok
 
     # CI from the combined commit status.
     assert repo.ci_status is CIStatus.passing
@@ -109,7 +143,7 @@ async def test_interrogate_builds_real_snapshot_and_marks_github_only_unknown(re
     assert {p.kind for p in repo.pull_requests} == {"renovate", "human"}
 
     # Every GitHub-only signal is unknown, and none of them leaked into fails.
-    assert _GITHUB_ONLY <= set(repo.unknowns)
+    assert set(repo.unknowns) >= _GITHUB_ONLY
     assert _GITHUB_ONLY.isdisjoint(repo.fails)
 
 
@@ -126,20 +160,31 @@ async def test_added_checks_detected_cheaply_or_honest_unknown(respx_mock) -> No
         "      - run: echo ok\n"
     )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.gitea/workflows").mock(
-        return_value=httpx.Response(200, json=[
-            {"name": "ci.yml", "path": ".gitea/workflows/ci.yml", "type": "file"}]))
+        return_value=httpx.Response(
+            200, json=[{"name": "ci.yml", "path": ".gitea/workflows/ci.yml", "type": "file"}]
+        )
+    )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.gitea/workflows/ci.yml").mock(
-        return_value=_contents_b64(workflow))
+        return_value=_contents_b64(workflow)
+    )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/CONTRIBUTING.md").mock(
-        return_value=httpx.Response(200, json={"name": "CONTRIBUTING.md", "type": "file"}))
+        return_value=httpx.Response(200, json={"name": "CONTRIBUTING.md", "type": "file"})
+    )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/Dockerfile").mock(
-        return_value=_contents_b64("FROM python@sha256:" + "a" * 64 + "\n"))
+        return_value=_contents_b64("FROM python@sha256:" + "a" * 64 + "\n")
+    )
     _routes(respx_mock, protection=httpx.Response(200, json={"branch_name": "main"}))
 
     repo = await GiteaAdapter().interrogate(_connection(), "hangar")
     assert repo is not None
-    for cid in ("contributing", "dangerous_workflow", "ci_tests_on_pr",
-                "sbom", "signed_releases", "pinned_deps"):
+    for cid in (
+        "contributing",
+        "dangerous_workflow",
+        "ci_tests_on_pr",
+        "sbom",
+        "signed_releases",
+        "pinned_deps",
+    ):
         assert cid not in repo.fails and cid not in repo.unknowns, cid
     for cid in ("binary_artifacts", "signed_commits"):
         assert cid in repo.unknowns and cid not in repo.fails, cid
@@ -160,7 +205,8 @@ async def test_forbidden_resource_degrades_to_unknown_not_fail(respx_mock) -> No
 @respx.mock(base_url=API, assert_all_called=False)
 async def test_unreadable_repo_returns_none(respx_mock) -> None:
     respx_mock.get(f"{API}/repos/acme/ghost").mock(
-        return_value=httpx.Response(404, json={"message": "Not Found"}))
+        return_value=httpx.Response(404, json={"message": "Not Found"})
+    )
     respx_mock.route().mock(return_value=httpx.Response(404))
 
     assert await GiteaAdapter().interrogate(_connection(), "ghost") is None
@@ -169,10 +215,17 @@ async def test_unreadable_repo_returns_none(respx_mock) -> None:
 @respx.mock(base_url=API, assert_all_called=False)
 async def test_list_repos_falls_back_from_org_to_user(respx_mock) -> None:
     respx_mock.get(f"{API}/orgs/acme/repos").mock(
-        return_value=httpx.Response(404, json={"message": "Not Found"}))
-    respx_mock.get(f"{API}/users/acme/repos").mock(return_value=httpx.Response(200, json=[
-        {"name": "hangar", "private": False}, {"name": "secret-svc", "private": True},
-    ]))
+        return_value=httpx.Response(404, json={"message": "Not Found"})
+    )
+    respx_mock.get(f"{API}/users/acme/repos").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"name": "hangar", "private": False},
+                {"name": "secret-svc", "private": True},
+            ],
+        )
+    )
 
     adapter = GiteaAdapter()
     assert await adapter.list_repos(_connection()) == ["hangar", "secret-svc"]
@@ -185,7 +238,8 @@ async def test_hangar_json_populates_suppressions(respx_mock) -> None:
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
         return_value=_contents_b64(
             '{"ignore": [{"check": "dependabot_alerts", "reason": "no deps"}, "code_scanning"]}'
-        ))
+        )
+    )
     _routes(respx_mock, protection=httpx.Response(200, json={"branch_name": "main"}))
 
     repo = await GiteaAdapter().interrogate(_connection(), "hangar")
@@ -208,7 +262,8 @@ async def test_absent_hangar_json_leaves_suppressions_empty(respx_mock) -> None:
 @respx.mock(base_url=API, assert_all_called=False)
 async def test_malformed_hangar_json_is_ignored_not_fatal(respx_mock) -> None:
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
-        return_value=_contents_b64("{ this is not valid json"))
+        return_value=_contents_b64("{ this is not valid json")
+    )
     _routes(respx_mock, protection=httpx.Response(200, json={"branch_name": "main"}))
 
     repo = await GiteaAdapter().interrogate(_connection(), "hangar")

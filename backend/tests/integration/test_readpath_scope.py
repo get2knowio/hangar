@@ -10,8 +10,13 @@ from hangar.persistence import repositories as repo
 
 async def _seed_rem(session, conn, repo_id, check, *, pr_number=None) -> None:
     await repo.upsert_remediation(
-        session, connection_id=conn, repo_id=repo_id, check_id=check,
-        kind="config_pr", state="pr_open", pr_number=pr_number,
+        session,
+        connection_id=conn,
+        repo_id=repo_id,
+        check_id=check,
+        kind="config_pr",
+        state="pr_open",
+        pr_number=pr_number,
     )
 
 

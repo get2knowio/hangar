@@ -45,7 +45,8 @@ See [`CLAUDE.md`](CLAUDE.md) for the full module map and the invariants that kee
 Either:
 
 - **Docker** + **Docker Compose v2** (the quickest path), or
-- **Local toolchains**: Python **3.12** and Node **20**.
+- **Local toolchains**: [mise](https://mise.jdx.dev) — it installs the pinned Python, Node,
+  and uv from [`mise.toml`](mise.toml) (`mise install`), so no manual runtime setup is needed.
 
 For production-like runs you also want:
 
@@ -72,21 +73,21 @@ real provider. Run the backend and frontend in two terminals.
 **Terminal 1 — backend** (from `backend/`):
 
 ```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate      # first time only
-pip install -e '.[dev]'                                # first time only
+mise run backend:setup                                 # first time only (uv sync)
 
+cd backend
 export HANGAR_FORWARD_AUTH=disabled
 export HANGAR_SEED_DEMO_DATA=true
 export HANGAR_SECRET_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
-uvicorn hangar.main:app --reload                       # API + /health on http://127.0.0.1:8000
+uv run uvicorn hangar.main:app --reload                # API + /health on http://127.0.0.1:8000
 ```
 
 **Terminal 2 — frontend** (from `frontend/`):
 
 ```bash
+mise run frontend:setup   # first time only (npm ci)
+
 cd frontend
-npm install            # first time only
 npm run gen:api        # generate TS types from the OpenAPI contract (first time / after contract edits)
 npm run dev            # SPA on http://127.0.0.1:5173, proxies /api -> :8000
 ```
@@ -105,12 +106,13 @@ Mirrors production wiring (one Uvicorn process serves the API **and** the built 
 Docker:
 
 ```bash
-cd frontend && npm install && npm run gen:api && npm run build   # produces frontend/dist
-cd ../backend && pip install -e '.[dev]'
+mise run setup
+cd frontend && npm run gen:api && npm run build                  # produces frontend/dist
+cd ../backend
 export HANGAR_FORWARD_AUTH=disabled HANGAR_SEED_DEMO_DATA=true
-export HANGAR_SECRET_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+export HANGAR_SECRET_KEY="$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
 export HANGAR_STATIC_DIR="$(pwd)/../frontend/dist"
-uvicorn hangar.main:app                                          # full app on http://127.0.0.1:8000
+uv run uvicorn hangar.main:app                                   # full app on http://127.0.0.1:8000
 ```
 
 ### Run the published image (adopters)
@@ -172,30 +174,36 @@ docker compose -f deploy/docker-compose.yml --profile postgres up --build
 
 ## Developer commands
 
-**Backend** (from `backend/`):
+One build surface, from the repo root. CI runs these same verbs and nothing else, so a
+green `mise run check` locally means a green CI — there is no second list to keep in sync.
 
 ```bash
-pip install -e '.[dev]'                   # install with dev tools
-pytest                                    # full suite
-pytest tests/integration/test_remediation_pr_first.py   # one file
-pytest -k webhook_signature               # one test by name
-ruff check src tests                      # lint
-ruff format                               # format
-mypy                                      # type-check (config targets the hangar package)
-alembic upgrade head                      # apply migrations
-alembic revision --autogenerate -m "..."  # new migration after model changes
+mise run setup      # install everything (uv sync --all-extras + npm ci)
+mise run check      # the full PR gate: format, lint, types, tests + coverage floor
+mise run test       # both test suites
+mise run lint       # ruff check + mypy, eslint
+mise run fmt        # format in place and apply safe fixes
+mise run build      # backend wheel + production SPA bundle
+mise tasks          # list everything, including the backend:* / frontend:* tasks
 ```
 
-**Frontend** (from `frontend/`):
+Scoped tasks for narrower work; trailing args after `--` pass through:
 
 ```bash
-npm install
+mise run backend:test -- -k webhook_signature
+mise run backend:test -- tests/integration/test_remediation_pr_first.py
+mise run backend:lint          # ruff check + mypy
+mise run frontend:build        # tsc --noEmit && vite build (the SPA type gate)
+```
+
+Not part of the gates, so not verbs (from `backend/` and `frontend/` respectively):
+
+```bash
+uv run alembic upgrade head                       # apply migrations
+uv run alembic revision --autogenerate -m "..."   # new migration after model changes
 npm run gen:api          # regenerate src/lib/api-types.ts from the OpenAPI contract
 npm run dev              # SPA on :5173, proxies /api -> :8000
-npm test                 # vitest (npm test -- -t "name" for one); npm run test:watch
 npm run e2e              # Playwright
-npm run lint             # eslint, zero-warnings
-npm run build            # tsc --noEmit && vite build  (also the typecheck gate)
 ```
 
 The **OpenAPI contract**
@@ -453,21 +461,35 @@ create the shared network once with `docker network create proxy`.
   way). `HANGAR_DATABASE_URL` remains a full-URL escape hatch for non-standard setups. The
   `asyncpg` driver ships in the image, so no rebuild is needed; the same SQLAlchemy models and
   Alembic migrations target both engines. (For local Postgres testing outside Docker, install
-  the driver with `pip install -e '.[dev,postgres]'`.)
+  the driver with `mise run backend:setup`, which syncs `--all-extras`.)
 
 ---
 
 ## Tests & CI
 
 ```bash
-cd backend && pytest        # provider-contract, remediation idempotency/PR-not-push,
+mise run check              # exactly what CI runs, in one command
+mise run backend:test       # provider-contract, remediation idempotency/PR-not-push,
                             # auth-mode (fail-closed/header-trust), check-evaluation suites
-cd frontend && npm test     # Vitest units
-cd frontend && npm run lint && npm run build
+mise run frontend:test      # Vitest units
 ```
 
-CI runs the same checks on every push/PR — see
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml). **Every defect fixed in review lands
+CI does not restate any of this: `.github/workflows/ci.yml` installs the toolchain and then
+runs `mise run backend:setup` / `mise run backend:check` (and the frontend equivalents), so
+the gates cannot drift from what you run locally. Four gates run behind `check` and none may
+be skipped, xfailed, or made conditional to get a build green:
+
+| Gate | Command |
+|------|---------|
+| Format | `ruff format --check .` |
+| Lint | `ruff check .` over `src` **and** `tests` |
+| Types | `mypy` over the package, with every extra installed |
+| Tests | `pytest` with the coverage floor, on the floor **and** ceiling interpreter |
+
+The backend is exercised on both ends of its declared `requires-python` range (3.12 and
+3.14) via the matrix in `ci.yml`. The stable, version-free `Backend` job is the required
+status check; it passes only if every matrix leg passed, so bumping an interpreter never
+invalidates branch protection. **Every defect fixed in review lands
 with a regression test** (constitution): the required suites cover the `RepoProvider`
 contract, remediation idempotency / PR-not-push, forward-auth modes, check evaluation,
 cross-connection isolation, and the conditional-request / 304 path.

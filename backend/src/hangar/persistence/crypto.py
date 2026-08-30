@@ -55,7 +55,9 @@ def _fernet() -> Fernet:
     try:
         return Fernet(_coerce_fernet_key(key))
     except (ValueError, TypeError) as exc:
-        raise CredentialEncryptionError(f"HANGAR_SECRET_KEY is not a valid Fernet key: {exc}") from exc
+        raise CredentialEncryptionError(
+            f"HANGAR_SECRET_KEY is not a valid Fernet key: {exc}"
+        ) from exc
 
 
 def encrypt(plaintext: str) -> bytes:
