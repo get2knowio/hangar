@@ -68,9 +68,7 @@ class ForwardAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.settings = settings
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
         if (
             path in _PUBLIC_PATHS
@@ -102,8 +100,11 @@ class ForwardAuthMiddleware(BaseHTTPMiddleware):
 
         # forward-auth: trust the identity header only from the proxy.
         if not _peer_trusted(request, self.settings):
-            log.warning("auth.untrusted_peer", path=path,
-                        peer=request.client.host if request.client else None)
+            log.warning(
+                "auth.untrusted_peer",
+                path=path,
+                peer=request.client.host if request.client else None,
+            )
             return JSONResponse(
                 {"detail": "identity header not trusted from this source"}, status_code=403
             )

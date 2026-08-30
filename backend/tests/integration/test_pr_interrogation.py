@@ -9,12 +9,25 @@ from hangar.services.repo_detail import _pr_list, build_repo_detail
 
 def _repo_with_prs() -> Repo:
     return Repo(
-        id="r", connection_id="c", open_prs=2, bot_prs=1,
+        id="r",
+        connection_id="c",
+        open_prs=2,
+        bot_prs=1,
         pull_requests=[
-            PullRequestSummary(title="Bump vite", kind="dependabot", url="http://x/pull/7",
-                               draft=False, created_at="2024-01-01T00:00:00Z"),
-            PullRequestSummary(title="WIP feature", kind="human", url="http://x/pull/6",
-                               draft=True, created_at="2024-01-02T00:00:00Z"),
+            PullRequestSummary(
+                title="Bump vite",
+                kind="dependabot",
+                url="http://x/pull/7",
+                draft=False,
+                created_at="2024-01-01T00:00:00Z",
+            ),
+            PullRequestSummary(
+                title="WIP feature",
+                kind="human",
+                url="http://x/pull/6",
+                draft=True,
+                created_at="2024-01-02T00:00:00Z",
+            ),
         ],
     )
 
@@ -38,7 +51,11 @@ def test_synthetic_rows_only_for_demo_without_real_data() -> None:
 
 def test_repo_detail_exposes_real_pr_urls() -> None:
     conn = ProviderConnection(
-        id="c", label="gh:acme", provider_type="github", scope="org", auth_mode="App",
+        id="c",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
         has_credential=True,
     )
     detail = build_repo_detail(_repo_with_prs(), conn, default_policy(), {}, {}, {})

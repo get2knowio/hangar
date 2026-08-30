@@ -1,8 +1,13 @@
 [project]
 name = "hangar"
-version = "0.3.11"
 description = "Hangar — self-hosted fleet control plane (provider-agnostic core)"
-requires-python = ">=3.12"
+# Floor and ceiling are both exercised by CI (see .github/workflows/ci.yml's
+# python-version matrix). Do not widen this range without adding the interpreter
+# to that matrix — an unexercised claim is a claim nobody is keeping.
+requires-python = ">=3.12,<3.15"
+# Derived from git tags by hatch-vcs; never a hand-bumped literal. Off-tag builds
+# get a local version (0.3.12.dev1+g<sha>) that PyPI/registries structurally reject.
+dynamic = ["version"]
 dependencies = [
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.1",
@@ -20,27 +25,86 @@ dependencies = [
     "itsdangerous>=2.2",
 ]
 
+# Extras are for what a CONSUMER installs. Dev tooling lives in
+# [dependency-groups] below and never leaks into an install of the app.
 [project.optional-dependencies]
 postgres = ["asyncpg>=0.29"]
-dev = [
+
+# PEP 735 groups. `uv sync` installs `dev` by default; CI installs it explicitly
+# alongside --all-extras so mypy sees every optional import (a green mypy run over
+# a half-installed environment looks like evidence while checking nothing).
+[dependency-groups]
+test = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "pytest-timeout>=2.3",
+    "pyyaml>=6.0",  # tests/unit/test_toolchain_consistency.py reads the CI workflow
     "respx>=0.21",
+]
+lint = [
     "ruff>=0.16.3",
     "mypy>=2.3.0",
 ]
+dev = [
+    { include-group = "test" },
+    { include-group = "lint" },
+]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+# The package lives in backend/ but the tags live on the repo root's .git;
+# setuptools_scm does not search parent directories on its own.
+raw-options = { root = ".." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hangar"]
+
+[tool.uv]
+# Resolver-side twin of the Dependabot cooldown in .github/dependabot.yml: a
+# freshly published release ages before a plain `uv sync` can pull it in.
+exclude-newer = "7 days"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+# --strict-markers turns a typo'd marker into a failure rather than a silently
+# never-run test; --timeout turns a hung async test into a red build rather than
+# a six-hour runner.
+addopts = ["--strict-markers", "--strict-config", "--timeout=30"]
+timeout = 30
+markers = [
+    "slow: test that takes materially longer than the rest of the suite",
+    "integration: exercises more than one layer (api/services/persistence) together",
+]
+
+[tool.coverage.run]
+source = ["hangar"]
+# branch = false is load-bearing, not an oversight. coverage's sys.monitoring core
+# ("sysmon") does not support branch coverage before Python 3.14, so with branch
+# coverage ON a 3.12 run silently falls back to the sys.settrace core. That core does
+# not see code running in the worker thread Starlette's TestClient drives the app
+# from, which makes every FastAPI BackgroundTask invisible — it under-reported
+# services/sync.py by ~15 points and the whole suite by ~7, purely as a measurement
+# artifact (the code runs identically on both interpreters; only the measurement
+# differed). With branch off and sysmon pinned, 3.12 and 3.14 report the same 338
+# uncovered statements, so one floor is meaningful on every matrix leg.
+#
+# COVERAGE_CORE=sysmon is exported from mise.toml — coverage reads the core from the
+# environment only, never from this file. Run coverage through `mise run`, not a bare
+# `pytest --cov`, or you will measure with the wrong core and see a false failure.
+branch = false
+
+[tool.coverage.report]
+# Ratchet only: raise this as coverage rises, never lower it to make a build green.
+# Measured 89.90% on both 3.12 and 3.14 when this was set.
+fail_under = 89
+show_missing = true
 
 [tool.ruff]
 line-length = 100
@@ -48,9 +112,14 @@ target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC"]
+# Explicit selection, not ruff's default set — the default set changes between
+# ruff releases, which would turn main red the day a new rule ships.
+select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "ASYNC"]
 # B008: FastAPI's Depends()/Query() in argument defaults is the framework idiom.
-ignore = ["E501", "B008"]
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
 
 [tool.mypy]
 python_version = "3.12"

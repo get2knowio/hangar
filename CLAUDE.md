@@ -17,35 +17,38 @@ source of truth.
 
 ## Commands
 
-Backend (run from `backend/`):
+The repo answers to one build surface: the verbs in `mise.toml`. CI runs exactly these
+verbs and nothing else, so what CI checks and what you run locally cannot drift. To change
+what a gate does, change `mise.toml` — never add a step to a workflow.
 
 ```bash
-pip install -e '.[dev]'                  # install with dev tools
-export HANGAR_FORWARD_AUTH=disabled      # required: app is fail-closed and won't start unset
-export HANGAR_SECRET_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
-uvicorn hangar.main:app --reload         # API + /health on :8000
-
-pytest                                   # full suite
-pytest tests/integration/test_remediation_pr_first.py   # one file
-pytest -k webhook_signature              # one test by name
-ruff check src tests                     # lint
-ruff format                              # format
-mypy                                     # type-check (config targets the hangar package)
-alembic upgrade head                     # apply migrations
-alembic revision --autogenerate -m "..."  # new migration after model changes
+mise run setup      # install everything (uv sync --all-extras + npm ci)
+mise run check      # the full PR gate: format, lint, types, tests + coverage floor
+mise run test       # both suites
+mise run lint       # ruff check + mypy, eslint
+mise run fmt        # format in place and apply safe fixes
+mise run build      # backend wheel + production SPA bundle
+mise run release    # check, then build the container image a tag would publish
+mise tasks          # list every task, including the backend:* / frontend:* ones
 ```
 
-Frontend (run from `frontend/`):
+Narrower work uses the scoped tasks — e.g. `mise run backend:test -- -k webhook_signature`
+(trailing args after `--` pass through), `mise run backend:lint`, `mise run frontend:build`.
+
+Things the verbs deliberately do not cover:
 
 ```bash
-npm install
-npm run gen:api          # regenerate src/lib/api-types.ts from the OpenAPI contract
-npm run dev              # SPA on :5173, proxies /api -> :8000
-npm test                # vitest (npm test -- -t "name" for one); npm run test:watch
-npm run e2e             # Playwright
-npm run lint            # eslint, zero-warnings
-npm run build           # tsc --noEmit && vite build  (also the typecheck gate)
+cd backend && uv run uvicorn hangar.main:app --reload   # API + /health on :8000
+cd backend && uv run alembic upgrade head               # apply migrations
+cd backend && uv run alembic revision --autogenerate -m "..."   # after model changes
+cd frontend && npm run gen:api   # regenerate src/lib/api-types.ts from the OpenAPI contract
+cd frontend && npm run dev       # SPA on :5173, proxies /api -> :8000
+cd frontend && npm run e2e       # Playwright
 ```
+
+The test suite sets its own fail-closed env vars per test (`tests/conftest.py`), so
+`HANGAR_FORWARD_AUTH` / `HANGAR_SECRET_KEY` need no exporting to run it. Running the app by
+hand still needs them — the startup gate refuses to start otherwise.
 
 Full Docker/Compose, env-var, GitHub-App, and forward-auth setup is in `README.md`.
 

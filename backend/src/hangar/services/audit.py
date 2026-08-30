@@ -53,7 +53,11 @@ async def record_correction(
     saved = await repo.append_audit(session, entry)
     log.info(
         "audit.correction",
-        actor=actor, connection=connection_label, repo=repo_id,
-        check=check_label, result=result, pr_url=pr_url,
+        actor=actor,
+        connection=connection_label,
+        repo=repo_id,
+        check=check_label,
+        result=result,
+        pr_url=pr_url,
     )
     return saved

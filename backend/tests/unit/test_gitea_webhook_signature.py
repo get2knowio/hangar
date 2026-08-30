@@ -57,8 +57,13 @@ def test_parse_webhook_normalizes_ci_and_pr_events() -> None:
 
     pr = _adapter.parse_webhook(
         {"X-Gitea-Event": "pull_request"},
-        json.dumps({"repository": {"name": "r"}, "action": "opened",
-                    "pull_request": {"user": {"login": "renovate[bot]"}}}).encode(),
+        json.dumps(
+            {
+                "repository": {"name": "r"},
+                "action": "opened",
+                "pull_request": {"user": {"login": "renovate[bot]"}},
+            }
+        ).encode(),
     )
     assert pr is not None and pr.pr_delta == 1 and pr.pr_is_bot is True
 
@@ -67,8 +72,13 @@ def test_parse_webhook_recognizes_humans_and_close() -> None:
     def _pr(login: str, action: str = "opened"):
         return _adapter.parse_webhook(
             {"X-Gitea-Event": "pull_request"},
-            json.dumps({"repository": {"name": "r"}, "action": action,
-                        "pull_request": {"user": {"login": login}}}).encode(),
+            json.dumps(
+                {
+                    "repository": {"name": "r"},
+                    "action": action,
+                    "pull_request": {"user": {"login": login}},
+                }
+            ).encode(),
         )
 
     assert _pr("octocat").pr_is_bot is False

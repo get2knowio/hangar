@@ -32,10 +32,19 @@ from hangar.domain.policy import (
 )
 from hangar.providers.base import provider_name
 
-_DEP_TITLES = ["actions/checkout to v4.2", "vite to 5.4.8", "fastapi to 0.115",
-               "pydantic to 2.9", "ruff to 0.6.9"]
-_HUMAN_TITLES = ["Refactor poller cadence", "Add /health endpoint",
-                 "Fix webhook retry backoff", "Docs: homelab deploy guide"]
+_DEP_TITLES = [
+    "actions/checkout to v4.2",
+    "vite to 5.4.8",
+    "fastapi to 0.115",
+    "pydantic to 2.9",
+    "ruff to 0.6.9",
+]
+_HUMAN_TITLES = [
+    "Refactor poller cadence",
+    "Add /health endpoint",
+    "Fix webhook retry backoff",
+    "Docs: homelab deploy guide",
+]
 
 
 def _relative_age(iso: str | None) -> str:
@@ -79,21 +88,25 @@ def _pr_list(repo: Repo, *, synthesize: bool) -> list[dict]:
     prs: list[dict] = []
     for i in range(repo.bot_prs):
         cooldown = i == 0
-        prs.append({
-            "title": f"Bump {_DEP_TITLES[i % len(_DEP_TITLES)]}",
-            "kind": "dependabot",
-            "status": "cooldown 4d" if cooldown else "ready",
-            "status_tone": (Tone.warn if cooldown else Tone.passing).value,
-            "age": f"{i + 1}d",
-        })
+        prs.append(
+            {
+                "title": f"Bump {_DEP_TITLES[i % len(_DEP_TITLES)]}",
+                "kind": "dependabot",
+                "status": "cooldown 4d" if cooldown else "ready",
+                "status_tone": (Tone.warn if cooldown else Tone.passing).value,
+                "age": f"{i + 1}d",
+            }
+        )
     for i in range(max(0, repo.open_prs - repo.bot_prs)):
-        prs.append({
-            "title": _HUMAN_TITLES[i % len(_HUMAN_TITLES)],
-            "kind": "human",
-            "status": "in review",
-            "status_tone": Tone.neutral.value,
-            "age": f"{i + 2}d",
-        })
+        prs.append(
+            {
+                "title": _HUMAN_TITLES[i % len(_HUMAN_TITLES)],
+                "kind": "human",
+                "status": "in review",
+                "status_tone": Tone.neutral.value,
+                "age": f"{i + 2}d",
+            }
+        )
     return prs
 
 
@@ -137,23 +150,25 @@ def build_repo_detail(
             primary, secondary = _actions(status, tier, connection.provider_type)
             key = (repo.connection_id, repo.id, c.id)
             pending = status is FindingStatus.pending
-            group_checks.append({
-                "id": c.id,
-                "label": c.label,
-                "status": status.value,
-                # Structured remediation kind the client sends back — the UI must not
-                # reverse-engineer it from the action label (Constitution VII).
-                "kind": kind_for_tier(tier).value,
-                "tier_label": tier_label(tier),
-                "evidence": evidence_for(repo, c.id, status),
-                "suppressed_reason": repo.suppressions.get(c.id)
-                if status is FindingStatus.suppressed
-                else None,
-                "open_pr_url": rem_pr_urls.get(key) if pending else None,
-                "open_pr_number": rem_pr_numbers.get(key) if pending else None,
-                "primary_action": primary,
-                "secondary_action": secondary,
-            })
+            group_checks.append(
+                {
+                    "id": c.id,
+                    "label": c.label,
+                    "status": status.value,
+                    # Structured remediation kind the client sends back — the UI must not
+                    # reverse-engineer it from the action label (Constitution VII).
+                    "kind": kind_for_tier(tier).value,
+                    "tier_label": tier_label(tier),
+                    "evidence": evidence_for(repo, c.id, status),
+                    "suppressed_reason": repo.suppressions.get(c.id)
+                    if status is FindingStatus.suppressed
+                    else None,
+                    "open_pr_url": rem_pr_urls.get(key) if pending else None,
+                    "open_pr_number": rem_pr_numbers.get(key) if pending else None,
+                    "primary_action": primary,
+                    "secondary_action": secondary,
+                }
+            )
         if group_checks:
             groups.append({"group": g, "checks": group_checks})
 

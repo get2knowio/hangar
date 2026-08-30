@@ -119,9 +119,7 @@ class NewConnection(BaseModel):
 
 
 @router.post("/providers", status_code=201)
-async def add_provider(
-    body: NewConnection, session: AsyncSession = Depends(session_dep)
-) -> dict:
+async def add_provider(body: NewConnection, session: AsyncSession = Depends(session_dep)) -> dict:
     # Resolve a credential reused from another connection (so a PAT isn't re-pasted per
     # org). An explicitly-provided credential always wins.
     credential = body.credential
@@ -187,8 +185,7 @@ async def list_connection_repos(
         "connection_id": connection_id,
         "owner": connection.owner,
         "available": [
-            {"name": r.name, "private": r.private}
-            for r in sorted(listings, key=lambda r: r.name)
+            {"name": r.name, "private": r.private} for r in sorted(listings, key=lambda r: r.name)
         ],
         "selected": selected,
         "watching_all": selected is None,

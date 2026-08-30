@@ -28,7 +28,7 @@ from hangar.providers.base import CorrectionRequest, RepoProvider, provider_name
 from hangar.services import audit
 
 
-class ReadOnlyCollapse(Exception):
+class ReadOnlyCollapseError(Exception):
     """Raised when a write correction is requested on a connection lacking write scope.
 
     Carries the deep-link the caller should surface instead (FR-018 → API 403).
@@ -39,7 +39,7 @@ class ReadOnlyCollapse(Exception):
         self.deep_link_url = deep_link_url
 
 
-class NoOpenPullRequest(Exception):
+class NoOpenPullRequestError(Exception):
     """Raised when ``mark_merged`` is called for a check with no open Hangar PR.
 
     Prevents fabricating a 'PR merged' pass + audit entry for a PR that never existed
@@ -89,19 +89,24 @@ class RemediationService:
         if is_write_kind and not writable:
             deep = self.provider.deep_link(connection, repo, check_id)
             await audit.record_correction(
-                session, actor=actor, connection_label=connection.label,
-                repo_id=repo.id, check_label=check.label,
+                session,
+                actor=actor,
+                connection_label=connection.label,
+                repo_id=repo.id,
+                check_label=check.label,
                 result=f"Opened in {provider_name(connection.provider_type)}",
             )
-            raise ReadOnlyCollapse(deep)
+            raise ReadOnlyCollapseError(deep)
 
         # Idempotency for PR corrections (FR-015): surface an existing open Hangar PR.
         if kind is RemediationKind.config_pr:
             existing = await repo_store.get_remediation(session, connection.id, repo.id, check_id)
             if existing is not None and existing.state == RemediationState.pr_open.value:
                 return RemediationOutcome(
-                    state=RemediationState.pr_open, pr_url=existing.pr_url,
-                    idempotent_hit=True, audit_id=None,
+                    state=RemediationState.pr_open,
+                    pr_url=existing.pr_url,
+                    idempotent_hit=True,
+                    audit_id=None,
                     result_text=f"PR #{existing.pr_number} already open",
                 )
 
@@ -113,24 +118,37 @@ class RemediationService:
 
         if kind is RemediationKind.deep_link:
             entry = await audit.record_correction(
-                session, actor=actor, connection_label=connection.label,
-                repo_id=repo.id, check_label=check.label,
+                session,
+                actor=actor,
+                connection_label=connection.label,
+                repo_id=repo.id,
+                check_label=check.label,
                 result=f"Opened in {provider_name(connection.provider_type)}",
                 pr_url=result.deep_link_url,
             )
             return RemediationOutcome(
-                state=RemediationState.deep_link, pr_url=result.deep_link_url,
-                idempotent_hit=False, audit_id=entry.id, result_text="Opened in provider",
+                state=RemediationState.deep_link,
+                pr_url=result.deep_link_url,
+                idempotent_hit=False,
+                audit_id=entry.id,
+                result_text="Opened in provider",
             )
 
         if kind is RemediationKind.report:
             entry = await audit.record_correction(
-                session, actor=actor, connection_label=connection.label,
-                repo_id=repo.id, check_label=check.label, result="Reported",
+                session,
+                actor=actor,
+                connection_label=connection.label,
+                repo_id=repo.id,
+                check_label=check.label,
+                result="Reported",
             )
             return RemediationOutcome(
-                state=RemediationState.fixed, pr_url=None, idempotent_hit=False,
-                audit_id=entry.id, result_text="Reported",
+                state=RemediationState.fixed,
+                pr_url=None,
+                idempotent_hit=False,
+                audit_id=entry.id,
+                result_text="Reported",
             )
 
         if kind is RemediationKind.config_pr:
@@ -140,38 +158,64 @@ class RemediationService:
             # URL construction is the provider's job (provider-agnostic core, Constitution I).
             pr_url = result.pr_url or self.provider.pr_url(connection, repo, pr_number)
             await repo_store.upsert_remediation(
-                session, connection_id=connection.id, repo_id=repo.id, check_id=check_id,
-                kind=kind.value, state=RemediationState.pr_open.value,
-                pr_url=pr_url, pr_number=pr_number,
+                session,
+                connection_id=connection.id,
+                repo_id=repo.id,
+                check_id=check_id,
+                kind=kind.value,
+                state=RemediationState.pr_open.value,
+                pr_url=pr_url,
+                pr_number=pr_number,
                 idempotency_key=f"{connection.id}::{repo.id}::{check_id}",
             )
             if result.idempotent_hit:
                 return RemediationOutcome(
-                    state=RemediationState.pr_open, pr_url=pr_url, idempotent_hit=True,
-                    audit_id=None, result_text=f"PR #{pr_number} already open",
+                    state=RemediationState.pr_open,
+                    pr_url=pr_url,
+                    idempotent_hit=True,
+                    audit_id=None,
+                    result_text=f"PR #{pr_number} already open",
                 )
             entry = await audit.record_correction(
-                session, actor=actor, connection_label=connection.label,
-                repo_id=repo.id, check_label=check.label,
-                result=f"PR #{pr_number} opened", pr_url=pr_url,
+                session,
+                actor=actor,
+                connection_label=connection.label,
+                repo_id=repo.id,
+                check_label=check.label,
+                result=f"PR #{pr_number} opened",
+                pr_url=pr_url,
             )
             return RemediationOutcome(
-                state=RemediationState.pr_open, pr_url=pr_url, idempotent_hit=False,
-                audit_id=entry.id, result_text=f"PR #{pr_number} opened",
+                state=RemediationState.pr_open,
+                pr_url=pr_url,
+                idempotent_hit=False,
+                audit_id=entry.id,
+                result_text=f"PR #{pr_number} opened",
             )
 
         # settings_patch
         await repo_store.upsert_remediation(
-            session, connection_id=connection.id, repo_id=repo.id, check_id=check_id,
-            kind=kind.value, state=RemediationState.fixed.value,
+            session,
+            connection_id=connection.id,
+            repo_id=repo.id,
+            check_id=check_id,
+            kind=kind.value,
+            state=RemediationState.fixed.value,
         )
         entry = await audit.record_correction(
-            session, actor=actor, connection_label=connection.label,
-            repo_id=repo.id, check_label=check.label, result="Settings applied",
+            session,
+            actor=actor,
+            connection_label=connection.label,
+            repo_id=repo.id,
+            check_label=check.label,
+            result="Settings applied",
         )
         return RemediationOutcome(
-            state=RemediationState.fixed, pr_url=None, idempotent_hit=False,
-            audit_id=entry.id, result_text="Settings applied",
+            state=RemediationState.fixed,
+            pr_url=None,
+            idempotent_hit=False,
+            audit_id=entry.id,
+            result_text="Settings applied",
         )
 
     async def mark_merged(
@@ -188,24 +232,41 @@ class RemediationService:
         # fabricate a pass + 'PR merged' audit entry for a PR that never existed (FR-016).
         existing = await repo_store.get_remediation(session, connection.id, repo.id, check_id)
         if existing is None or existing.state != RemediationState.pr_open.value:
-            raise NoOpenPullRequest(check_id)
+            raise NoOpenPullRequestError(check_id)
         await repo_store.upsert_remediation(
-            session, connection_id=connection.id, repo_id=repo.id, check_id=check_id,
-            kind=RemediationKind.config_pr.value, state=RemediationState.fixed.value,
-            pr_url=existing.pr_url, pr_number=existing.pr_number,
+            session,
+            connection_id=connection.id,
+            repo_id=repo.id,
+            check_id=check_id,
+            kind=RemediationKind.config_pr.value,
+            state=RemediationState.fixed.value,
+            pr_url=existing.pr_url,
+            pr_number=existing.pr_number,
         )
         entry = await audit.record_correction(
-            session, actor=actor, connection_label=connection.label,
-            repo_id=repo.id, check_label=check.label, result="PR merged", pr_url=existing.pr_url,
+            session,
+            actor=actor,
+            connection_label=connection.label,
+            repo_id=repo.id,
+            check_label=check.label,
+            result="PR merged",
+            pr_url=existing.pr_url,
         )
         return RemediationOutcome(
-            state=RemediationState.fixed, pr_url=existing.pr_url, idempotent_hit=False,
-            audit_id=entry.id, result_text="PR merged",
+            state=RemediationState.fixed,
+            pr_url=existing.pr_url,
+            idempotent_hit=False,
+            audit_id=entry.id,
+            result_text="PR merged",
         )
 
 
 # Capability re-export so callers don't reach into models for the common check.
 __all__ = [
-    "RemediationService", "RemediationOutcome", "ReadOnlyCollapse", "NoOpenPullRequest",
-    "resolve_kind", "Capability",
+    "RemediationService",
+    "RemediationOutcome",
+    "ReadOnlyCollapseError",
+    "NoOpenPullRequestError",
+    "resolve_kind",
+    "Capability",
 ]

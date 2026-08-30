@@ -23,12 +23,20 @@ API = f"{WEB}/api/v1"
 
 def _writable_conn() -> ProviderConnection:
     return ProviderConnection(
-        id="gitea", label="gitea:acme", provider_type="gitea", scope="org",
-        auth_mode="Scoped token", base_url=WEB, owner="acme",
+        id="gitea",
+        label="gitea:acme",
+        provider_type="gitea",
+        scope="org",
+        auth_mode="Scoped token",
+        base_url=WEB,
+        owner="acme",
         granted_capabilities={
-            Capability.open_pull_request, Capability.read_files, Capability.deep_link,
+            Capability.open_pull_request,
+            Capability.read_files,
+            Capability.deep_link,
         },
-        has_credential=True, token="pat-secret",
+        has_credential=True,
+        token="pat-secret",
     )
 
 
@@ -42,19 +50,24 @@ def _req(check: str = "license", label: str = "LICENSE present") -> CorrectionRe
 def _write_routes(mock: respx.MockRouter, *, path: str):
     """Stub the create-branch / create-file / create-PR endpoints. Returns the routes."""
     branch = mock.post(f"{API}/repos/acme/hangar/branches").mock(
-        return_value=httpx.Response(201, json={"name": "hangar/x"}))
+        return_value=httpx.Response(201, json={"name": "hangar/x"})
+    )
     contents = mock.post(f"{API}/repos/acme/hangar/contents/{path}").mock(
-        return_value=httpx.Response(201, json={"content": {"name": path}}))
+        return_value=httpx.Response(201, json={"content": {"name": path}})
+    )
     pull = mock.post(f"{API}/repos/acme/hangar/pulls").mock(
-        return_value=httpx.Response(201, json={
-            "number": 77, "html_url": f"{WEB}/acme/hangar/pulls/77"}))
+        return_value=httpx.Response(
+            201, json={"number": 77, "html_url": f"{WEB}/acme/hangar/pulls/77"}
+        )
+    )
     return branch, contents, pull
 
 
 @respx.mock(base_url=API, assert_all_called=False)
 async def test_config_pr_opens_branch_file_and_pr_on_feature_branch(respx_mock) -> None:
     respx_mock.get(url__regex=r".*/repos/acme/hangar/pulls(\?.*)?$").mock(
-        return_value=httpx.Response(200, json=[]))
+        return_value=httpx.Response(200, json=[])
+    )
     branch, contents, pull = _write_routes(respx_mock, path="LICENSE")
 
     result = await GiteaAdapter().correct(_writable_conn(), _req())
@@ -66,7 +79,9 @@ async def test_config_pr_opens_branch_file_and_pr_on_feature_branch(respx_mock) 
     # The branch was cut from the default branch; the file landed on the FEATURE branch, never
     # the default — no push/force-push to main (Constitution II).
     assert json.loads(branch.calls.last.request.content) == {
-        "new_branch_name": "hangar/license", "old_branch_name": "main"}
+        "new_branch_name": "hangar/license",
+        "old_branch_name": "main",
+    }
     assert json.loads(contents.calls.last.request.content)["branch"] == "hangar/license"
     pr_body = json.loads(pull.calls.last.request.content)
     assert pr_body["head"] == "hangar/license" and pr_body["base"] == "main"
@@ -75,9 +90,17 @@ async def test_config_pr_opens_branch_file_and_pr_on_feature_branch(respx_mock) 
 @respx.mock(base_url=API, assert_all_called=False)
 async def test_config_pr_is_idempotent_on_existing_open_pr(respx_mock) -> None:
     respx_mock.get(url__regex=r".*/repos/acme/hangar/pulls(\?.*)?$").mock(
-        return_value=httpx.Response(200, json=[
-            {"number": 9, "html_url": f"{WEB}/acme/hangar/pulls/9",
-             "head": {"ref": "hangar/license"}}]))
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "number": 9,
+                    "html_url": f"{WEB}/acme/hangar/pulls/9",
+                    "head": {"ref": "hangar/license"},
+                }
+            ],
+        )
+    )
     branch, _, pull = _write_routes(respx_mock, path="LICENSE")
 
     result = await GiteaAdapter().correct(_writable_conn(), _req())
@@ -93,11 +116,13 @@ async def test_dependabot_updates_remediation_writes_renovate_config(respx_mock)
     # GitHub-only .github/dependabot.yml — and that path is a detection candidate, so the PR
     # actually clears the finding.
     respx_mock.get(url__regex=r".*/repos/acme/hangar/pulls(\?.*)?$").mock(
-        return_value=httpx.Response(200, json=[]))
+        return_value=httpx.Response(200, json=[])
+    )
     _, contents, _ = _write_routes(respx_mock, path="renovate.json")
 
     result = await GiteaAdapter().correct(
-        _writable_conn(), _req("dependabot_updates", "Version updates configured"))
+        _writable_conn(), _req("dependabot_updates", "Version updates configured")
+    )
 
     assert result.applied and contents.called
 

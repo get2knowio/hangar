@@ -35,3 +35,9 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Coverage artifacts (the floor is enforced in CI, not from a committed report).
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

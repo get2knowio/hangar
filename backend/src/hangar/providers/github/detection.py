@@ -42,8 +42,13 @@ _SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 # Actions/config that indicate conventional-commit / PR-title enforcement.
 _CONVENTIONAL_ACTIONS = ("commitlint", "action-semantic-pull-request", "semantic-pull-request")
 _CONVENTIONAL_CONFIGS = (
-    "commitlint.config.js", "commitlint.config.cjs", "commitlint.config.mjs",
-    ".commitlintrc", ".commitlintrc.json", ".commitlintrc.yml", ".commitlintrc.yaml",
+    "commitlint.config.js",
+    "commitlint.config.cjs",
+    "commitlint.config.mjs",
+    ".commitlintrc",
+    ".commitlintrc.json",
+    ".commitlintrc.yml",
+    ".commitlintrc.yaml",
 )
 # Unreleased-commit age (HEAD − last release, in days) at/above which release_health fails.
 _RELEASE_STALE_DAYS = 14
@@ -58,8 +63,13 @@ _METADATA_CHECKS = frozenset({"license", "description", "default_branch", "secre
 # both, so a Renovate-only repo is not falsely failed for "no version updates".
 _DEPENDABOT_CONFIG_FILES = [".github/dependabot.yml", ".github/dependabot.yaml"]
 _RENOVATE_CONFIG_FILES = [
-    "renovate.json", "renovate.json5", ".github/renovate.json", ".github/renovate.json5",
-    ".renovaterc", ".renovaterc.json", ".renovaterc.json5",
+    "renovate.json",
+    "renovate.json5",
+    ".github/renovate.json",
+    ".github/renovate.json5",
+    ".renovaterc",
+    ".renovaterc.json",
+    ".renovaterc.json5",
 ]
 
 # Candidate paths whose presence satisfies a file-based check. (license is determined
@@ -70,11 +80,22 @@ _FILE_CHECKS = {
     "contributing": ["CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"],
     "codeowners": ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"],
     "changelog": ["CHANGELOG.md", "CHANGELOG"],
-    "lockfile": ["poetry.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-                 "bun.lock", "bun.lockb", "uv.lock", "Cargo.lock"],
+    "lockfile": [
+        "poetry.lock",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "bun.lock",
+        "bun.lockb",
+        "uv.lock",
+        "Cargo.lock",
+    ],
     "release_please": ["release-please-config.json", ".release-please-manifest.json"],
-    "templates": [".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE",
-                  ".github/PULL_REQUEST_TEMPLATE.md"],
+    "templates": [
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/ISSUE_TEMPLATE",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+    ],
     "dependabot_updates": _DEPENDABOT_CONFIG_FILES + _RENOVATE_CONFIG_FILES,
 }
 
@@ -103,8 +124,13 @@ _PR_TRIGGER_RE = re.compile(r"\bpull_request\b(?!_target)")
 
 _SBOM_ACTION_MARKERS = ("sbom", "cyclonedx", "cdxgen", "syft")
 _SBOM_FILE_CANDIDATES = [
-    "sbom.json", "sbom.spdx.json", "sbom.cdx.json", "sbom.xml",
-    "bom.json", "bom.xml", ".sbom/bom.json",
+    "sbom.json",
+    "sbom.spdx.json",
+    "sbom.cdx.json",
+    "sbom.xml",
+    "bom.json",
+    "bom.xml",
+    ".sbom/bom.json",
 ]
 _SIGNING_ACTION_MARKERS = ("cosign", "sigstore", "slsa-github-generator", "slsa-framework")
 _SIGNATURE_ASSET_SUFFIXES = (".sig", ".asc", ".intoto.jsonl", ".sigstore", ".pem.sig")
@@ -112,8 +138,26 @@ _SIGNATURE_ASSET_SUFFIXES = (".sig", ".asc", ".intoto.jsonl", ".sigstore", ".pem
 # Committed executable/compiled outputs that can't be audited from source (Scorecard
 # "Binary-Artifacts"). Fonts/images are intentionally excluded — they are not build outputs.
 _BINARY_EXTENSIONS = (
-    ".exe", ".dll", ".so", ".dylib", ".a", ".o", ".class", ".jar", ".war", ".ear",
-    ".pyc", ".pyo", ".wasm", ".node", ".msi", ".deb", ".rpm", ".apk", ".dmg", ".pkg",
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".a",
+    ".o",
+    ".class",
+    ".jar",
+    ".war",
+    ".ear",
+    ".pyc",
+    ".pyo",
+    ".wasm",
+    ".node",
+    ".msi",
+    ".deb",
+    ".rpm",
+    ".apk",
+    ".dmg",
+    ".pkg",
 )
 
 _FROM_RE = re.compile(r"^\s*FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
@@ -164,7 +208,9 @@ def workflow_is_dangerous(texts: list[str]) -> bool:
         if _INJECTABLE_RE.search(text):
             return True
         on = _on_block(text)
-        if ("pull_request_target" in on or "workflow_run" in on) and _UNTRUSTED_CHECKOUT_RE.search(text):
+        if ("pull_request_target" in on or "workflow_run" in on) and _UNTRUSTED_CHECKOUT_RE.search(
+            text
+        ):
             return True
     return False
 
@@ -219,9 +265,12 @@ def dockerfile_has_unpinned_base(text: str) -> bool:
 def tree_has_binaries(tree_items: list) -> bool:
     """True if any blob in a recursive git tree is a committed executable/compiled binary."""
     for it in tree_items:
-        if isinstance(it, dict) and it.get("type") == "blob":
-            if (it.get("path") or "").lower().endswith(_BINARY_EXTENSIONS):
-                return True
+        if (
+            isinstance(it, dict)
+            and it.get("type") == "blob"
+            and ((it.get("path") or "").lower().endswith(_BINARY_EXTENSIONS))
+        ):
+            return True
     return False
 
 
@@ -258,15 +307,28 @@ async def interrogate_repo(
             )
             if not isinstance(repo_data, dict):
                 return None
-            meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(repo_data)
+            meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(
+                repo_data
+            )
         else:
-            meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_from_previous(previous)
+            meta_fails, meta_unknowns, description, default_branch, license_spdx = (
+                _metadata_from_previous(previous)
+            )
     else:
-        meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(repo_data)
+        meta_fails, meta_unknowns, description, default_branch, license_spdx = _metadata_checks(
+            repo_data
+        )
 
-    (dyn_fails, dyn_unknowns, open_prs, bot_prs, ci, alerts, release_pending, pulls) = (
-        await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
-    )
+    (
+        dyn_fails,
+        dyn_unknowns,
+        open_prs,
+        bot_prs,
+        ci,
+        alerts,
+        release_pending,
+        pulls,
+    ) = await _dynamic_checks(adapter, gh, connection, owner, repo_ref, default_branch, granted)
 
     # The repo's committed .hangar.json opt-outs. Gated on file reads; unreadable → {}.
     suppressions: dict[str, str] = {}
@@ -331,7 +393,13 @@ def _metadata_checks(repo_data: Any) -> tuple[list[str], list[str], str, str, st
         # unreadable — honestly `unknown`, never a fabricated `fail` (Constitution VIII).
         unknowns.append("secret_scanning")
 
-    return fails, unknowns, repo_data.get("description") or "", default_branch, _license_spdx(repo_data)
+    return (
+        fails,
+        unknowns,
+        repo_data.get("description") or "",
+        default_branch,
+        _license_spdx(repo_data),
+    )
 
 
 def _metadata_from_previous(previous: Repo) -> tuple[list[str], list[str], str, str, str | None]:
@@ -440,15 +508,21 @@ async def _dynamic_checks(
     async def _settings_group() -> None:
         # settings/ruleset checks (403 = unknown, 404 = not configured = fail)
         if not can_settings:
-            unknowns.extend(["branch_protection", "workflow_permissions", "code_scanning",
-                             "signed_commits"])
+            unknowns.extend(
+                ["branch_protection", "workflow_permissions", "code_scanning", "signed_commits"]
+            )
             return
         prot, wf_perms, cs, sigs = await asyncio.gather(
-            cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection"),
+            cget(
+                gh, connection.id, f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection"
+            ),
             cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/actions/permissions/workflow"),
             cget(gh, connection.id, f"/repos/{owner}/{repo_ref}/code-scanning/analyses"),
-            cget(gh, connection.id,
-                 f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection/required_signatures"),
+            cget(
+                gh,
+                connection.id,
+                f"/repos/{owner}/{repo_ref}/branches/{default_branch}/protection/required_signatures",
+            ),
         )
         # signed_commits: the required_signatures endpoint 404s when the branch is unprotected
         # (→ not enforced = fail); 403 → unknown; 200 carries {"enabled": bool}.
@@ -492,8 +566,15 @@ async def _dynamic_checks(
         # signals for sbom and signed_releases.
         nonlocal sbom_wf, signing_wf
         if not can_files:
-            unknowns.extend(["dep_review", "conventional", "actions_pinned_sha",
-                             "dangerous_workflow", "ci_tests_on_pr"])
+            unknowns.extend(
+                [
+                    "dep_review",
+                    "conventional",
+                    "actions_pinned_sha",
+                    "dangerous_workflow",
+                    "ci_tests_on_pr",
+                ]
+            )
             return
         texts = await _read_workflow_texts(cget, gh, connection.id, owner, repo_ref)
         refs = [r for t in texts for r in _extract_refs(t)]
@@ -535,7 +616,9 @@ async def _dynamic_checks(
             unknowns.append("binary_artifacts")
             return
         tree = await cget(
-            gh, connection.id, f"/repos/{owner}/{repo_ref}/git/trees/{default_branch}",
+            gh,
+            connection.id,
+            f"/repos/{owner}/{repo_ref}/git/trees/{default_branch}",
             {"recursive": "1"},
         )
         if isinstance(tree, dict):
@@ -629,9 +712,7 @@ async def _dynamic_checks(
     return fails, unknowns, open_prs, bot_prs, ci, alerts, release_pending, pull_details
 
 
-async def _read_workflow_texts(
-    cget: Any, gh: GitHub, cid: str, owner: str, repo: str
-) -> list[str]:
+async def _read_workflow_texts(cget: Any, gh: GitHub, cid: str, owner: str, repo: str) -> list[str]:
     """The text of every ``.github/workflows/*.yml`` file (comments intact).
 
     Lists the workflows directory and reads each YAML file. Returns [] when there is no
@@ -680,7 +761,12 @@ def _parse_dt(value: object) -> datetime | None:
 
 
 async def _release_pending_days(
-    cget: Any, gh: GitHub, cid: str, owner: str, repo: str, branch: str,
+    cget: Any,
+    gh: GitHub,
+    cid: str,
+    owner: str,
+    repo: str,
+    branch: str,
     rel: object = None,
 ) -> int | None:
     """Days of unreleased commits = default-branch HEAD commit date − latest release date.
@@ -834,21 +920,26 @@ async def _pull_data(
 ) -> tuple[int, int, list[dict]]:
     """Open-PR count, dependency-bot count (Dependabot + Renovate), and recent PR details."""
     data = await _paged(
-        cget, gh, cid, f"/repos/{owner}/{repo}/pulls",
+        cget,
+        gh,
+        cid,
+        f"/repos/{owner}/{repo}/pulls",
         {"state": "open", "sort": "created", "direction": "desc", "per_page": 100},
     )
     bot = sum(1 for pr in data if is_bot_login((pr.get("user") or {}).get("login")))
     details: list[dict] = []
     for pr in data[:_PR_DETAIL_CAP]:
         login = (pr.get("user") or {}).get("login")
-        details.append({
-            "title": pr.get("title") or "",
-            "number": pr.get("number"),
-            "url": pr.get("html_url"),
-            "kind": pr_kind(login),
-            "created_at": pr.get("created_at"),
-            "draft": bool(pr.get("draft")),
-        })
+        details.append(
+            {
+                "title": pr.get("title") or "",
+                "number": pr.get("number"),
+                "url": pr.get("html_url"),
+                "kind": pr_kind(login),
+                "created_at": pr.get("created_at"),
+                "draft": bool(pr.get("draft")),
+            }
+        )
     return len(data), bot, details
 
 
@@ -856,8 +947,9 @@ async def _ci_status(
     cget: Any, gh: GitHub, cid: str, owner: str, repo: str, branch: str
 ) -> CIStatus:
 
-    data = await cget(gh, cid, f"/repos/{owner}/{repo}/actions/runs",
-                      {"branch": branch, "per_page": 1})
+    data = await cget(
+        gh, cid, f"/repos/{owner}/{repo}/actions/runs", {"branch": branch, "per_page": 1}
+    )
     if not isinstance(data, dict):
         return CIStatus.none
     runs = data.get("workflow_runs") or []
@@ -879,8 +971,9 @@ async def _alert_counts(gh: GitHub, cid: str, owner: str, repo: str) -> AlertCou
     )
     counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
     for alert in data:
-        sev = ((alert.get("security_advisory") or {}).get("severity")
-               or (alert.get("security_vulnerability") or {}).get("severity"))
+        sev = (alert.get("security_advisory") or {}).get("severity") or (
+            alert.get("security_vulnerability") or {}
+        ).get("severity")
         if sev in counts:
             counts[sev] += 1
     return AlertCounts(**counts)

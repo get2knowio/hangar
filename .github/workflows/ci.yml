@@ -1,5 +1,9 @@
 name: CI
 
+# Every gate lives in mise.toml, never inline here. CI's steps are the same two
+# verbs a contributor runs locally (`mise run setup`, `mise run check`), so the
+# two cannot drift. To change what CI checks, change mise.toml.
+
 on:
   push:
     branches: ["**"]
@@ -15,84 +19,68 @@ permissions:
   contents: read
 
 jobs:
+  # Interpreter matrix. The name carries a version, so this job is deliberately
+  # NOT a required status check — the version-free `Backend` gate below is, and
+  # it cannot go green unless every leg here passed. Keeping required-check names
+  # free of version numbers means a runtime bump never blocks every open PR.
+  backend-matrix:
+    name: Backend py${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the ceiling of `requires-python` in backend/pyproject.toml.
+        # Adding an interpreter here and widening that range go together.
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # hatch-vcs derives the version from tag history; a shallow clone on a
+          # branch silently produces a plausible-but-wrong base version.
+          fetch-depth: 0
+
+      - name: Install toolchain (mise)
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        env:
+          # Overrides the `python` pin in mise.toml for this matrix leg only.
+          MISE_PYTHON_VERSION: ${{ matrix.python-version }}
+
+      - name: Setup
+        run: mise run backend:setup
+        env:
+          MISE_PYTHON_VERSION: ${{ matrix.python-version }}
+
+      - name: Check
+        # Format, lint, types, and tests with the coverage floor — all of it
+        # defined in mise.toml.
+        run: mise run backend:check
+        env:
+          MISE_PYTHON_VERSION: ${{ matrix.python-version }}
+
+  # Stable, version-free gate. This is the name to protect the branch on.
   backend:
     name: Backend
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
+    needs: [backend-matrix]
+    if: always()
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python 3.14
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: backend/pyproject.toml
-
-      - name: Install backend (with dev extras)
-        run: pip install -e '.[dev]'
-
-      - name: Generate a throwaway Fernet key
-        # FR-032 requires a Fernet key; the test run gets a fresh one each CI run.
-        run: echo "HANGAR_SECRET_KEY=$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
-
-      - name: Lint (ruff)
-        run: ruff check .
-
-      - name: Type-check (mypy)
-        run: mypy
-
-      - name: Test (pytest)
-        env:
-          # Fail-closed gate requires an explicit access mode (FR-029); tests
-          # run in the no-proxy mode. HANGAR_SECRET_KEY was put on $GITHUB_ENV above.
-          HANGAR_FORWARD_AUTH: disabled
-        run: pytest
+      - name: Require every interpreter leg to have passed
+        run: |
+          result='${{ needs.backend-matrix.result }}'
+          echo "backend-matrix result: $result"
+          [ "$result" = "success" ] || exit 1
 
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Frontend is being built in parallel; skip cleanly until package.json lands.
-      - name: Detect frontend package
-        id: detect
-        shell: bash
-        run: |
-          if [ -f frontend/package.json ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::frontend/package.json not found — skipping frontend job steps."
-          fi
-        working-directory: ${{ github.workspace }}
+      - name: Install toolchain (mise)
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-      - name: Set up Node 26
-        if: steps.detect.outputs.present == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "26"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+      - name: Setup
+        run: mise run frontend:setup
 
-      - name: Install (npm ci)
-        if: steps.detect.outputs.present == 'true'
-        run: npm ci
-
-      - name: Lint
-        if: steps.detect.outputs.present == 'true'
-        run: npm run lint
-
-      - name: Build
-        if: steps.detect.outputs.present == 'true'
-        run: npm run build
-
-      - name: Test
-        if: steps.detect.outputs.present == 'true'
-        run: npm test
+      - name: Check
+        run: mise run frontend:check

@@ -19,16 +19,16 @@ from __future__ import annotations
 from hangar.domain.models import Check
 
 from ._caps import caps_for_tier
-from .governance import CHECKS as _governance
-from .project_meta import CHECKS as _project_meta
-from .release import CHECKS as _release
-from .security import CHECKS as _security
-from .supply_chain import CHECKS as _supply_chain
+from .governance import CHECKS as _GOVERNANCE
+from .project_meta import CHECKS as _PROJECT_META
+from .release import CHECKS as _RELEASE
+from .security import CHECKS as _SECURITY
+from .supply_chain import CHECKS as _SUPPLY_CHAIN
 
 # Display order mirrors the prototype's GROUPS.
 GROUPS: list[str] = ["Supply chain", "Release", "Governance", "Security", "Project meta"]
 
-_ALL: list[Check] = [*_supply_chain, *_release, *_governance, *_security, *_project_meta]
+_ALL: list[Check] = [*_SUPPLY_CHAIN, *_RELEASE, *_GOVERNANCE, *_SECURITY, *_PROJECT_META]
 
 CATALOG: dict[str, Check] = {c.id: c for c in _ALL}
 

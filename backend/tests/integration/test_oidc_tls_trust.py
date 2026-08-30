@@ -27,15 +27,15 @@ def _registered_client_kwargs(settings: Settings) -> dict:
 
 
 def _oidc_settings(**overrides: object) -> Settings:
-    base: dict[str, object] = dict(
-        access_mode_select="oidc",
-        oidc_issuer=ISSUER,
-        oidc_client_id="hangar",
-        oidc_client_secret="shh",
-        secret_key="k" * 32,
-        oidc_redirect_url="https://hangar.example/auth/callback",
-        session_cookie_secure=True,
-    )
+    base: dict[str, object] = {
+        "access_mode_select": "oidc",
+        "oidc_issuer": ISSUER,
+        "oidc_client_id": "hangar",
+        "oidc_client_secret": "shh",
+        "secret_key": "k" * 32,
+        "oidc_redirect_url": "https://hangar.example/auth/callback",
+        "session_cookie_secure": True,
+    }
     base.update(overrides)
     return Settings(**base)
 

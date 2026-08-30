@@ -10,7 +10,11 @@ from starlette.responses import JSONResponse
 from hangar.api.deps import actor_dep, session_dep
 from hangar.domain.checks import CATALOG
 from hangar.domain.models import RemediationKind, kind_for_tier
-from hangar.domain.remediation import NoOpenPullRequest, ReadOnlyCollapse, RemediationService
+from hangar.domain.remediation import (
+    NoOpenPullRequestError,
+    ReadOnlyCollapseError,
+    RemediationService,
+)
 from hangar.persistence import repositories as repo_store
 from hangar.providers.registry import provider_for
 from hangar.services.connections import attach_credential
@@ -87,7 +91,7 @@ async def remediate(
         outcome = await service.remediate(
             session, connection=connection, repo=repo, check_id=check_id, kind=kind, actor=actor
         )
-    except ReadOnlyCollapse as collapse:
+    except ReadOnlyCollapseError as collapse:
         return JSONResponse(status_code=403, content={"deep_link_url": collapse.deep_link_url})
 
     audit = None
@@ -100,9 +104,12 @@ async def remediate(
                 # Humanize the entry's REAL timestamp (same as the audit-list endpoint) —
                 # never a hardcoded "just now", which would lie if the write lagged.
                 "timestamp": format_relative(e.timestamp),
-                "repo_id": e.repo_id, "check_label": e.check_label,
-                "connection_label": e.connection_label, "actor": e.actor,
-                "result": e.result, "pr_url": e.pr_url,
+                "repo_id": e.repo_id,
+                "check_label": e.check_label,
+                "connection_label": e.connection_label,
+                "actor": e.actor,
+                "result": e.result,
+                "pr_url": e.pr_url,
             }
     return {
         "state": outcome.state.value,
@@ -185,6 +192,6 @@ async def mark_merged(
         outcome = await service.mark_merged(
             session, connection=connection, repo=repo, check_id=check_id, actor=actor
         )
-    except NoOpenPullRequest as exc:
+    except NoOpenPullRequestError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"state": outcome.state.value, "pr_url": outcome.pr_url, "idempotent_hit": False}

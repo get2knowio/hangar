@@ -98,9 +98,7 @@ async def auth_callback(request: Request, settings: Settings = Depends(settings_
     except httpx.HTTPError as exc:
         # JWKS / token-endpoint fetch failed (unreachable or untrusted IdP TLS).
         log.error("auth.oidc_provider_unreachable", phase="token", error=str(exc))
-        return JSONResponse(
-            {"detail": "Could not reach the identity provider."}, status_code=502
-        )
+        return JSONResponse({"detail": "Could not reach the identity provider."}, status_code=502)
 
     claims = token.get("userinfo") or {}
     if not claims:

@@ -1,0 +1,147 @@
+# Hangar's build surface.
+#
+# One runner, one `check` verb that returns a non-zero exit code, and a CI job
+# whose only step is that verb — so what CI runs is exactly what a contributor
+# runs locally, and neither can drift from the other.
+#
+# Canonical verbs (portfolio standard): setup, build, test, lint, fmt, check,
+# release. Each is a thin delegation to the native tool; per-area work lives in
+# the `backend:*` / `frontend:*` tasks that the verbs fan out to.
+#
+# Division of labor: mise owns anything that must exist before `uv`/`npm` runs —
+# the interpreters and the package managers themselves. The native tool owns
+# everything after. Dev tooling (ruff, mypy, pytest) is pinned in backend/uv.lock
+# via PEP 735 [dependency-groups] and is deliberately NOT listed here: splitting
+# tool versions across two lockfiles is the main failure mode of this setup.
+
+[env]
+# Pin coverage's tracing core. coverage only defaults to sys.monitoring on 3.14+, and
+# the older sys.settrace core cannot see code running in the thread Starlette's
+# TestClient drives the app from — it silently hides every FastAPI BackgroundTask and
+# under-reports the suite by ~7 points on 3.12. Pinning it here makes the number the
+# same on every interpreter in the matrix. See the note in backend/pyproject.toml.
+COVERAGE_CORE = "sysmon"
+
+[tools]
+# Must stay equal to the floor of `requires-python` in backend/pyproject.toml.
+# CI additionally exercises the ceiling — see the matrix in .github/workflows/ci.yml.
+python = "3.12"
+node = "26"
+uv = "latest"
+
+# ---------------------------------------------------------------------------
+# The seven verbs
+# ---------------------------------------------------------------------------
+
+[tasks.setup]
+description = "Install every dependency for backend and frontend"
+depends = ["backend:setup", "frontend:setup"]
+
+[tasks.build]
+description = "Build the backend wheel and the production SPA bundle"
+depends = ["backend:build", "frontend:build"]
+
+[tasks.test]
+description = "Run both test suites (to filter, use: mise run backend:test -- -k name)"
+depends = ["backend:test", "frontend:test"]
+
+[tasks.lint]
+description = "Lint and type-check without writing to the tree"
+depends = ["backend:lint", "frontend:lint"]
+
+[tasks.fmt]
+description = "Format the tree in place and apply safe lint fixes"
+depends = ["backend:fmt", "frontend:fmt"]
+
+[tasks.check]
+description = "Every PR gate: format, lint, types, tests. Non-zero if any gate fails."
+# These are independent gates, so mise runs them concurrently and propagates the
+# first non-zero exit. Nothing here may be skipped or made conditional to get a
+# build green.
+depends = ["backend:check", "frontend:check"]
+
+[tasks.release]
+description = "Build the artifacts a tag publishes (wheel + container image)"
+# Release itself is triggered by pushing a `v*` tag — see .github/workflows/release.yml.
+# This verb builds the same artifacts locally so they can be inspected first.
+depends = ["check"]
+run = "docker build -f deploy/Dockerfile -t hangar:local ."
+
+# ---------------------------------------------------------------------------
+# Backend (Python)
+# ---------------------------------------------------------------------------
+
+[tasks."backend:setup"]
+description = "Sync the backend venv from uv.lock"
+dir = "backend"
+# --all-extras matters for the type gate: with ignore_missing_imports = true an
+# uninstalled extra silently degrades those modules to Any and mypy passes while
+# checking nothing. A green run over a half-installed env is worse than no run.
+#
+# --python binds the venv to the interpreter mise resolved (the [tools] pin here,
+# or MISE_PYTHON_VERSION in CI's matrix). Without it `uv sync` silently reuses
+# whatever .venv already exists, and a matrix leg claiming to test 3.12 would
+# quietly test whatever was there before.
+run = "uv sync --all-extras --python \"$(command -v python)\""
+
+[tasks."backend:build"]
+dir = "backend"
+run = "uv build"
+
+[tasks."backend:test"]
+description = "pytest (extra args pass through)"
+dir = "backend"
+run = "uv run pytest"
+
+[tasks."backend:test-cov"]
+description = "pytest with the coverage floor enforced"
+dir = "backend"
+run = "uv run pytest --cov"
+
+[tasks."backend:lint"]
+dir = "backend"
+run = ["uv run ruff check .", "uv run mypy"]
+
+[tasks."backend:fmt-check"]
+dir = "backend"
+run = "uv run ruff format --check ."
+
+[tasks."backend:fmt"]
+dir = "backend"
+run = ["uv run ruff format .", "uv run ruff check --fix ."]
+
+[tasks."backend:check"]
+depends = ["backend:fmt-check", "backend:lint", "backend:test-cov"]
+
+# ---------------------------------------------------------------------------
+# Frontend (TypeScript / React)
+# ---------------------------------------------------------------------------
+
+[tasks."frontend:setup"]
+description = "Install node_modules from package-lock.json"
+dir = "frontend"
+run = "npm ci"
+
+[tasks."frontend:build"]
+description = "tsc --noEmit && vite build — this is also the frontend type gate"
+dir = "frontend"
+run = "npm run build"
+
+[tasks."frontend:test"]
+dir = "frontend"
+run = "npm test"
+
+[tasks."frontend:lint"]
+dir = "frontend"
+run = "npm run lint"
+
+[tasks."frontend:fmt"]
+# Not gated in CI the way `backend:fmt-check` is: prettier currently reports 19
+# files, one of which (src/lib/api-types.ts) is generated by `npm run gen:api`
+# and would be reformatted back on every regeneration. Format the SPA and add a
+# .prettierignore for the generated file before making this a gate.
+dir = "frontend"
+run = ["npm run format", "npm run lint -- --fix"]
+
+[tasks."frontend:check"]
+depends = ["frontend:lint", "frontend:build", "frontend:test"]

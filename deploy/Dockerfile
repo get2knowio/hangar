@@ -3,9 +3,11 @@
 # ---------------------------------------------------------------------------
 # Hangar — multi-stage image (Constitution V: a single, self-contained stack).
 #
-# Stage 1 (node):  build the Vite + React SPA  ->  /frontend/dist
-# Stage 2 (python): install the FastAPI backend, copy the built SPA into a
-#                   static dir, and serve everything from one Uvicorn process.
+# Stage 1 (node):   build the Vite + React SPA  ->  /frontend/dist
+# Stage 2 (build):  build the backend wheel with uv, so hatch-vcs can derive the
+#                   version from git tags. This stage is discarded.
+# Stage 3 (python): install that wheel, copy the built SPA into a static dir, and
+#                   serve everything from one Uvicorn process.
 #
 # The backend exposes the API under /api/v1/* and a root /health for the
 # container healthcheck, and serves the built SPA as static assets from the same
@@ -34,7 +36,31 @@ COPY frontend/ ./
 RUN if [ -f package.json ]; then npm run build; fi; \
     mkdir -p /frontend/dist
 
-# ---- Stage 2: backend runtime ---------------------------------------------
+# ---- Stage 2: build the backend wheel --------------------------------------
+# The version is derived from git tags by hatch-vcs (backend/pyproject.toml,
+# [tool.hatch.version] source = "vcs"), so this stage needs the real .git. It is
+# a build stage only — the history never reaches the runtime image below.
+FROM python:3.14-slim AS backend-build
+
+# uv is the package manager and the build front-end (portfolio standard).
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /uvx /bin/
+
+# setuptools_scm shells out to git to resolve the version.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY .git ./.git
+COPY backend ./backend
+# The checkout is owned by a different uid than the build user; without this git
+# refuses to read it and setuptools_scm silently falls back to a wrong version.
+RUN git config --global --add safe.directory /build \
+    && cd backend \
+    && uv build --wheel --out-dir /dist \
+    && ls -1 /dist
+
+# ---- Stage 3: backend runtime ---------------------------------------------
 FROM python:3.14-slim AS runtime
 
 # Predictable, unbuffered Python; no .pyc clutter; pip without a cache layer.
@@ -50,14 +76,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the backend. Copy the package metadata + source, then `pip install`.
-# Include the optional `postgres` extra so the same image can target Postgres
-# via HANGAR_DATABASE_URL without a rebuild. The Alembic migrations live inside
-# the package (backend/src/hangar/migrations), so they install with it and the
-# app applies them on startup (hangar.persistence.db.apply_migrations).
-COPY backend/pyproject.toml ./backend/pyproject.toml
-COPY backend/src ./backend/src
-RUN pip install "./backend[postgres]"
+# Install the wheel built in the stage above. Include the optional `postgres`
+# extra so the same image can target Postgres via HANGAR_DATABASE_URL without a
+# rebuild. The Alembic migrations live inside the package
+# (backend/src/hangar/migrations), so they install with it and the app applies
+# them on startup (hangar.persistence.db.apply_migrations).
+COPY --from=backend-build /dist /tmp/dist
+RUN pip install "$(ls /tmp/dist/*.whl)[postgres]" \
+    && rm -rf /tmp/dist
 
 # Copy the built SPA into a static dir the app can serve. Always present
 # (empty if the SPA wasn't built) so this layer never fails the build.

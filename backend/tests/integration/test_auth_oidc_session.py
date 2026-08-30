@@ -81,9 +81,15 @@ def test_forged_session_cookie_is_401(oidc_app) -> None:
 
 
 def test_session_signed_with_wrong_secret_is_401(oidc_app) -> None:
-    bad = itsdangerous.TimestampSigner("wrong-secret").sign(
-        base64.b64encode(json.dumps({"actor": "mallory", "exp": int(time.time()) + 3600}).encode())
-    ).decode()
+    bad = (
+        itsdangerous.TimestampSigner("wrong-secret")
+        .sign(
+            base64.b64encode(
+                json.dumps({"actor": "mallory", "exp": int(time.time()) + 3600}).encode()
+            )
+        )
+        .decode()
+    )
     assert oidc_app.get("/api/v1/me", headers={"Cookie": f"{_COOKIE}={bad}"}).status_code == 401
 
 

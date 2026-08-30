@@ -62,8 +62,13 @@ def test_forward_auth_without_trust_warns_not_raises() -> None:
 
 def test_oidc_mode_missing_config_raises() -> None:
     # access_mode_select wins over the conftest legacy default; issuer/client are missing.
-    settings = Settings(access_mode_select="oidc", oidc_issuer=None, oidc_client_id=None,
-                        oidc_client_secret=None, host="127.0.0.1")
+    settings = Settings(
+        access_mode_select="oidc",
+        oidc_issuer=None,
+        oidc_client_id=None,
+        oidc_client_secret=None,
+        host="127.0.0.1",
+    )
     assert settings.access_mode is AccessMode.oidc
     with pytest.raises(StartupError, match="OIDC"):
         validate_startup(settings)
@@ -71,9 +76,13 @@ def test_oidc_mode_missing_config_raises() -> None:
 
 def test_oidc_mode_fully_configured_warns_not_raises() -> None:
     settings = Settings(
-        access_mode_select="oidc", oidc_issuer="https://idp.example.com",
-        oidc_client_id="hangar", oidc_client_secret="shh", session_secret="sign-me",
-        oidc_redirect_url="https://hangar.example.com/auth/callback", host="127.0.0.1",
+        access_mode_select="oidc",
+        oidc_issuer="https://idp.example.com",
+        oidc_client_id="hangar",
+        oidc_client_secret="shh",
+        session_secret="sign-me",
+        oidc_redirect_url="https://hangar.example.com/auth/callback",
+        host="127.0.0.1",
     )
     assert settings.access_mode is AccessMode.oidc
     assert isinstance(validate_startup(settings), list)  # no raise

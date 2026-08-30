@@ -38,7 +38,9 @@ class ConnectionRow(Base):
     # Provider browser host for this connection (github.com by default; an enterprise host
     # for GHES/GHEC). Opaque to the core — the adapter derives API/UI URLs from it.
     base_url: Mapped[str] = mapped_column(
-        String(255), nullable=False, default="https://github.com",
+        String(255),
+        nullable=False,
+        default="https://github.com",
         server_default="https://github.com",
     )
     credential_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
@@ -97,7 +99,9 @@ class RepoRow(Base):
     license_spdx: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Captured open PRs (title/number/url/kind/created_at/draft) for the activity strip.
     pull_requests: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     def to_domain(self) -> Repo:
         a = self.alerts or {}

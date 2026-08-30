@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hangar.domain.checks import CATALOG
 from hangar.domain.models import ProviderConnection, RemediationKind, kind_for_tier
-from hangar.domain.remediation import ReadOnlyCollapse, RemediationService
+from hangar.domain.remediation import ReadOnlyCollapseError, RemediationService
 from hangar.persistence import repositories as repo_store
 from hangar.providers.registry import provider_for
 from hangar.services.connections import attach_credential
@@ -78,12 +78,16 @@ async def remediate_check_across(
 
         loaded = await _load(connection_id)
         if loaded is None:
-            results.append(TargetResult(connection_id, repo_id, "not_found", detail="unknown connection"))
+            results.append(
+                TargetResult(connection_id, repo_id, "not_found", detail="unknown connection")
+            )
             continue
         connection, service = loaded
         repo = await repo_store.get_repo(session, repo_id, connection_id)
         if repo is None:
-            results.append(TargetResult(connection_id, repo_id, "not_found", detail="repo not found"))
+            results.append(
+                TargetResult(connection_id, repo_id, "not_found", detail="repo not found")
+            )
             continue
 
         try:
@@ -92,19 +96,27 @@ async def remediate_check_across(
             )
             results.append(
                 TargetResult(
-                    connection_id, repo_id, outcome.state.value,
-                    pr_url=outcome.pr_url, idempotent_hit=outcome.idempotent_hit,
+                    connection_id,
+                    repo_id,
+                    outcome.state.value,
+                    pr_url=outcome.pr_url,
+                    idempotent_hit=outcome.idempotent_hit,
                 )
             )
-        except ReadOnlyCollapse as collapse:
+        except ReadOnlyCollapseError as collapse:
             results.append(
-                TargetResult(connection_id, repo_id, "deep_link", deep_link_url=collapse.deep_link_url)
+                TargetResult(
+                    connection_id, repo_id, "deep_link", deep_link_url=collapse.deep_link_url
+                )
             )
         except Exception as exc:  # noqa: BLE001 - isolate per target; one repo never aborts the batch
             await session.rollback()
             log.warning(
                 "remediate_batch.target_failed",
-                connection=connection_id, repo=repo_id, check=check_id, error=str(exc),
+                connection=connection_id,
+                repo=repo_id,
+                check=check_id,
+                error=str(exc),
             )
             results.append(TargetResult(connection_id, repo_id, "error", detail=str(exc)))
 

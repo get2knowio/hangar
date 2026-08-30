@@ -23,8 +23,14 @@ async def test_remediation_overlay_is_connection_scoped(session) -> None:
 
     # Open a fix on connection A's copy only.
     await repo_store.upsert_remediation(
-        session, connection_id="conn-a", repo_id="api", check_id="license",
-        kind="config_pr", state=RemediationState.pr_open.value, pr_url="http://x/1", pr_number=1,
+        session,
+        connection_id="conn-a",
+        repo_id="api",
+        check_id="license",
+        kind="config_pr",
+        state=RemediationState.pr_open.value,
+        pr_url="http://x/1",
+        pr_number=1,
     )
     rem = await repo_store.remediation_map(session)
 
@@ -57,9 +63,9 @@ def test_scorecard_fail_count_excludes_unknown_and_pending() -> None:
         id="c1", label="gh:acme", provider_type="github", scope="org", auth_mode="App"
     )
     repos = [
-        Repo(id="r1", connection_id="c1", fails=["license"], unknowns=[]),       # real fail
-        Repo(id="r2", connection_id="c1", fails=[], unknowns=["license"]),       # unknown
-        Repo(id="r3", connection_id="c1", fails=[], unknowns=[]),                # passing
+        Repo(id="r1", connection_id="c1", fails=["license"], unknowns=[]),  # real fail
+        Repo(id="r2", connection_id="c1", fails=[], unknowns=["license"]),  # unknown
+        Repo(id="r3", connection_id="c1", fails=[], unknowns=[]),  # passing
     ]
     data = build_scorecard(repos, {"c1": conn}, policy, {})
     meta = {c["id"]: c for c in data["checks"]}
@@ -79,7 +85,9 @@ def test_scorecard_excludes_suppressed_from_denominator_and_fail_count() -> None
     )
     # license fails but is suppressed → excluded; readme is a real, scored fail.
     repo = Repo(
-        id="r1", connection_id="c1", fails=["license", "readme"],
+        id="r1",
+        connection_id="c1",
+        fails=["license", "readme"],
         suppressions={"license": "internal tool"},
     )
     data = build_scorecard([repo], {"c1": conn}, policy, {})
@@ -116,9 +124,15 @@ async def test_get_repo_resolves_by_connection_not_id_alone(session) -> None:
     from hangar.persistence.models import ConnectionRow, RepoRow
 
     for cid in ("conn-a", "conn-b"):
-        session.add(ConnectionRow(
-            id=cid, label=f"gh:{cid}", provider_type="github", scope="org", auth_mode="App",
-        ))
+        session.add(
+            ConnectionRow(
+                id=cid,
+                label=f"gh:{cid}",
+                provider_type="github",
+                scope="org",
+                auth_mode="App",
+            )
+        )
     session.add(RepoRow(id="api", connection_id="conn-a", description="A's api"))
     session.add(RepoRow(id="api", connection_id="conn-b", description="B's api"))
     await session.commit()
@@ -169,7 +183,11 @@ async def test_connection_owner_persisted_and_overridable(session) -> None:
     )
     assert gh.owner == "get2knowio"
     custom = await conn_service.add_connection(
-        session, provider_type="github", label="prod", scope="org", credential="x",
+        session,
+        provider_type="github",
+        label="prod",
+        scope="org",
+        credential="x",
         owner="acme-inc",
     )
     assert custom.owner == "acme-inc"

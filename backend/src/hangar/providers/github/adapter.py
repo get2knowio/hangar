@@ -378,7 +378,10 @@ class GitHubAdapter:
             # non-empty list here.
             pr = existing.parsed_data[0]  # type: ignore[index]
             return CorrectionResult(
-                applied=True, pr_url=pr.html_url, pr_number=pr.number, idempotent_hit=True,
+                applied=True,
+                pr_url=pr.html_url,
+                pr_number=pr.number,
+                idempotent_hit=True,
                 summary=f"PR #{pr.number} already open",
             )
 
@@ -390,19 +393,29 @@ class GitHubAdapter:
         )
         path = _PR_FILES.get(request.check_id, f".github/hangar-{request.check_id}.md")
         body = base64.b64encode(
-            f"# {request.check_label}\n\nAdded by Hangar to remediate `{request.check_id}`.\n".encode()
+            f"# {request.check_label}\n\n"
+            f"Added by Hangar to remediate `{request.check_id}`.\n".encode()
         ).decode()
         await gh.rest.repos.async_create_or_update_file_contents(
-            owner=owner, repo=repo, path=path,
-            message=f"chore: {request.check_label} (via Hangar)", content=body, branch=branch,
+            owner=owner,
+            repo=repo,
+            path=path,
+            message=f"chore: {request.check_label} (via Hangar)",
+            content=body,
+            branch=branch,
         )
         pr = await gh.rest.pulls.async_create(
-            owner=owner, repo=repo, title=f"{request.check_label} (via Hangar)",
-            head=branch, base=head,
+            owner=owner,
+            repo=repo,
+            title=f"{request.check_label} (via Hangar)",
+            head=branch,
+            base=head,
             body="Opened by Hangar — review and merge to remediate this finding.",
         )
         return CorrectionResult(
-            applied=True, pr_url=pr.parsed_data.html_url, pr_number=pr.parsed_data.number,
+            applied=True,
+            pr_url=pr.parsed_data.html_url,
+            pr_number=pr.parsed_data.number,
             summary=f"PR #{pr.parsed_data.number} opened",
         )
 

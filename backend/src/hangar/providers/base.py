@@ -41,8 +41,8 @@ class WebhookEvent:
 
     repo_name: str
     ci_status: str | None = None  # "pass" | "fail" when a CI run concluded
-    pr_delta: int = 0             # +1 opened/reopened, -1 closed
-    pr_is_bot: bool = False       # the PR in pr_delta is from a dependency bot (Dependabot/Renovate)
+    pr_delta: int = 0  # +1 opened/reopened, -1 closed
+    pr_is_bot: bool = False  # the PR in pr_delta is from a dependency bot (Dependabot/Renovate)
 
 
 def provider_name(provider_type: str) -> str:
@@ -109,9 +109,7 @@ class RepoProvider(Protocol):
         """List repository refs in the connection's scope (auto-discovery, FR-034)."""
         ...
 
-    async def list_repo_listings(
-        self, connection: ProviderConnection
-    ) -> list[RepoListing]:
+    async def list_repo_listings(self, connection: ProviderConnection) -> list[RepoListing]:
         """List repos in scope with neutral metadata (name + visibility) for selection UIs.
 
         Distinct from ``list_repos`` (which yields bare refs for the poller) so the repo

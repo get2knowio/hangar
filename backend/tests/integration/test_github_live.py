@@ -26,19 +26,30 @@ def _rsa_pem() -> str:
 
 def _app_connection(pem: str) -> ProviderConnection:
     return ProviderConnection(
-        id="gh-main", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="GitHub App #1", app_id="123", installation_id=456,
+        id="gh-main",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="GitHub App #1",
+        app_id="123",
+        installation_id=456,
         granted_capabilities={
-            Capability.read_files, Capability.read_settings,
-            Capability.read_alerts, Capability.read_org_policy,
+            Capability.read_files,
+            Capability.read_settings,
+            Capability.read_alerts,
+            Capability.read_org_policy,
         },
-        has_credential=True, token=pem,
+        has_credential=True,
+        token=pem,
     )
 
 
 _REPO_JSON = {
-    "name": "hangar", "default_branch": "main", "description": "Fleet control plane",
-    "topics": ["homelab"], "license": {"spdx_id": "MIT"},
+    "name": "hangar",
+    "default_branch": "main",
+    "description": "Fleet control plane",
+    "topics": ["homelab"],
+    "license": {"spdx_id": "MIT"},
     "security_and_analysis": {
         "secret_scanning": {"status": "enabled"},
         "secret_scanning_push_protection": {"status": "enabled"},
@@ -55,13 +66,18 @@ def _routes(mock: respx.MockRouter, repo_response: httpx.Response):
         )
     )
     repo_route = mock.get(f"{API}/repos/acme/hangar").mock(return_value=repo_response)
-    mock.get(url__regex=r".*/repos/acme/hangar/pulls.*").mock(return_value=httpx.Response(200, json=[]))
+    mock.get(url__regex=r".*/repos/acme/hangar/pulls.*").mock(
+        return_value=httpx.Response(200, json=[])
+    )
     mock.get(url__regex=r".*/repos/acme/hangar/actions/runs.*").mock(
-        return_value=httpx.Response(200, json={"workflow_runs": []}))
+        return_value=httpx.Response(200, json={"workflow_runs": []})
+    )
     mock.get(url__regex=r".*/repos/acme/hangar/dependabot/alerts.*").mock(
-        return_value=httpx.Response(200, json=[]))
+        return_value=httpx.Response(200, json=[])
+    )
     mock.get(f"{API}/orgs/acme").mock(
-        return_value=httpx.Response(200, json={"two_factor_requirement_enabled": True}))
+        return_value=httpx.Response(200, json={"two_factor_requirement_enabled": True})
+    )
     # Everything else (contents/*, branches/*, code-scanning, workflow perms) → 404 absent.
     mock.route().mock(return_value=httpx.Response(404, json={"message": "Not Found"}))
     return repo_route, token_route
@@ -117,8 +133,12 @@ async def test_etag_304_with_cached_snapshot_carries_forward_and_sends_if_none_m
     # The realistic 304 case: an ETag exists *because* a snapshot was cached, so `previous`
     # is supplied and its repo-body checks are carried forward (no refetch).
     previous = Repo(
-        id="hangar", connection_id="gh-main", default_branch="main",
-        description="Fleet control plane", fails=["license"], unknowns=[],
+        id="hangar",
+        connection_id="gh-main",
+        default_branch="main",
+        description="Fleet control plane",
+        fails=["license"],
+        unknowns=[],
     )
     result = await adapter.interrogate(conn, "hangar", previous=previous)
 
@@ -134,11 +154,18 @@ async def test_etag_304_with_cached_snapshot_carries_forward_and_sends_if_none_m
 async def test_token_auth_path_for_pat_connection(respx_mock) -> None:
     adapter = GitHubAdapter()
     conn = ProviderConnection(
-        id="gh-pat", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="PAT", granted_capabilities={Capability.read_files},
-        has_credential=True, token="ghp_pat",  # no app_id → TokenAuthStrategy
+        id="gh-pat",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="PAT",
+        granted_capabilities={Capability.read_files},
+        has_credential=True,
+        token="ghp_pat",  # no app_id → TokenAuthStrategy
     )
-    repo_route, _ = _routes(respx_mock, httpx.Response(200, headers={"ETag": '"v2"'}, json=_REPO_JSON))
+    repo_route, _ = _routes(
+        respx_mock, httpx.Response(200, headers={"ETag": '"v2"'}, json=_REPO_JSON)
+    )
 
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
@@ -167,14 +194,21 @@ async def test_workflow_parsing_resolves_dep_review_conventional_and_pinned_sha(
     # Register the workflow routes BEFORE the catch-all (_routes adds the 404 last;
     # respx is first-match-wins).
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows").mock(
-        return_value=httpx.Response(200, json=[
-            {"name": "ci.yml", "path": ".github/workflows/ci.yml", "type": "file"},
-        ])
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"name": "ci.yml", "path": ".github/workflows/ci.yml", "type": "file"},
+            ],
+        )
     )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows/ci.yml").mock(
-        return_value=httpx.Response(200, json={
-            "encoding": "base64", "content": _b64.b64encode(workflow.encode()).decode(),
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "encoding": "base64",
+                "content": _b64.b64encode(workflow.encode()).decode(),
+            },
+        )
     )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"w1"'}, json=_REPO_JSON))
 
@@ -238,9 +272,12 @@ async def test_release_health_from_release_and_head_dates(respx_mock) -> None:
         return_value=httpx.Response(200, json={"published_at": "2024-01-01T00:00:00Z"})
     )
     respx_mock.get(f"{API}/repos/acme/hangar/commits/main").mock(
-        return_value=httpx.Response(200, json={
-            "commit": {"committer": {"date": "2024-01-21T00:00:00Z"}}  # 20 days later
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "commit": {"committer": {"date": "2024-01-21T00:00:00Z"}}  # 20 days later
+            },
+        )
     )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"r1"'}, json=_REPO_JSON))
 
@@ -258,7 +295,9 @@ async def test_release_health_passes_when_head_at_release(respx_mock) -> None:
         return_value=httpx.Response(200, json={"published_at": "2024-01-21T00:00:00Z"})
     )
     respx_mock.get(f"{API}/repos/acme/hangar/commits/main").mock(
-        return_value=httpx.Response(200, json={"commit": {"committer": {"date": "2024-01-21T00:00:00Z"}}})
+        return_value=httpx.Response(
+            200, json={"commit": {"committer": {"date": "2024-01-21T00:00:00Z"}}}
+        )
     )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"r2"'}, json=_REPO_JSON))
 
@@ -286,8 +325,12 @@ async def test_304_with_previous_refreshes_volatile_signals(respx_mock) -> None:
     _routes(respx_mock, httpx.Response(304, headers={"ETag": '"v1"'}))
 
     previous = Repo(
-        id="hangar", connection_id="gh-main", default_branch="main",
-        description="Fleet control plane", fails=["license"], unknowns=[],
+        id="hangar",
+        connection_id="gh-main",
+        default_branch="main",
+        description="Fleet control plane",
+        fails=["license"],
+        unknowns=[],
     )
     repo = await adapter.interrogate(conn, "hangar", previous=previous)
 
@@ -320,9 +363,15 @@ async def test_partial_app_config_fails_closed() -> None:
     token auth and send the PEM as a bearer token — it fails closed."""
     adapter = GitHubAdapter()
     conn = ProviderConnection(
-        id="gh-partial", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="App", app_id="123", installation_id=None,
-        has_credential=True, token=_rsa_pem(),
+        id="gh-partial",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
+        app_id="123",
+        installation_id=None,
+        has_credential=True,
+        token=_rsa_pem(),
     )
     with pytest.raises(RuntimeError, match="partial GitHub App"):
         await adapter.interrogate(conn, "hangar")
@@ -345,8 +394,7 @@ def test_workflow_is_dangerous_logic() -> None:
     assert workflow_is_dangerous([safe]) is False
     # script injection: an attacker-controlled context interpolated into a step
     injection = (
-        "on: issues\njobs:\n  b:\n    steps:\n"
-        "      - run: echo ${{ github.event.issue.title }}\n"
+        "on: issues\njobs:\n  b:\n    steps:\n      - run: echo ${{ github.event.issue.title }}\n"
     )
     assert workflow_is_dangerous([injection]) is True
     # pwn request: pull_request_target trigger that checks out the untrusted PR head
@@ -370,9 +418,15 @@ def test_workflow_triggers_on_pr_logic() -> None:
     # pull_request_target alone does NOT count as gating normal PRs
     assert workflow_triggers_on_pr(["on: pull_request_target\n"]) is False
     # a pull_request mention inside a job step (not the on: block) is not a trigger
-    assert workflow_triggers_on_pr(
-        ["on: push\njobs:\n  b:\n    steps:\n      - run: echo ${{ github.event.pull_request.number }}\n"]
-    ) is False
+    assert (
+        workflow_triggers_on_pr(
+            [
+                "on: push\njobs:\n  b:\n    steps:\n"
+                "      - run: echo ${{ github.event.pull_request.number }}\n"
+            ]
+        )
+        is False
+    )
 
 
 def test_sbom_and_signing_ref_markers() -> None:
@@ -418,7 +472,8 @@ async def test_contributing_file_presence(respx_mock) -> None:
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
     respx_mock.get(f"{API}/repos/acme/hangar/contents/CONTRIBUTING.md").mock(
-        return_value=httpx.Response(200, json={"name": "CONTRIBUTING.md", "type": "file"}))
+        return_value=httpx.Response(200, json={"name": "CONTRIBUTING.md", "type": "file"})
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"c1"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
@@ -440,9 +495,9 @@ async def test_signed_commits_required_passes(respx_mock) -> None:
     """required_signatures {enabled:true} → signed_commits passes."""
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
-    respx_mock.get(
-        f"{API}/repos/acme/hangar/branches/main/protection/required_signatures"
-    ).mock(return_value=httpx.Response(200, json={"enabled": True}))
+    respx_mock.get(f"{API}/repos/acme/hangar/branches/main/protection/required_signatures").mock(
+        return_value=httpx.Response(200, json={"enabled": True})
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"sc1"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
@@ -467,10 +522,16 @@ async def test_binary_artifacts_from_git_tree(respx_mock) -> None:
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
     respx_mock.get(url__regex=r".*/repos/acme/hangar/git/trees/main(\?.*)?$").mock(
-        return_value=httpx.Response(200, json={"tree": [
-            {"path": "src/main.py", "type": "blob"},
-            {"path": "dist/app.exe", "type": "blob"},
-        ]}))
+        return_value=httpx.Response(
+            200,
+            json={
+                "tree": [
+                    {"path": "src/main.py", "type": "blob"},
+                    {"path": "dist/app.exe", "type": "blob"},
+                ]
+            },
+        )
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"bt1"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
@@ -478,7 +539,8 @@ async def test_binary_artifacts_from_git_tree(respx_mock) -> None:
 
     adapter2 = GitHubAdapter()
     respx_mock.get(url__regex=r".*/repos/acme/hangar/git/trees/main(\?.*)?$").mock(
-        return_value=httpx.Response(200, json={"tree": [{"path": "src/main.py", "type": "blob"}]}))
+        return_value=httpx.Response(200, json={"tree": [{"path": "src/main.py", "type": "blob"}]})
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"bt0"'}, json=_REPO_JSON))
     repo2 = await adapter2.interrogate(conn, "hangar")
     assert repo2 is not None
@@ -491,7 +553,8 @@ async def test_pinned_deps_from_dockerfile(respx_mock) -> None:
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
     respx_mock.get(f"{API}/repos/acme/hangar/contents/Dockerfile").mock(
-        return_value=httpx.Response(200, json=_b64("FROM python:3.12\nRUN echo hi\n")))
+        return_value=httpx.Response(200, json=_b64("FROM python:3.12\nRUN echo hi\n"))
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"pd1"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
@@ -499,7 +562,8 @@ async def test_pinned_deps_from_dockerfile(respx_mock) -> None:
 
     adapter2 = GitHubAdapter()
     respx_mock.get(f"{API}/repos/acme/hangar/contents/Dockerfile").mock(
-        return_value=httpx.Response(200, json=_b64("FROM python@sha256:" + "a" * 64 + "\n")))
+        return_value=httpx.Response(200, json=_b64("FROM python@sha256:" + "a" * 64 + "\n"))
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"pd0"'}, json=_REPO_JSON))
     repo2 = await adapter2.interrogate(conn, "hangar")
     assert repo2 is not None
@@ -521,11 +585,16 @@ async def test_workflow_derived_checks_pass_on_a_hardened_workflow(respx_mock) -
         "      - run: make build\n"
     )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows").mock(
-        return_value=httpx.Response(200, json=[
-            {"name": "release.yml", "path": ".github/workflows/release.yml", "type": "file"},
-        ]))
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"name": "release.yml", "path": ".github/workflows/release.yml", "type": "file"},
+            ],
+        )
+    )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows/release.yml").mock(
-        return_value=httpx.Response(200, json=_b64(workflow)))
+        return_value=httpx.Response(200, json=_b64(workflow))
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"wf1"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
@@ -546,11 +615,16 @@ async def test_dangerous_workflow_flagged_and_pr_and_sbom_gaps(respx_mock) -> No
         "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
     )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows").mock(
-        return_value=httpx.Response(200, json=[
-            {"name": "ci.yml", "path": ".github/workflows/ci.yml", "type": "file"},
-        ]))
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"name": "ci.yml", "path": ".github/workflows/ci.yml", "type": "file"},
+            ],
+        )
+    )
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.github/workflows/ci.yml").mock(
-        return_value=httpx.Response(200, json=_b64(workflow)))
+        return_value=httpx.Response(200, json=_b64(workflow))
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"wf2"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
@@ -566,10 +640,14 @@ async def test_signed_releases_from_release_signature_assets(respx_mock) -> None
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
     respx_mock.get(f"{API}/repos/acme/hangar/releases/latest").mock(
-        return_value=httpx.Response(200, json={
-            "published_at": "2024-01-01T00:00:00Z",
-            "assets": [{"name": "hangar.tar.gz"}, {"name": "hangar.tar.gz.sig"}],
-        }))
+        return_value=httpx.Response(
+            200,
+            json={
+                "published_at": "2024-01-01T00:00:00Z",
+                "assets": [{"name": "hangar.tar.gz"}, {"name": "hangar.tar.gz.sig"}],
+            },
+        )
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"sr1"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
@@ -582,16 +660,30 @@ async def test_added_checks_unknown_without_read_capabilities(respx_mock) -> Non
     never a fabricated pass/fail (capability-gated honest state)."""
     adapter = GitHubAdapter()
     conn = ProviderConnection(
-        id="gh-narrow", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="App", app_id="123", installation_id=456,
+        id="gh-narrow",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
+        app_id="123",
+        installation_id=456,
         granted_capabilities={Capability.read_alerts},  # no read_files / read_settings
-        has_credential=True, token=_rsa_pem(),
+        has_credential=True,
+        token=_rsa_pem(),
     )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"nu1"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
     assert repo is not None
-    for cid in ("contributing", "pinned_deps", "sbom", "signed_releases",
-                "dangerous_workflow", "ci_tests_on_pr", "binary_artifacts", "signed_commits"):
+    for cid in (
+        "contributing",
+        "pinned_deps",
+        "sbom",
+        "signed_releases",
+        "dangerous_workflow",
+        "ci_tests_on_pr",
+        "binary_artifacts",
+        "signed_commits",
+    ):
         assert cid in repo.unknowns, cid
         assert cid not in repo.fails, cid
 
@@ -599,8 +691,13 @@ async def test_added_checks_unknown_without_read_capabilities(respx_mock) -> Non
 async def test_adapter_refuses_without_credential() -> None:
     adapter = GitHubAdapter()
     conn = ProviderConnection(
-        id="x", label="gh:acme", provider_type="github", scope="org", auth_mode="App",
-        has_credential=True, token=None,
+        id="x",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
+        has_credential=True,
+        token=None,
     )
     with pytest.raises(RuntimeError, match="no decrypted credential"):
         await adapter.interrogate(conn, "hangar")
@@ -654,10 +751,16 @@ async def test_dependabot_alerts_unknown_without_read_alerts(respx_mock) -> None
     """No read_alerts capability ⇒ dependabot_alerts is unknown (capability-gated)."""
     adapter = GitHubAdapter()
     conn = ProviderConnection(
-        id="gh-narrow", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="App", app_id="123", installation_id=456,
+        id="gh-narrow",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
+        app_id="123",
+        installation_id=456,
         granted_capabilities={Capability.read_files},  # no read_alerts
-        has_credential=True, token=_rsa_pem(),
+        has_credential=True,
+        token=_rsa_pem(),
     )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"d4"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
@@ -730,10 +833,16 @@ async def test_security_updates_unknown_without_read_alerts(respx_mock) -> None:
     """No read_alerts capability ⇒ capability-gated unknown, not a guessed fail."""
     adapter = GitHubAdapter()
     conn = ProviderConnection(
-        id="gh-narrow", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="App", app_id="123", installation_id=456,
+        id="gh-narrow",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
+        app_id="123",
+        installation_id=456,
         granted_capabilities={Capability.read_files},  # no read_alerts
-        has_credential=True, token=_rsa_pem(),
+        has_credential=True,
+        token=_rsa_pem(),
     )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"s5"'}, json=_REPO_JSON))
     repo = await adapter.interrogate(conn, "hangar")
@@ -745,9 +854,14 @@ async def test_security_updates_unknown_without_read_alerts(respx_mock) -> None:
 # --- list_repos degrades honestly on a forbidden listing (code-review fix) ---
 def _pat_conn() -> ProviderConnection:
     return ProviderConnection(
-        id="gh-pat", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="PAT", granted_capabilities={Capability.read_files},
-        has_credential=True, token="ghp_pat",
+        id="gh-pat",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="PAT",
+        granted_capabilities={Capability.read_files},
+        has_credential=True,
+        token="ghp_pat",
     )
 
 
@@ -756,9 +870,11 @@ async def test_list_repos_user_fallback_on_forbidden_org(respx_mock) -> None:
     """A 403 on the org listing falls back to the user endpoint."""
     adapter = GitHubAdapter()
     respx_mock.get(f"{API}/orgs/acme/repos").mock(
-        return_value=httpx.Response(403, json={"message": "Forbidden"}))
+        return_value=httpx.Response(403, json={"message": "Forbidden"})
+    )
     respx_mock.get(f"{API}/users/acme/repos").mock(
-        return_value=httpx.Response(200, json=[{"name": "alpha"}, {"name": "beta"}]))
+        return_value=httpx.Response(200, json=[{"name": "alpha"}, {"name": "beta"}])
+    )
     assert await adapter.list_repos(_pat_conn()) == ["alpha", "beta"]
 
 
@@ -767,14 +883,20 @@ async def test_list_repo_listings_reports_private_visibility(respx_mock) -> None
     """list_repo_listings surfaces each repo's name + private flag for the picker padlock."""
     adapter = GitHubAdapter()
     respx_mock.get(f"{API}/orgs/acme/repos").mock(
-        return_value=httpx.Response(200, json=[
-            {"name": "secret-svc", "private": True},
-            {"name": "open-docs", "private": False},
-            {"name": "no-field"},  # absent ⇒ treated as public, not a guess
-        ]))
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"name": "secret-svc", "private": True},
+                {"name": "open-docs", "private": False},
+                {"name": "no-field"},  # absent ⇒ treated as public, not a guess
+            ],
+        )
+    )
     listings = await adapter.list_repo_listings(_pat_conn())
     assert {x.name: x.private for x in listings} == {
-        "secret-svc": True, "open-docs": False, "no-field": False,
+        "secret-svc": True,
+        "open-docs": False,
+        "no-field": False,
     }
 
 
@@ -784,9 +906,11 @@ async def test_list_repos_raises_when_forbidden_everywhere(respx_mock) -> None:
     snapshots instead of silently reporting an empty fleet."""
     adapter = GitHubAdapter()
     respx_mock.get(f"{API}/orgs/acme/repos").mock(
-        return_value=httpx.Response(403, json={"message": "Forbidden"}))
+        return_value=httpx.Response(403, json={"message": "Forbidden"})
+    )
     respx_mock.get(f"{API}/users/acme/repos").mock(
-        return_value=httpx.Response(403, json={"message": "Forbidden"}))
+        return_value=httpx.Response(403, json={"message": "Forbidden"})
+    )
     with pytest.raises(RuntimeError, match="cannot list repos"):
         await adapter.list_repos(_pat_conn())
 
@@ -829,12 +953,27 @@ async def test_open_prs_captured_into_snapshot(respx_mock) -> None:
     def _pulls(request: httpx.Request) -> httpx.Response:
         page = int(parse_qs(urlparse(str(request.url)).query).get("page", ["1"])[0])
         if page == 1:
-            return httpx.Response(200, json=[
-                {"title": "Bump vite", "number": 7, "html_url": "https://github.com/acme/hangar/pull/7",
-                 "user": {"login": "dependabot[bot]"}, "created_at": "2024-01-01T00:00:00Z", "draft": False},
-                {"title": "Add health", "number": 6, "html_url": "https://github.com/acme/hangar/pull/6",
-                 "user": {"login": "alice"}, "created_at": "2024-01-02T00:00:00Z", "draft": True},
-            ])
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "title": "Bump vite",
+                        "number": 7,
+                        "html_url": "https://github.com/acme/hangar/pull/7",
+                        "user": {"login": "dependabot[bot]"},
+                        "created_at": "2024-01-01T00:00:00Z",
+                        "draft": False,
+                    },
+                    {
+                        "title": "Add health",
+                        "number": 6,
+                        "html_url": "https://github.com/acme/hangar/pull/6",
+                        "user": {"login": "alice"},
+                        "created_at": "2024-01-02T00:00:00Z",
+                        "draft": True,
+                    },
+                ],
+            )
         return httpx.Response(200, json=[])
 
     respx_mock.get(url__regex=r".*/repos/acme/hangar/pulls\?.*").mock(side_effect=_pulls)
@@ -926,7 +1065,9 @@ async def test_dependabot_alerts_use_cursor_pagination_not_page(respx_mock) -> N
         if after is None:  # first page → Link points at the next cursor
             return httpx.Response(
                 200,
-                headers={"Link": f'<{API}/repos/acme/hangar/dependabot/alerts?after=CUR>; rel="next"'},
+                headers={
+                    "Link": f'<{API}/repos/acme/hangar/dependabot/alerts?after=CUR>; rel="next"'
+                },
                 json=[{"security_advisory": {"severity": "critical"}}],
             )
         if after == "CUR":  # second (last) page → no Link
@@ -981,9 +1122,11 @@ async def test_list_repos_empty_when_owner_not_found(respx_mock) -> None:
     """404 on org then user (no such owner) → empty list, not an error."""
     adapter = GitHubAdapter()
     respx_mock.get(f"{API}/orgs/acme/repos").mock(
-        return_value=httpx.Response(404, json={"message": "Not Found"}))
+        return_value=httpx.Response(404, json={"message": "Not Found"})
+    )
     respx_mock.get(f"{API}/users/acme/repos").mock(
-        return_value=httpx.Response(404, json={"message": "Not Found"}))
+        return_value=httpx.Response(404, json={"message": "Not Found"})
+    )
     assert await adapter.list_repos(_pat_conn()) == []
 
 
@@ -1003,14 +1146,36 @@ async def test_renovate_pr_counts_as_bot_and_is_labeled_renovate(respx_mock) -> 
     # Distinct regex from _routes' pulls pattern so respx keeps both (it dedupes by identical
     # pattern, and the later registration would otherwise win); added first → first-match wins.
     respx_mock.get(url__regex=r".*/repos/acme/hangar/pulls(\?.*)?$").mock(
-        return_value=httpx.Response(200, json=[
-            {"title": "Update vite", "number": 9, "html_url": "https://github.com/acme/hangar/pull/9",
-             "user": {"login": "renovate[bot]"}, "created_at": "2026-06-01T00:00:00Z", "draft": False},
-            {"title": "Bump black", "number": 8, "html_url": "https://github.com/acme/hangar/pull/8",
-             "user": {"login": "dependabot[bot]"}, "created_at": "2026-06-02T00:00:00Z", "draft": False},
-            {"title": "Refactor", "number": 7, "html_url": "https://github.com/acme/hangar/pull/7",
-             "user": {"login": "octocat"}, "created_at": "2026-06-03T00:00:00Z", "draft": False},
-        ]))
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "title": "Update vite",
+                    "number": 9,
+                    "html_url": "https://github.com/acme/hangar/pull/9",
+                    "user": {"login": "renovate[bot]"},
+                    "created_at": "2026-06-01T00:00:00Z",
+                    "draft": False,
+                },
+                {
+                    "title": "Bump black",
+                    "number": 8,
+                    "html_url": "https://github.com/acme/hangar/pull/8",
+                    "user": {"login": "dependabot[bot]"},
+                    "created_at": "2026-06-02T00:00:00Z",
+                    "draft": False,
+                },
+                {
+                    "title": "Refactor",
+                    "number": 7,
+                    "html_url": "https://github.com/acme/hangar/pull/7",
+                    "user": {"login": "octocat"},
+                    "created_at": "2026-06-03T00:00:00Z",
+                    "draft": False,
+                },
+            ],
+        )
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"rn0"'}, json=_REPO_JSON))
 
     repo = await adapter.interrogate(conn, "hangar")
@@ -1027,7 +1192,8 @@ async def test_renovate_config_satisfies_version_updates_and_cooldown(respx_mock
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
     respx_mock.get(f"{API}/repos/acme/hangar/contents/renovate.json").mock(
-        return_value=httpx.Response(200, json=_b64('{"minimumReleaseAge": "7 days"}')))
+        return_value=httpx.Response(200, json=_b64('{"minimumReleaseAge": "7 days"}'))
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"rn1"'}, json=_REPO_JSON))
 
     repo = await adapter.interrogate(conn, "hangar")
@@ -1042,7 +1208,8 @@ async def test_renovate_config_without_cooldown_fails_cooldown_only(respx_mock) 
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
     respx_mock.get(f"{API}/repos/acme/hangar/contents/renovate.json").mock(
-        return_value=httpx.Response(200, json=_b64('{"extends": ["config:recommended"]}')))
+        return_value=httpx.Response(200, json=_b64('{"extends": ["config:recommended"]}'))
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"rn2"'}, json=_REPO_JSON))
 
     repo = await adapter.interrogate(conn, "hangar")
@@ -1058,9 +1225,13 @@ async def test_hangar_json_populates_suppressions(respx_mock) -> None:
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
-        return_value=httpx.Response(200, json=_b64(
-            '{"ignore": [{"check": "dependabot_alerts", "reason": "no deps"}, "code_scanning"]}'
-        )))
+        return_value=httpx.Response(
+            200,
+            json=_b64(
+                '{"ignore": [{"check": "dependabot_alerts", "reason": "no deps"}, "code_scanning"]}'
+            ),
+        )
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"hj1"'}, json=_REPO_JSON))
 
     repo = await adapter.interrogate(conn, "hangar")
@@ -1086,7 +1257,8 @@ async def test_malformed_hangar_json_is_ignored_not_fatal(respx_mock) -> None:
     adapter = GitHubAdapter()
     conn = _app_connection(_rsa_pem())
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
-        return_value=httpx.Response(200, json=_b64("{ not valid json")))
+        return_value=httpx.Response(200, json=_b64("{ not valid json"))
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"hj3"'}, json=_REPO_JSON))
 
     repo = await adapter.interrogate(conn, "hangar")
@@ -1099,14 +1271,21 @@ async def test_hangar_json_not_read_without_read_files_capability(respx_mock) ->
     """A connection without read_files can't read .hangar.json → suppressions stay empty."""
     adapter = GitHubAdapter()
     conn = ProviderConnection(
-        id="gh-narrow", label="gh:acme", provider_type="github", scope="org",
-        auth_mode="App", app_id="123", installation_id=456,
+        id="gh-narrow",
+        label="gh:acme",
+        provider_type="github",
+        scope="org",
+        auth_mode="App",
+        app_id="123",
+        installation_id=456,
         granted_capabilities={Capability.read_alerts},  # no read_files
-        has_credential=True, token=_rsa_pem(),
+        has_credential=True,
+        token=_rsa_pem(),
     )
     # Even if the file were served, the capability gate skips the read entirely.
     respx_mock.get(f"{API}/repos/acme/hangar/contents/.hangar.json").mock(
-        return_value=httpx.Response(200, json=_b64('{"ignore": ["license"]}')))
+        return_value=httpx.Response(200, json=_b64('{"ignore": ["license"]}'))
+    )
     _routes(respx_mock, httpx.Response(200, headers={"ETag": '"hj4"'}, json=_REPO_JSON))
 
     repo = await adapter.interrogate(conn, "hangar")
